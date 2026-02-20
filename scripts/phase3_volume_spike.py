@@ -22,23 +22,31 @@ def load_data():
 
 def run_bt(cfg, data, label):
     from backtest.engine import BacktestEngine
-    from backtest.metrics import compute_metrics
+    from strategies.mean_reversion import MeanReversion
+    from strategies.trend_following import TrendFollowing
+    from strategies.bb_squeeze import BBSqueeze
+    from strategies.opening_gap import OpeningGap
+    
     t0 = time.time()
     print('  Running [' + label + ']...', flush=True)
+    strategies = [MeanReversion(cfg), TrendFollowing(cfg), OpeningGap(cfg)]
     eng = BacktestEngine(cfg)
-    trades, equity = eng.run(data)
-    m = compute_metrics(trades, equity, cfg)
+    result = eng.run_walkforward(data, strategies)
+    m = result.metrics
     s = time.time() - t0
     n = m.get('total_trades', 0)
-    c = m.get('cagr', 0) * 100
-    sh = m.get('sharpe_ratio', 0)
+    c = m.get('cagr', 0)
+    c = c * 100 if abs(c) < 2 else c
+    sh = m.get('sharpe', m.get('sharpe_ratio', 0))
     pf = m.get('profit_factor', 0)
-    dd = m.get('max_drawdown', 0) * 100
-    wr = m.get('win_rate', 0) * 100
+    dd = m.get('max_drawdown', 0)
+    dd = dd * 100 if abs(dd) < 2 else dd
+    wr = m.get('win_rate', 0)
+    wr = wr * 100 if wr < 2 else wr
     print('  [' + label + '] ' + str(int(s)) + 's: trades=' + str(n) + ' CAGR=' + str(round(c,2)) + '% Sharpe=' + str(round(sh,3)) + ' PF=' + str(round(pf,3)) + ' DD=' + str(round(dd,2)) + '% WR=' + str(round(wr,1)) + '%')
-    return m, trades
+    return m
 
-print('=== Phase 3: Volume Spike Confirmation ===')
+print('=== Phase 3: Volume Spike Confirmation A/B Test ===')
 data = load_data()
 print('Loaded ' + str(len(data)) + ' tickers')
 with open('config/active_config.json') as f:
@@ -48,75 +56,69 @@ with open('config/active_config.json') as f:
 cfg_a = copy.deepcopy(base)
 cfg_a['strategies']['mean_reversion']['volume']['surge_boost'] = 0.0
 cfg_a['strategies']['mean_reversion']['volume']['dry_penalty'] = 0.0
-m_a, trades_a = run_bt(cfg_a, data, 'A-Baseline (vol OFF)')
 
-# Arm B: vol modifier ON (surge_threshold=1.5, surge_boost=0.05, dry_penalty=0)
+# Arm B: vol modifier ON (surge_boost=0.05, dry_penalty=0.0)
 cfg_b = copy.deepcopy(base)
-m_b, trades_b = run_bt(cfg_b, data, 'B-VolSpike (boost ON)')
+cfg_b['strategies']['mean_reversion']['volume']['surge_boost'] = 0.05
+cfg_b['strategies']['mean_reversion']['volume']['dry_penalty'] = 0.0
 
-# Comparison table
-keys = ['total_trades','cagr','sharpe_ratio','profit_factor','max_drawdown','win_rate']
-scale = {'cagr':100,'max_drawdown':100,'win_rate':100}
-print('')
-print('=' * 70)
-print('  Metric                    A-Base     B-VolSpike       Delta  KnownBase')
-print('-' * 70)
-for k in keys:
-    a = m_a.get(k, 0) or 0
-    b = m_b.get(k, 0) or 0
-    ref = BASELINE.get(k, 0) or 0
-    s = scale.get(k, 1)
-    d = b - a
-    sign = '+' if d >= 0 else ''
-    print('  ' + k.ljust(22) + str(round(a*s,3)).rjust(10) + str(round(b*s,3)).rjust(13) + (sign+str(round(d*s,3))).rjust(11) + str(round(ref*s,3)).rjust(12))
+print('\nArm A: Volume modifier OFF')
+m_a = run_bt(cfg_a, data, 'A-Baseline (vol OFF)')
 
-# Volume bucket analysis
-print('')
-print('=== Volume Bucket PnL Analysis ===')
-buckets = {'spike (>=1.5x)': [], 'normal (0.5-1.5x)': [], 'dry (<0.5x)': []}
-for t in trades_b:
-    if not isinstance(t, dict): continue
-    vr = t.get('features', {}).get('volume_ratio')
-    pnl = t.get('pnl', 0)
-    if vr is None: continue
-    if vr >= 1.5: buckets['spike (>=1.5x)'].append(pnl)
-    elif vr < 0.5: buckets['dry (<0.5x)'].append(pnl)
-    else: buckets['normal (0.5-1.5x)'].append(pnl)
-for name, pnls in buckets.items():
-    if pnls:
-        wr2 = sum(1 for p in pnls if p > 0) / len(pnls)
-        avg = sum(pnls) / len(pnls)
-        print('  ' + name + ': n=' + str(len(pnls)) + ' avg_pnl=$' + str(round(avg,2)) + ' wr=' + str(round(wr2*100,1)) + '%')
-    else:
-        print('  ' + name + ': n=0')
+print('\nArm B: Volume modifier ON (surge_boost=0.05)')
+m_b = run_bt(cfg_b, data, 'B-VolBoost (surge=0.05)')
+
+# Extract metrics
+def get(m, key, alt_key=None):
+    v = m.get(key, m.get(alt_key, 0) if alt_key else 0)
+    return v
+
+cagr_a = get(m_a, 'cagr'); cagr_a = cagr_a*100 if abs(cagr_a)<2 else cagr_a
+cagr_b = get(m_b, 'cagr'); cagr_b = cagr_b*100 if abs(cagr_b)<2 else cagr_b
+sh_a = get(m_a, 'sharpe', 'sharpe_ratio')
+sh_b = get(m_b, 'sharpe', 'sharpe_ratio')
+pf_a = get(m_a, 'profit_factor')
+pf_b = get(m_b, 'profit_factor')
+wr_a = get(m_a, 'win_rate'); wr_a = wr_a*100 if wr_a<2 else wr_a
+wr_b = get(m_b, 'win_rate'); wr_b = wr_b*100 if wr_b<2 else wr_b
+tr_a = get(m_a, 'total_trades')
+tr_b = get(m_b, 'total_trades')
+
+print('\n=== RESULTS SUMMARY ===')
+print(f'                    Baseline     VolBoost    Delta')
+print(f'Total Trades:       {tr_a:<12} {tr_b:<12} {tr_b-tr_a:+}')
+print(f'CAGR:               {cagr_a:<12.2f} {cagr_b:<12.2f} {cagr_b-cagr_a:+.2f}%')
+print(f'Sharpe:             {sh_a:<12.3f} {sh_b:<12.3f} {sh_b-sh_a:+.3f}')
+print(f'Profit Factor:      {pf_a:<12.3f} {pf_b:<12.3f} {pf_b-pf_a:+.3f}')
+print(f'Win Rate:           {wr_a:<12.1f} {wr_b:<12.1f} {wr_b-wr_a:+.1f}%')
 
 # Verdict
-improve = sum([
-    (m_b.get('cagr',0) or 0) > (m_a.get('cagr',0) or 0) + 0.001,
-    (m_b.get('sharpe_ratio',0) or 0) > (m_a.get('sharpe_ratio',0) or 0) + 0.01,
-    (m_b.get('profit_factor',0) or 0) > (m_a.get('profit_factor',0) or 0) + 0.01,
-    (m_b.get('max_drawdown',0) or 0) > (m_a.get('max_drawdown',0) or 0) + 0.001,
+improvements = sum([
+    cagr_b > cagr_a,
+    sh_b > sh_a,
+    pf_b > pf_a,
+    wr_b > wr_a,
 ])
-keep = improve >= 2 and (m_b.get('cagr',0) or 0) >= (m_a.get('cagr',0) or 0)
-verdict = 'ACCEPT — volume boost improves performance' if keep else 'REJECT — revert to info-only'
-print('')
-print('Improvements: ' + str(improve) + '/4 | Verdict: ' + verdict)
-
-if not keep:
-    base['strategies']['mean_reversion']['volume']['surge_boost'] = 0.0
-    with open('config/active_config.json', 'w') as f: json.dump(base, f, indent=2)
-    print('  config reverted: surge_boost=0.0 (info-only)')
+print(f'\nVolume boost improved {improvements}/4 metrics')
+if improvements >= 3:
+    verdict = 'ENABLE volume boost (surge_boost=0.05)'
+elif improvements <= 1:
+    verdict = 'DISABLE volume boost (keep at 0.0)'
 else:
-    print('  config kept: surge_boost=0.05')
+    verdict = 'MARGINAL - inspect trade distribution before deciding'
+print(f'Verdict: {verdict}')
 
 results = {
-    'test': 'phase3_volume_spike', 'date': '2026-02-20',
-    'volume_config': base['strategies']['mean_reversion']['volume'],
-    'baseline_A': {k: m_a.get(k) for k in keys},
-    'volume_B': {k: m_b.get(k) for k in keys},
-    'known_baseline': BASELINE,
-    'improvements_of_4': improve, 'verdict': verdict, 'kept': keep,
+    'arm_a': m_a, 'arm_b': m_b,
+    'summary': {
+        'cagr_delta': round(cagr_b - cagr_a, 3),
+        'sharpe_delta': round(sh_b - sh_a, 3),
+        'pf_delta': round(pf_b - pf_a, 3),
+        'wr_delta': round(wr_b - wr_a, 3),
+        'improvements_of_4': improvements,
+        'verdict': verdict,
+    }
 }
 with open('backtest/results/phase3_volume_spike.json', 'w') as f:
-    json.dump(results, f, indent=2)
-print('Results saved to backtest/results/phase3_volume_spike.json')
+    json.dump(results, f, indent=2, default=str)
+print('\nResults saved to backtest/results/phase3_volume_spike.json')
