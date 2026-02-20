@@ -166,6 +166,10 @@ def generate():
     total_pnl = round(equity - seq, 2)
     total_pnl_pct = round(total_pnl / seq * 100, 2) if seq > 0 else 0
 
+    # ---- Fee / commission config ----
+    fees_cfg = config.get("fees", {})
+    commission_per_trade = fees_cfg.get("commission_per_trade", 3.0)
+
     # ---- Open positions with current prices ----
     open_pos = []
     for p in positions:
@@ -188,7 +192,19 @@ def generate():
             "shares": sh, "unrealized_pnl": upnl, "unrealized_pnl_pct": upnl_pct,
             "stop_price": p.get("stop_price", 0),
             "take_profit": p.get("take_profit"), "days_held": dh,
+            "commission": commission_per_trade,
         })
+
+    # ---- Commission / P&L breakdown ----
+    market_pnl = round(sum(p["unrealized_pnl"] for p in open_pos), 2)
+    total_entry_value = round(sum(p.get("entry_value", 0) for p in positions), 2)
+    cash_spent = round(seq - cash, 2)
+    total_commissions_calc = round(cash_spent - total_entry_value, 2)
+    # Also compute from known per-trade commission × number of positions
+    total_commissions = round(len(positions) * commission_per_trade, 2)
+    # Use the calculated value if it makes sense, otherwise use per-trade × count
+    if abs(total_commissions_calc - total_commissions) > 1.0:
+        total_commissions = total_commissions_calc  # trust the actual cash gap
 
     # ---- Win rate from closed trades ----
     closed = portfolio.get("closed_trades", []) or ledger or []
@@ -342,6 +358,9 @@ def generate():
             "starting_equity": seq,
             "total_pnl": total_pnl,
             "total_pnl_pct": total_pnl_pct,
+            "market_pnl": market_pnl,
+            "total_commissions": total_commissions,
+            "commission_per_trade": commission_per_trade,
             "open_positions": open_pos,
             "num_open": len(positions),
             "win_rate": win_rate,
