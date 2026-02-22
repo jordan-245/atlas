@@ -50,12 +50,24 @@ def load_config():
 
 
 def fetch_closing_prices(tickers):
-    """Fetch latest closing prices for held tickers."""
+    """Fetch latest OHLC prices for held tickers.
+
+    Returns three dicts:
+      prices  - closing prices  (used for equity, MAE/MFE, report)
+      lows    - intraday lows   (used for stop-loss checks)
+      highs   - intraday highs  (used for take-profit checks)
+
+    Using intraday lows/highs ensures a stop or TP that was breached
+    during the session is caught even if the close recovered above/below
+    the trigger level — matching the backtest engine behaviour.
+    """
     import pandas as pd
     from data.ingest import download_universe
 
-    log.info(f"Fetching closing prices for {len(tickers)} tickers")
-    prices = {}
+    log.info(f"Fetching OHLC prices for {len(tickers)} tickers")
+    prices = {}  # close prices
+    lows   = {}  # intraday lows  (stop-loss)
+    highs  = {}  # intraday highs (take-profit)
     download_universe(tickers, use_cache=False)  # Force fresh download
 
     for ticker in tickers:
@@ -65,47 +77,77 @@ def fetch_closing_prices(tickers):
             try:
                 df = pd.read_parquet(cache_path)
                 if not df.empty and "close" in df.columns:
-                    prices[ticker] = float(df["close"].iloc[-1])
+                    last = df.iloc[-1]
+                    prices[ticker] = float(last["close"])
+                    lows[ticker]   = float(last["low"])  if "low"  in df.columns else prices[ticker]
+                    highs[ticker]  = float(last["high"]) if "high" in df.columns else prices[ticker]
             except Exception as e:
                 log.warning(f"Failed to read price for {ticker}: {e}")
 
-    log.info(f"Got closing prices for {len(prices)}/{len(tickers)} tickers")
-    return prices
+    log.info(f"Got OHLC prices for {len(prices)}/{len(tickers)} tickers")
+    return prices, lows, highs
 
 
-def check_stop_losses(portfolio, prices, trade_date, dry_run):
-    """Check and execute stop-loss exits."""
+
+def check_stop_losses(portfolio, prices, lows, trade_date, dry_run):
+    """Check and execute stop-loss exits using intraday lows.
+
+    Uses the day's intraday low (not just the close) to detect stop breaches,
+    consistent with the backtest engine. Exit is recorded at the stop price
+    (simulating a stop-market order), not at the intraday low.
+    """
     exits = []
     for pos in list(portfolio.positions):
-        if pos.ticker in prices:
-            price = prices[pos.ticker]
-            if price <= pos.stop_price:
-                log.warning(f"STOP HIT: {pos.ticker} ${price:.4f} <= stop ${pos.stop_price:.4f}")
-                if not dry_run:
-                    result = portfolio.execute_exit(pos.ticker, price, trade_date, "stop_loss")
-                    if result:
-                        exits.append(result)
-                else:
-                    exits.append({"ticker": pos.ticker, "type": "stop_loss",
-                                  "current_price": price, "stop_price": pos.stop_price, "dry_run": True})
+        if pos.ticker not in prices:
+            continue
+        intraday_low = lows.get(pos.ticker, prices[pos.ticker])
+        close_price  = prices[pos.ticker]
+        if intraday_low <= pos.stop_price:
+            exit_price = pos.stop_price  # simulate stop-market fill at stop level
+            log.warning(
+                f"STOP HIT: {pos.ticker} intraday low ${intraday_low:.4f} "
+                f"<= stop ${pos.stop_price:.4f} (close ${close_price:.4f}) "
+                f"-> exit at ${exit_price:.4f}"
+            )
+            if not dry_run:
+                result = portfolio.execute_exit(pos.ticker, exit_price, trade_date, "stop_loss")
+                if result:
+                    exits.append(result)
+            else:
+                exits.append({"ticker": pos.ticker, "type": "stop_loss",
+                              "intraday_low": intraday_low, "stop_price": pos.stop_price,
+                              "exit_price": exit_price, "dry_run": True})
     return exits
 
 
-def check_take_profits(portfolio, prices, trade_date, dry_run):
-    """Check and execute take-profit exits."""
+def check_take_profits(portfolio, prices, highs, trade_date, dry_run):
+    """Check and execute take-profit exits using intraday highs.
+
+    Uses the day's intraday high (not just the close) to detect TP hits,
+    consistent with the backtest engine. Exit is recorded at the take-profit
+    price (simulating a limit order fill at the TP level).
+    """
     exits = []
     for pos in list(portfolio.positions):
-        if pos.take_profit and pos.ticker in prices:
-            price = prices[pos.ticker]
-            if price >= pos.take_profit:
-                log.info(f"TP HIT: {pos.ticker} ${price:.4f} >= target ${pos.take_profit:.4f}")
-                if not dry_run:
-                    result = portfolio.execute_exit(pos.ticker, price, trade_date, "take_profit")
-                    if result:
-                        exits.append(result)
-                else:
-                    exits.append({"ticker": pos.ticker, "type": "take_profit",
-                                  "current_price": price, "take_profit": pos.take_profit, "dry_run": True})
+        if not pos.take_profit or pos.ticker not in prices:
+            continue
+        intraday_high = highs.get(pos.ticker, prices[pos.ticker])
+        close_price   = prices[pos.ticker]
+        if intraday_high >= pos.take_profit:
+            exit_price = pos.take_profit  # simulate limit fill at TP level
+            log.info(
+                f"TP HIT: {pos.ticker} intraday high ${intraday_high:.4f} "
+                f">= target ${pos.take_profit:.4f} (close ${close_price:.4f}) "
+                f"-> exit at ${exit_price:.4f}"
+            )
+            if not dry_run:
+                result = portfolio.execute_exit(pos.ticker, exit_price, trade_date, "take_profit")
+                if result:
+                    exits.append(result)
+            else:
+                exits.append({"ticker": pos.ticker, "type": "take_profit",
+                              "intraday_high": intraday_high, "take_profit": pos.take_profit,
+                              "exit_price": exit_price, "dry_run": True})
     return exits
 
 
@@ -241,8 +283,8 @@ def main():
     held_tickers = [pos.ticker for pos in portfolio.positions]
     log.info(f"Held positions: {held_tickers}")
 
-    # Fetch closing prices
-    prices = fetch_closing_prices(held_tickers)
+    # Fetch OHLC prices (close for equity/report, low for stops, high for TPs)
+    prices, lows, highs = fetch_closing_prices(held_tickers)
 
     if not prices:
         log.error("Could not fetch any closing prices. Aborting settlement.")
@@ -259,11 +301,11 @@ def main():
 
     # Check stop-losses
     log.info("Checking stop-losses...")
-    stop_exits = check_stop_losses(portfolio, prices, trade_date, args.dry_run)
+    stop_exits = check_stop_losses(portfolio, prices, lows, trade_date, args.dry_run)
 
     # Check take-profits
     log.info("Checking take-profits...")
-    tp_exits = check_take_profits(portfolio, prices, trade_date, args.dry_run)
+    tp_exits = check_take_profits(portfolio, prices, highs, trade_date, args.dry_run)
 
     # Check daily drawdown
     halted, dd = portfolio.check_daily_drawdown(prices)
