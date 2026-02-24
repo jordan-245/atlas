@@ -8,7 +8,7 @@ Three validation tests:
 
 Expected runtime: ~60-90 minutes (each backtest ~280-360s)
 """
-import json, sys, time, copy, random, datetime
+import json, sys, time, copy, random, datetime, argparse
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -26,8 +26,8 @@ from strategies.opening_gap import OpeningGap
 # CONSTANTS
 # ============================================================
 DATA_DIR = PROJECT_ROOT / 'data' / 'cache'
-CONFIG_PATH = PROJECT_ROOT / 'config' / 'active_config.json'
-OUTPUT_PATH = PROJECT_ROOT / 'backtest' / 'results' / 'v92_oos_validation.json'
+DEFAULT_CONFIG_PATH = PROJECT_ROOT / 'config' / 'active_config.json'
+DEFAULT_OUTPUT_PATH = PROJECT_ROOT / 'backtest' / 'results' / 'v92_oos_validation.json'
 SPLIT_DATE = '2025-06-01'
 WARMUP_DATE = '2025-03-01'  # 3-month overlap for indicator warmup
 MIN_ROWS = 60
@@ -87,9 +87,35 @@ def load_data():
     return data_dict
 
 
-def load_config():
-    """Load active config."""
-    with open(CONFIG_PATH) as f:
+def resolve_path(path_value, default_path):
+    p = Path(path_value) if path_value else Path(default_path)
+    if not p.is_absolute():
+        p = PROJECT_ROOT / p
+    return p
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Run OOS validation against a specified config JSON and output JSON path."
+    )
+    parser.add_argument(
+        '--config-path',
+        type=str,
+        default=None,
+        help='Config JSON to validate (default: config/active_config.json)',
+    )
+    parser.add_argument(
+        '--output-path',
+        type=str,
+        default=None,
+        help='Output path for validation JSON (default: backtest/results/v92_oos_validation.json)',
+    )
+    return parser.parse_args()
+
+
+def load_config(config_path):
+    """Load config JSON."""
+    with open(config_path) as f:
         return json.load(f)
 
 
@@ -226,11 +252,16 @@ def analyze_walk_forward_windows(result):
 
 
 def main():
+    args = parse_args()
+    config_path = resolve_path(args.config_path, DEFAULT_CONFIG_PATH)
+    output_path = resolve_path(args.output_path, DEFAULT_OUTPUT_PATH)
     overall_start = time.time()
     results = {
         'validation_type': 'v9.2_oos_validation',
         'timestamp': datetime.datetime.now().isoformat(),
         'config_version': 'unknown',
+        'config_path': str(config_path),
+        'output_path': str(output_path),
         'split_date': SPLIT_DATE,
         'warmup_date': WARMUP_DATE,
         'n_perturbation_trials': N_PERTURBATION_TRIALS,
@@ -247,8 +278,9 @@ def main():
     data_all = load_data()
     print(f"Loaded {len(data_all)} tickers")
 
-    cfg = load_config()
+    cfg = load_config(config_path)
     print(f"Config: {cfg.get('version', 'unknown')}")
+    print(f"Config path: {config_path}")
     print(f"Split date: {SPLIT_DATE}")
     print(f"Warmup date for OOS: {WARMUP_DATE}")
     print(f"Perturbation trials: {N_PERTURBATION_TRIALS}")
@@ -406,8 +438,8 @@ def main():
         'total_runtime_min': round(total_runtime_s / 60, 1),
     }
 
-    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(OUTPUT_PATH, 'w') as f:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, 'w') as f:
         json.dump(results, f, indent=2, default=str)
 
     print("\n" + "=" * 70)
@@ -417,7 +449,7 @@ def main():
     print(f"Test2: {test2_verdict}")
     print(f"Test3: {test3_verdict}")
     print(f"Overall: {overall}")
-    print(f"Saved: {OUTPUT_PATH}")
+    print(f"Saved: {output_path}")
     print(f"Runtime: {total_runtime_s:.1f}s ({total_runtime_s/60:.1f} min)")
     return 0
 

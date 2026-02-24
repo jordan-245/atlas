@@ -184,15 +184,42 @@ function buildCliInvocation(subcommand: string, params?: RunArgs) {
 function resolveJobCommand(job: AtlasJobName, rawArgs?: RunArgs) {
   const args = { ...(rawArgs ?? {}) };
   switch (job) {
-    case "health_check":
+    case "health_check": {
+      const configPath = consumeArg<string>(args, "configPath");
+      const reportPath = consumeArg<string>(args, "reportPath");
+      const months = consumeArg<number | string>(args, "months");
       assertNoExtraArgs(job, args);
-      return buildPythonScriptInvocation("scripts/health_check.py", []);
-    case "reoptimize_full_universe":
+      const scriptArgs = ["scripts/health_check.py"];
+      if (configPath) scriptArgs.push("--config-path", String(configPath));
+      if (reportPath) scriptArgs.push("--report-path", String(reportPath));
+      if (months !== undefined) scriptArgs.push("--months", String(months));
+      return buildPythonScriptInvocation(scriptArgs[0], scriptArgs.slice(1));
+    }
+    case "reoptimize_full_universe": {
+      const candidatePath = consumeArg<string>(args, "candidatePath");
+      const resultsPath = consumeArg<string>(args, "resultsPath");
+      const backupPath = consumeArg<string>(args, "backupPath");
+      const promoteActiveRaw = consumeArg<boolean | string>(args, "promoteActive");
+      const promoteActive =
+        promoteActiveRaw === true ||
+        (typeof promoteActiveRaw === "string" && promoteActiveRaw.toLowerCase() === "true");
       assertNoExtraArgs(job, args);
-      return buildPythonScriptInvocation("scripts/reoptimize_full_universe.py", []);
-    case "validate_oos":
+      const scriptArgs = ["scripts/reoptimize_full_universe.py"];
+      if (candidatePath) scriptArgs.push("--candidate-path", String(candidatePath));
+      if (resultsPath) scriptArgs.push("--results-path", String(resultsPath));
+      if (backupPath) scriptArgs.push("--backup-path", String(backupPath));
+      if (promoteActive === true) scriptArgs.push("--promote-active");
+      return buildPythonScriptInvocation(scriptArgs[0], scriptArgs.slice(1));
+    }
+    case "validate_oos": {
+      const configPath = consumeArg<string>(args, "configPath");
+      const outputPath = consumeArg<string>(args, "outputPath");
       assertNoExtraArgs(job, args);
-      return buildPythonScriptInvocation("scripts/validate_oos.py", []);
+      const scriptArgs = ["scripts/validate_oos.py"];
+      if (configPath) scriptArgs.push("--config-path", String(configPath));
+      if (outputPath) scriptArgs.push("--output-path", String(outputPath));
+      return buildPythonScriptInvocation(scriptArgs[0], scriptArgs.slice(1));
+    }
     case "auto_reoptimize":
       assertNoExtraArgs(job, args);
       return buildPythonScriptInvocation("scripts/auto_reoptimize.py", []);

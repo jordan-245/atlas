@@ -4,7 +4,7 @@
 Key change from original: optimizes on ALL 185 tickers (>=100 rows)
 instead of just top 25 by volume.
 """
-import sys, json, os, copy, time, logging
+import sys, json, os, copy, time, logging, argparse, shutil
 from pathlib import Path
 from datetime import datetime
 
@@ -34,6 +34,55 @@ STRAT_MAP = {
 ACTIVE = ['mean_reversion','bb_squeeze','trend_following','opening_gap','dividend_capture']
 
 RESULTS_FILE = PROJECT / 'backtest' / 'results' / 'reoptimization_full_universe.json'
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Run full-universe reoptimization and write a staged candidate config by default."
+    )
+    parser.add_argument(
+        '--candidate-path',
+        type=str,
+        default=None,
+        help='Path to write optimized candidate config JSON (default: config/config_candidate_reoptimized_<timestamp>.json)',
+    )
+    parser.add_argument(
+        '--results-path',
+        type=str,
+        default=None,
+        help='Path to write reoptimization results JSON (default: backtest/results/reoptimization_full_universe.json)',
+    )
+    parser.add_argument(
+        '--backup-path',
+        type=str,
+        default=None,
+        help='Optional explicit backup path for the current active config.',
+    )
+    parser.add_argument(
+        '--promote-active',
+        action='store_true',
+        help='Also overwrite config/active_config.json with the optimized config (default: false).',
+    )
+    return parser.parse_args()
+
+
+def resolve_output_path(path_str, default_path):
+    if not path_str:
+        return Path(default_path)
+    p = Path(path_str)
+    if not p.is_absolute():
+        p = PROJECT / p
+    return p
+
+
+def default_candidate_path():
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    return PROJECT / 'config' / f'config_candidate_reoptimized_{ts}.json'
+
+
+def default_backup_path():
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    return PROJECT / 'config' / f'active_config_pre_reopt_{ts}.json'
 
 def load_full_universe():
     cache_dir = PROJECT / 'data' / 'cache'
@@ -217,9 +266,17 @@ def optimize_strategy(config, strat_name, data, results_tracker):
 
 
 if __name__ == '__main__':
+    args = parse_args()
+    RESULTS_FILE = resolve_output_path(args.results_path, RESULTS_FILE)
+    candidate_config_path = resolve_output_path(args.candidate_path, default_candidate_path())
+    backup_config_path = resolve_output_path(args.backup_path, default_backup_path())
+
     print('=' * 70, flush=True)
     print('ATLAS-ASX FULL-UNIVERSE RE-OPTIMIZATION', flush=True)
     print(f'Started: {datetime.now().isoformat()}', flush=True)
+    print(f'Results file: {RESULTS_FILE}', flush=True)
+    print(f'Candidate config target: {candidate_config_path}', flush=True)
+    print(f'Promote active config: {args.promote_active}', flush=True)
     print('=' * 70, flush=True)
 
     config = get_active_config()
@@ -227,12 +284,9 @@ if __name__ == '__main__':
     print(f'Loaded {len(data)} tickers (full universe, >= 100 rows)', flush=True)
 
     # Save pre-optimization config backup
-    import shutil
-    shutil.copy2(
-        PROJECT / 'config' / 'active_config.json',
-        PROJECT / 'config' / 'config_v9.1_pre_reoptimization.json'
-    )
-    print('Saved pre-optimization config backup', flush=True)
+    backup_config_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(PROJECT / 'config' / 'active_config.json', backup_config_path)
+    print(f'Saved pre-optimization config backup to {backup_config_path}', flush=True)
 
     # Run baseline combined
     print(f'\n{"="*70}', flush=True)
@@ -246,7 +300,13 @@ if __name__ == '__main__':
         'timestamp': datetime.now().isoformat(),
         'n_tickers': len(data),
         'baseline_combined': bl,
+        'results_path': str(RESULTS_FILE),
+        'backup_config_path': str(backup_config_path),
+        'active_config_path': str(PROJECT / 'config' / 'active_config.json'),
+        'candidate_config_path': str(candidate_config_path),
+        'active_config_overwritten': False,
     }
+    RESULTS_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(RESULTS_FILE, 'w') as f:
         json.dump(results_tracker, f, indent=2, default=str)
 
@@ -279,15 +339,26 @@ if __name__ == '__main__':
         flush=True
     )
 
-    # Persist artifacts and promote optimized config for downstream validation
+    # Persist artifacts and write optimized candidate config (and optionally promote active)
     results_tracker['final_combined'] = final_combined
+    results_tracker['candidate_config_path'] = str(candidate_config_path)
+    results_tracker['active_config_overwritten'] = bool(args.promote_active)
+
+    candidate_config_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(candidate_config_path, 'w') as f:
+        json.dump(config, f, indent=2)
+    print(f'Saved optimized candidate config to {candidate_config_path}', flush=True)
+
+    if args.promote_active:
+        active_config_path = PROJECT / 'config' / 'active_config.json'
+        with open(active_config_path, 'w') as f:
+            json.dump(config, f, indent=2)
+        print(f'Promoted optimized config to {active_config_path}', flush=True)
+    else:
+        print('Active config not modified (staged candidate only)', flush=True)
+
     results_tracker['finished_at'] = datetime.now().isoformat()
     with open(RESULTS_FILE, 'w') as f:
         json.dump(results_tracker, f, indent=2, default=str)
-
-    active_config_path = PROJECT / 'config' / 'active_config.json'
-    with open(active_config_path, 'w') as f:
-        json.dump(config, f, indent=2)
-    print(f'Saved optimized config to {active_config_path}', flush=True)
 
     print('\nReoptimization complete.', flush=True)

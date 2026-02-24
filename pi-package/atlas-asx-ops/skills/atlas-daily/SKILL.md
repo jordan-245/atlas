@@ -19,13 +19,16 @@ Use this skill when operating the day-to-day paper-trading workflow.
 1. Call `atlas_jobs_list_catalog` once if job names are unclear.
 2. Run `atlas_jobs_run` with `job=cli_plan` (optionally `args.date=YYYY-MM-DD`).
 3. Summarize `paper_engine/plans/plan_YYYY-MM-DD.json` risk and entries before any approval.
-4. Require explicit user approval before `cli_approve` and `cli_paper_run`.
-5. Run `atlas_jobs_run` with `job=dashboard_generate_data` after plan or execution changes.
+4. Run `atlas_risk_check_plan_gate(action="approve", ...)` before any plan approval.
+5. Require explicit user approval, then use `atlas_risk_approve_plan(confirmed=true, ...)` instead of calling `cli_approve` directly.
+6. Run `atlas_risk_check_plan_gate(action="execute", ...)` before `cli_paper_run`.
+7. Require explicit user approval before `cli_paper_run`.
+8. Run `atlas_jobs_run` with `job=dashboard_generate_data` after plan or execution changes.
 
 ## Safety rules
 
 - Do not use `daily_automation` for normal operations until auto-approval behavior is removed or gated.
-- Treat `cli_approve` and `cli_paper_run` as high-risk actions requiring user confirmation.
+- Treat `atlas_risk_approve_plan` and `cli_paper_run` as high-risk actions requiring user confirmation.
 - If `config/active_config.json` has `"approval_required": true`, preserve that intent.
 
 ## Repo-specific notes

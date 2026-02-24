@@ -146,6 +146,8 @@ function summarizeHealthCheck(data: unknown) {
     status: obj.status ?? null,
     date: obj.date ?? null,
     config_version: obj.config_version ?? null,
+    config_path: obj.config_path ?? null,
+    report_path: obj.report_path ?? null,
     metrics: {
       cagr_pct: normalizePctLike(metrics.cagr_pct),
       sharpe: normalizePctLike(metrics.sharpe),
@@ -214,6 +216,10 @@ function summarizeReoptimization(data: unknown) {
     artifact_type: "reoptimization_full_universe",
     timestamp: obj.timestamp ?? null,
     n_tickers: safeNumber(obj.n_tickers),
+    candidate_config_path: obj.candidate_config_path ?? null,
+    backup_config_path: obj.backup_config_path ?? null,
+    active_config_path: obj.active_config_path ?? null,
+    active_config_overwritten: obj.active_config_overwritten ?? null,
     baseline_combined: {
       cagr_pct: normalizePctLike(safeNumber(baseline.cagr) !== undefined ? (baseline.cagr as number) * 100 : undefined),
       sharpe: normalizePctLike(baseline.sharpe),
@@ -268,6 +274,9 @@ function summarizeValidateOos(data: unknown) {
     artifact_type: "validate_oos",
     validation_type: obj.validation_type ?? null,
     timestamp: obj.timestamp ?? null,
+    config_version: obj.config_version ?? null,
+    config_path: obj.config_path ?? null,
+    output_path: obj.output_path ?? null,
     split_date: obj.split_date ?? null,
     summary: {
       test1_verdict: summary.test1_verdict ?? null,

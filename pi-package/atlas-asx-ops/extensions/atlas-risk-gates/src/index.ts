@@ -1,6 +1,14 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 type JsonRecord = Record<string, unknown>;
@@ -58,6 +66,34 @@ function asNumber(value: unknown): number | undefined {
 
 function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function readJsonObjectOrNull(path: string): JsonRecord | null {
+  if (!existsSync(path)) return null;
+  try {
+    const parsed = readJson(path);
+    return asRecord(parsed) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function listConfigBackups(cwd?: string): Array<{ path: string; bytes: number; mtime: string; name: string }> {
+  const dir = resolve(cwd ?? process.cwd(), "config");
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((name) => /^active_config_backup_.*\.json$/i.test(name))
+    .map((name) => {
+      const path = join(dir, name);
+      const stat = statSync(path);
+      return {
+        path,
+        name,
+        bytes: stat.size,
+        mtime: stat.mtime.toISOString()
+      };
+    })
+    .sort((a, b) => b.mtime.localeCompare(a.mtime));
 }
 
 function countArray(value: unknown): number {
@@ -265,13 +301,190 @@ function evaluateConfigPromotionGate(
   };
 }
 
+function evaluateReoptimizationArtifacts(
+  params: {
+    validationPath: string;
+    reoptimizationPath?: string;
+    baselineValidationPath?: string;
+    minOosSharpe?: number;
+    minOosProfitFactor?: number;
+    maxCagrDegradationDropPct?: number;
+    minWindowWinRatePct?: number;
+    requirePerturbationRobust?: boolean;
+    requireOverallPass?: boolean;
+  }
+) {
+  const blockers: string[] = [];
+  const warnings: string[] = [];
+
+  const validation = loadJsonObjectOrThrow(params.validationPath, "Validation artifact");
+  const t1 = asRecord(validation.test1_time_period_split) ?? {};
+  const t2 = asRecord(validation.test2_perturbation) ?? {};
+  const t3 = asRecord(validation.test3_walkforward_consistency) ?? {};
+  const summary = asRecord(validation.summary) ?? {};
+  const oos = asRecord(t1.out_of_sample) ?? {};
+  const degradation = asRecord(t1.degradation_pct) ?? {};
+  const windowAnalysis = asRecord(t3.window_analysis) ?? {};
+
+  const thresholds = {
+    minOosSharpe: params.minOosSharpe ?? 0,
+    minOosProfitFactor: params.minOosProfitFactor ?? 1.0,
+    maxCagrDegradationDropPct: params.maxCagrDegradationDropPct ?? 50,
+    minWindowWinRatePct: params.minWindowWinRatePct ?? 50,
+    requirePerturbationRobust: params.requirePerturbationRobust ?? true,
+    requireOverallPass: params.requireOverallPass ?? false
+  };
+
+  const oosSharpe = asNumber(oos.sharpe);
+  const oosPf = asNumber(oos.profit_factor);
+  const cagrDeg = asNumber(degradation.cagr_pct);
+  const winRateWindows = asNumber(windowAnalysis.win_rate_windows_pct);
+  const robust = typeof t2.robust === "boolean" ? t2.robust : undefined;
+  const overallVerdict = asString(summary.overall_verdict);
+
+  if (oosSharpe !== undefined && oosSharpe < thresholds.minOosSharpe) {
+    blockers.push(`OOS Sharpe ${oosSharpe} is below threshold ${thresholds.minOosSharpe}.`);
+  }
+  if (oosPf !== undefined && oosPf < thresholds.minOosProfitFactor) {
+    blockers.push(`OOS Profit Factor ${oosPf} is below threshold ${thresholds.minOosProfitFactor}.`);
+  }
+  if (cagrDeg !== undefined && cagrDeg < -Math.abs(thresholds.maxCagrDegradationDropPct)) {
+    blockers.push(
+      `OOS CAGR degradation ${cagrDeg}% exceeds allowed drop -${Math.abs(thresholds.maxCagrDegradationDropPct)}%.`
+    );
+  }
+  if (winRateWindows !== undefined && winRateWindows < thresholds.minWindowWinRatePct) {
+    blockers.push(
+      `Walk-forward window win rate ${winRateWindows}% is below threshold ${thresholds.minWindowWinRatePct}%.`
+    );
+  }
+  if (thresholds.requirePerturbationRobust && robust === false) {
+    blockers.push("Validation perturbation test reported robust=false.");
+  }
+
+  if (overallVerdict) {
+    if (overallVerdict === "PASS") {
+      // okay
+    } else if (thresholds.requireOverallPass) {
+      blockers.push(`Validation summary overall_verdict is ${overallVerdict}; PASS required.`);
+    } else {
+      warnings.push(`Validation summary overall_verdict is ${overallVerdict}.`);
+    }
+  } else {
+    warnings.push("Validation summary overall_verdict missing.");
+  }
+
+  let reoptSummary: JsonRecord | null = null;
+  if (params.reoptimizationPath) {
+    const reopt = loadJsonObjectOrThrow(params.reoptimizationPath, "Reoptimization artifact");
+    const baseline = asRecord(reopt.baseline_combined) ?? {};
+    const finalCombined = asRecord(reopt.final_combined ?? reopt.optimized_combined) ?? {};
+    const baseSharpe = asNumber(baseline.sharpe);
+    const finalSharpe = asNumber(finalCombined.sharpe);
+    const baseCagrRaw = asNumber(baseline.cagr);
+    const finalCagrRaw = asNumber(finalCombined.cagr);
+    const baseCagrPct = baseCagrRaw === undefined ? undefined : (Math.abs(baseCagrRaw) < 2 ? baseCagrRaw * 100 : baseCagrRaw);
+    const finalCagrPct = finalCagrRaw === undefined ? undefined : (Math.abs(finalCagrRaw) < 2 ? finalCagrRaw * 100 : finalCagrRaw);
+
+    if (
+      baseSharpe !== undefined &&
+      finalSharpe !== undefined &&
+      finalSharpe < baseSharpe
+    ) {
+      warnings.push(`Reoptimization final sharpe decreased ${baseSharpe} -> ${finalSharpe}.`);
+    }
+    if (
+      baseCagrPct !== undefined &&
+      finalCagrPct !== undefined &&
+      finalCagrPct < baseCagrPct
+    ) {
+      warnings.push(`Reoptimization final CAGR decreased ${baseCagrPct}% -> ${finalCagrPct}%.`);
+    }
+
+    reoptSummary = {
+      path: params.reoptimizationPath,
+      candidate_config_path: asString(reopt.candidate_config_path) ?? null,
+      active_config_overwritten: reopt.active_config_overwritten === true,
+      baseline_combined: baseline,
+      final_combined: finalCombined
+    };
+    if (reoptSummary.active_config_overwritten === true) {
+      blockers.push("Reoptimization artifact indicates active_config.json was overwritten (expected staged candidate flow).");
+    }
+  }
+
+  let baselineComparison: JsonRecord | null = null;
+  if (params.baselineValidationPath) {
+    const baselineVal = readJsonObjectOrNull(params.baselineValidationPath);
+    if (baselineVal) {
+      const bt1 = asRecord(baselineVal.test1_time_period_split) ?? {};
+      const boos = asRecord(bt1.out_of_sample) ?? {};
+      const boosSharpe = asNumber(boos.sharpe);
+      const boosPf = asNumber(boos.profit_factor);
+      const boosCagr = asNumber(boos.cagr_pct);
+      baselineComparison = {
+        path: params.baselineValidationPath,
+        oos: {
+          sharpe: boosSharpe ?? null,
+          profit_factor: boosPf ?? null,
+          cagr_pct: boosCagr ?? null
+        }
+      };
+      if (boosSharpe !== undefined && oosSharpe !== undefined && oosSharpe < boosSharpe) {
+        warnings.push(`Candidate OOS Sharpe (${oosSharpe}) is below baseline validation Sharpe (${boosSharpe}).`);
+      }
+      if (boosPf !== undefined && oosPf !== undefined && oosPf < boosPf) {
+        warnings.push(`Candidate OOS Profit Factor (${oosPf}) is below baseline validation PF (${boosPf}).`);
+      }
+      if (boosCagr !== undefined) {
+        const oosCagrPct = asNumber(oos.cagr_pct);
+        if (oosCagrPct !== undefined && oosCagrPct < boosCagr) {
+          warnings.push(`Candidate OOS CAGR (${oosCagrPct}%) is below baseline validation CAGR (${boosCagr}%).`);
+        }
+      }
+    } else {
+      warnings.push(`Baseline validation artifact not found or unreadable: ${params.baselineValidationPath}`);
+    }
+  }
+
+  const verdict = blockers.length > 0 ? "block" : warnings.length > 0 ? "review" : "allow";
+  return {
+    verdict,
+    blockers,
+    warnings,
+    thresholds,
+    validation: {
+      path: params.validationPath,
+      config_version: asString(validation.config_version) ?? null,
+      config_path: asString(validation.config_path) ?? null,
+      output_path: asString(validation.output_path) ?? null,
+      overall_verdict: overallVerdict ?? null,
+      test1: {
+        oos_sharpe: oosSharpe ?? null,
+        oos_profit_factor: oosPf ?? null,
+        oos_cagr_pct: asNumber(oos.cagr_pct) ?? null,
+        cagr_degradation_pct: cagrDeg ?? null
+      },
+      test2: {
+        robust: robust ?? null,
+        collapse_count: asNumber(t2.collapse_count) ?? null
+      },
+      test3: {
+        window_win_rate_pct: winRateWindows ?? null
+      }
+    },
+    reoptimization: reoptSummary,
+    baseline_validation_comparison: baselineComparison
+  };
+}
+
 function riskAuditDir(cwd?: string): string {
   return resolve(cwd ?? process.cwd(), ".pi", "atlas-risk-gates", "audit");
 }
 
 function writeAudit(
   cwd: string | undefined,
-  category: "plan-approval" | "config-promotion",
+  category: "plan-approval" | "config-promotion" | "config-restore",
   record: JsonRecord
 ): string {
   const dir = join(riskAuditDir(cwd), category);
@@ -323,6 +536,42 @@ const ConfigPromotionApplySchema = Type.Object({
   maxRiskPerTradePct: Type.Optional(Type.Number({ minimum: 0 })),
   confirmed: Type.Boolean({
     description: "Must be true to overwrite active config with candidate config."
+  }),
+  dryRun: Type.Optional(Type.Boolean()),
+  approver: Type.Optional(Type.String({ minLength: 1 })),
+  note: Type.Optional(Type.String())
+});
+
+const ReoptPromotionCheckSchema = Type.Object({
+  candidatePath: Type.String({ minLength: 1 }),
+  validationPath: Type.String({ minLength: 1 }),
+  reoptimizationPath: Type.Optional(Type.String({ minLength: 1 })),
+  activePath: Type.Optional(Type.String({ minLength: 1 })),
+  baselineValidationPath: Type.Optional(Type.String({ minLength: 1 })),
+  cwd: Type.Optional(Type.String()),
+  allowDisableApproval: Type.Optional(Type.Boolean()),
+  allowTradingModeChange: Type.Optional(Type.Boolean()),
+  maxRiskPerTradePct: Type.Optional(Type.Number({ minimum: 0 })),
+  minOosSharpe: Type.Optional(Type.Number()),
+  minOosProfitFactor: Type.Optional(Type.Number({ minimum: 0 })),
+  maxCagrDegradationDropPct: Type.Optional(Type.Number({ minimum: 0 })),
+  minWindowWinRatePct: Type.Optional(Type.Number({ minimum: 0, maximum: 100 })),
+  requirePerturbationRobust: Type.Optional(Type.Boolean()),
+  requireOverallPass: Type.Optional(Type.Boolean())
+});
+
+const ConfigBackupListSchema = Type.Object({
+  cwd: Type.Optional(Type.String()),
+  limit: Type.Optional(Type.Number({ minimum: 1, maximum: 200 }))
+});
+
+const ConfigBackupRestoreSchema = Type.Object({
+  cwd: Type.Optional(Type.String()),
+  activePath: Type.Optional(Type.String({ minLength: 1 })),
+  backupPath: Type.Optional(Type.String({ minLength: 1 })),
+  useLatest: Type.Optional(Type.Boolean()),
+  confirmed: Type.Boolean({
+    description: "Must be true to overwrite the active config from a backup."
   }),
   dryRun: Type.Optional(Type.Boolean()),
   approver: Type.Optional(Type.String({ minLength: 1 })),
@@ -511,6 +760,165 @@ export default function atlasRiskGatesExtension(pi: ExtensionAPI) {
           auditPath,
           dryRun: params.dryRun === true,
           gate
+        }
+      };
+    }
+  });
+
+  pi.registerTool({
+    name: "atlas_risk_check_reopt_promotion",
+    label: "Atlas Risk Check Reopt Promotion",
+    description:
+      "Evaluate a staged reoptimization candidate for promotion using config guardrails plus validation/reoptimization artifact thresholds.",
+    parameters: ReoptPromotionCheckSchema,
+    async execute(_toolCallId, params) {
+      const cwd = params.cwd;
+      const activePath = resolvePath(cwd, params.activePath ?? "config/active_config.json");
+      const candidatePath = resolvePath(cwd, params.candidatePath);
+      const validationPath = resolvePath(cwd, params.validationPath);
+      const reoptimizationPath = params.reoptimizationPath
+        ? resolvePath(cwd, params.reoptimizationPath)
+        : undefined;
+      const baselineValidationPath = resolvePath(
+        cwd,
+        params.baselineValidationPath ?? "backtest/results/v92_oos_validation.json"
+      );
+
+      const activeConfig = loadJsonObjectOrThrow(activePath, "Active config");
+      const candidateConfig = loadJsonObjectOrThrow(candidatePath, "Candidate config");
+      const configGate = evaluateConfigPromotionGate(activeConfig, candidateConfig, {
+        allowDisableApproval: params.allowDisableApproval,
+        allowTradingModeChange: params.allowTradingModeChange,
+        maxRiskPerTradePct: params.maxRiskPerTradePct
+      });
+      const artifactGate = evaluateReoptimizationArtifacts({
+        validationPath,
+        reoptimizationPath,
+        baselineValidationPath,
+        minOosSharpe: params.minOosSharpe,
+        minOosProfitFactor: params.minOosProfitFactor,
+        maxCagrDegradationDropPct: params.maxCagrDegradationDropPct,
+        minWindowWinRatePct: params.minWindowWinRatePct,
+        requirePerturbationRobust: params.requirePerturbationRobust,
+        requireOverallPass: params.requireOverallPass
+      });
+
+      const blockers = [...configGate.blockers, ...artifactGate.blockers];
+      const warnings = [...configGate.warnings, ...artifactGate.warnings];
+      const verdict = blockers.length > 0 ? "block" : warnings.length > 0 ? "review" : "allow";
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Reoptimization promotion gate verdict=${verdict} for candidate ${candidatePath}.`
+          }
+        ],
+        details: {
+          verdict,
+          blockers,
+          warnings,
+          activePath,
+          candidatePath,
+          validationPath,
+          reoptimizationPath: reoptimizationPath ?? null,
+          baselineValidationPath,
+          configGate,
+          artifactGate
+        }
+      };
+    }
+  });
+
+  pi.registerTool({
+    name: "atlas_risk_list_config_backups",
+    label: "Atlas Risk List Config Backups",
+    description: "List available active_config_backup_*.json files for rollback decisions.",
+    parameters: ConfigBackupListSchema,
+    async execute(_toolCallId, params) {
+      const backups = listConfigBackups(params.cwd).slice(0, Math.trunc(params.limit ?? 20));
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Found ${backups.length} config backup file(s).`
+          }
+        ],
+        details: {
+          count: backups.length,
+          backups
+        }
+      };
+    }
+  });
+
+  pi.registerTool({
+    name: "atlas_risk_restore_config_backup",
+    label: "Atlas Risk Restore Config Backup",
+    description:
+      "Restore config/active_config.json from a backup file (explicit path or latest backup). Creates an audit record.",
+    parameters: ConfigBackupRestoreSchema,
+    async execute(_toolCallId, params) {
+      if (!params.confirmed) {
+        throw new Error("Refusing to restore config backup: confirmed must be true.");
+      }
+      const cwd = params.cwd;
+      const activePath = resolvePath(cwd, params.activePath ?? "config/active_config.json");
+      const backups = listConfigBackups(cwd);
+      const chosenBackup =
+        params.backupPath
+          ? resolvePath(cwd, params.backupPath)
+          : (params.useLatest !== false ? backups[0]?.path : undefined);
+
+      if (!chosenBackup) {
+        throw new Error("No backup path provided and no active_config_backup_*.json files found.");
+      }
+      if (!existsSync(chosenBackup)) {
+        throw new Error(`Backup file not found: ${chosenBackup}`);
+      }
+
+      const beforeConfig = loadJsonObjectOrThrow(activePath, "Active config");
+      const backupConfig = loadJsonObjectOrThrow(chosenBackup, "Backup config");
+
+      if (!params.dryRun) {
+        ensureDir(dirname(activePath));
+        copyFileSync(chosenBackup, activePath);
+      }
+
+      const auditPath = writeAudit(cwd, "config-restore", {
+        id: `restore_${new Date().toISOString().replace(/[:.]/g, "-")}`,
+        event: "config_restored_from_backup",
+        restored_at: nowIso(),
+        approver: params.approver ?? null,
+        note: params.note ?? null,
+        dry_run: params.dryRun === true,
+        active_path: activePath,
+        backup_path: chosenBackup,
+        active_version_before: asString(beforeConfig.version) ?? null,
+        backup_version: asString(backupConfig.version) ?? null
+      });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text:
+              params.dryRun === true
+                ? `Dry-run restore passed for ${chosenBackup}; active config not modified.`
+                : `Restored ${activePath} from ${chosenBackup}.`
+          }
+        ],
+        details: {
+          activePath,
+          backupPath: chosenBackup,
+          dryRun: params.dryRun === true,
+          auditPath,
+          before: {
+            version: asString(beforeConfig.version) ?? null
+          },
+          restored: {
+            version: asString(backupConfig.version) ?? null
+          }
         }
       };
     }

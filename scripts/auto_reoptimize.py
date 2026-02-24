@@ -34,16 +34,17 @@ def setup_logging():
     )
     return log_file
 
-def run_script(script_name, timeout=3600):
+def run_script(script_name, timeout=3600, extra_args=None):
     """Run a Python script and return (returncode, stdout, stderr)."""
     script_path = SCRIPTS / script_name
     if not script_path.exists():
         logging.error(f"Script not found: {script_path}")
         return -1, "", f"Script not found: {script_path}"
-    logging.info(f"Running: {script_path}")
+    cmd = [sys.executable, str(script_path), *(extra_args or [])]
+    logging.info(f"Running: {' '.join(str(x) for x in cmd)}")
     try:
         result = subprocess.run(
-            [sys.executable, str(script_path)],
+            cmd,
             capture_output=True, text=True, timeout=timeout,
             cwd=str(PROJECT),
         )
@@ -143,26 +144,38 @@ def main():
             old_data = json.load(f)
         old_metrics = old_data.get('test1_time_period_split', {})
 
-    # Step 3: Run Reoptimization
+    # Step 3: Run Reoptimization (stage candidate config; do not overwrite active yet)
     logging.info("\n--- STEP 3: Reoptimization ---")
-    rc, stdout, stderr = run_script('reoptimize_full_universe.py', timeout=7200)
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    candidate_config = CONFIG_DIR / f'config_candidate_auto_reopt_{ts}.json'
+    candidate_validation = RESULTS_DIR / f'v92_oos_validation_candidate_{ts}.json'
+    rc, stdout, stderr = run_script(
+        'reoptimize_full_universe.py',
+        timeout=7200,
+        extra_args=['--candidate-path', str(candidate_config)]
+    )
     if rc != 0:
         logging.error(f"Reoptimization failed (rc={rc})")
-        logging.info("Restoring backup config...")
-        shutil.copy2(backup_path, CONFIG_DIR / 'active_config.json')
+        logging.info("Active config remains unchanged (staged candidate flow).")
+        logging.info(f"Backup remains available: {backup_path}")
         logging.info("Pipeline aborted.")
         return 1
     logging.info("Reoptimization completed successfully.")
+    logging.info(f"Staged candidate config: {candidate_config}")
 
-    # Step 4: Validate new config
+    # Step 4: Validate staged candidate config
     logging.info("\n--- STEP 4: OOS Validation ---")
-    rc, stdout, stderr = run_script('validate_oos.py', timeout=3600)
+    rc, stdout, stderr = run_script(
+        'validate_oos.py',
+        timeout=3600,
+        extra_args=['--config-path', str(candidate_config), '--output-path', str(candidate_validation)]
+    )
     if rc != 0:
         logging.warning(f"OOS validation returned code {rc}, checking results anyway...")
 
     # Step 5: Compare old vs new
     logging.info("\n--- STEP 5: Compare Old vs New ---")
-    new_validation = RESULTS_DIR / 'v92_oos_validation.json'
+    new_validation = candidate_validation
     new_metrics = None
     if new_validation.exists():
         with open(new_validation) as f:
@@ -171,12 +184,15 @@ def main():
 
     if compare_configs(old_metrics, new_metrics):
         logging.info("NEW config is BETTER on both full and OOS periods.")
-        logging.info("Active config updated (already done by reoptimize script).")
+        shutil.copy2(candidate_config, CONFIG_DIR / 'active_config.json')
+        shutil.copy2(candidate_validation, RESULTS_DIR / 'v92_oos_validation.json')
+        logging.info("Promoted candidate config to active_config.json.")
+        logging.info("Promoted candidate validation report to v92_oos_validation.json.")
     else:
         logging.warning("NEW config is NOT better on both dimensions.")
-        logging.info("Restoring previous config from backup...")
-        shutil.copy2(backup_path, CONFIG_DIR / 'active_config.json')
-        logging.info("Previous config restored.")
+        logging.info("Leaving active config unchanged. Candidate retained for review:")
+        logging.info(f"  Candidate config: {candidate_config}")
+        logging.info(f"  Candidate validation: {candidate_validation}")
 
     logging.info("\n" + "=" * 60)
     logging.info("AUTO-REOPTIMIZATION PIPELINE COMPLETE")

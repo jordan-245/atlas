@@ -6,7 +6,7 @@ and flags degradation. Exits 0 (healthy) or 1 (degraded).
 
 Usage: python3 scripts/health_check.py
 """
-import sys, json, time
+import sys, json, time, argparse
 from pathlib import Path
 from datetime import datetime, timedelta
 
@@ -75,24 +75,59 @@ def norm_metric(val):
         return val * 100
     return val
 
+
+def resolve_path(path_value, default_path):
+    p = Path(path_value) if path_value else Path(default_path)
+    if not p.is_absolute():
+        p = PROJECT_ROOT / p
+    return p
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Run Atlas health check against a specified config and write a report JSON."
+    )
+    parser.add_argument(
+        '--config-path',
+        type=str,
+        default=None,
+        help='Config JSON path (default: config/active_config.json)',
+    )
+    parser.add_argument(
+        '--report-path',
+        type=str,
+        default=None,
+        help='Output report JSON path (default: logs/health_check_YYYY-MM-DD.json)',
+    )
+    parser.add_argument(
+        '--months',
+        type=int,
+        default=18,
+        help='Recent data window in months (default: 18)',
+    )
+    return parser.parse_args()
+
 def main():
+    args = parse_args()
     t0 = time.time()
     today = datetime.now().strftime('%Y-%m-%d')
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
-    report_path = LOGS_DIR / f'health_check_{today}.json'
+    default_report_path = LOGS_DIR / f'health_check_{today}.json'
+    report_path = resolve_path(args.report_path, default_report_path)
+    cfg_path = resolve_path(args.config_path, CONFIG_DIR / 'active_config.json')
 
     print(f"=== Atlas-ASX Health Check ({today}) ===")
     print(f"Baseline: CAGR={BASELINE['cagr']:.2f}% Sh={BASELINE['sharpe']:.4f} PF={BASELINE['profit_factor']:.4f}")
 
-    # Load active config
-    cfg_path = CONFIG_DIR / 'active_config.json'
+    # Load config
     with open(cfg_path) as f:
         cfg = json.load(f)
     print(f"Config: {cfg.get('version', 'unknown')}")
+    print(f"Config path: {cfg_path}")
 
     # Load recent data
-    print("Loading last 18 months of data...")
-    data = load_data_recent(months=18, min_rows=60)
+    print(f"Loading last {args.months} months of data...")
+    data = load_data_recent(months=args.months, min_rows=60)
     print(f"  {len(data)} tickers loaded")
 
     if len(data) < 10:
@@ -100,8 +135,11 @@ def main():
             'date': today,
             'status': 'ERROR',
             'message': f'Insufficient tickers: {len(data)} < 10',
+            'config_path': str(cfg_path),
+            'report_path': str(report_path),
             'runtime_s': round(time.time() - t0, 1),
         }
+        report_path.parent.mkdir(parents=True, exist_ok=True)
         with open(report_path, 'w') as f:
             json.dump(report, f, indent=2)
         print(f"ERROR: {report['message']}")
@@ -142,6 +180,8 @@ def main():
     report = {
         'date': today,
         'config_version': cfg.get('version', 'unknown'),
+        'config_path': str(cfg_path),
+        'report_path': str(report_path),
         'status': status,
         'metrics': {
             'cagr_pct': round(cagr, 4),
@@ -154,10 +194,11 @@ def main():
         'thresholds': THRESHOLDS,
         'flags': flags,
         'tickers_tested': len(data),
-        'data_window_months': 18,
+        'data_window_months': args.months,
         'runtime_s': round(elapsed, 1),
     }
 
+    report_path.parent.mkdir(parents=True, exist_ok=True)
     with open(report_path, 'w') as f:
         json.dump(report, f, indent=2)
 
