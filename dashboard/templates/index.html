@@ -733,13 +733,22 @@ tr:hover td { background: rgba(59, 130, 246, 0.03); }
     <div class="section-body" id="body-manual"></div>
   </div>
 
-  <!-- Backtest Metrics -->
-  <div class="section" id="sec-backtest" style="animation-delay:0.50s">
-    <div class="section-head" onclick="toggle('backtest')">
-      <div class="section-title">Backtest Reference</div>
-      <span class="chevron down" id="chev-backtest">▾</span>
+  <!-- Pending Orders -->
+  <div class="section" id="sec-orders" style="display:none;animation-delay:0.50s">
+    <div class="section-head" onclick="toggle('orders')">
+      <div class="section-title">Pending Orders <span class="section-count" id="orders-count">0</span></div>
+      <span class="chevron down" id="chev-orders">▾</span>
     </div>
-    <div class="section-body" id="body-backtest"></div>
+    <div class="section-body" id="body-orders"></div>
+  </div>
+
+  <!-- Broker Account -->
+  <div class="section" id="sec-account" style="display:none;animation-delay:0.52s">
+    <div class="section-head" onclick="toggle('account')">
+      <div class="section-title">Broker Account</div>
+      <span class="chevron down" id="chev-account">▾</span>
+    </div>
+    <div class="section-body" id="body-account"></div>
   </div>
 
   <!-- Tasks -->
@@ -833,16 +842,17 @@ function sortTable(tableId, col, type) {
 var chartState = { bt: [], live: [], startEq: 5000, range: 'all' };
 var chartPoints = []; // populated by paintChart for hover lookup
 
-function drawEquityChart(btCurve, liveCurve, startEq) {
+function drawEquityChart(benchCurve, liveCurve, startEq, benchTicker) {
   var el = document.getElementById('equity-chart');
-  if (!btCurve.length && !liveCurve.length) {
-    el.innerHTML = '<div class="empty">No equity data available yet</div>';
+  if (!benchCurve.length && !liveCurve.length) {
+    el.innerHTML = '<div class="empty">No equity data available yet — chart builds as trading days accumulate</div>';
     el.style.height = 'auto';
     return;
   }
-  chartState.bt = btCurve;
+  chartState.bt = benchCurve;
   chartState.live = liveCurve;
   chartState.startEq = startEq;
+  chartState.benchTicker = benchTicker || 'SPY';
 
   // Build DOM once
   if (!document.getElementById('eq-canvas')) {
@@ -871,8 +881,8 @@ function drawEquityChart(btCurve, liveCurve, startEq) {
 
     // Legend
     document.getElementById('chart-legend').innerHTML =
-      '<div class="chart-legend-item"><span class="chart-legend-swatch" style="background:#3b82f6"></span>Backtest</div>' +
-      '<div class="chart-legend-item"><span class="chart-legend-swatch" style="background:#10b981"></span>Live</div>' +
+      '<div class="chart-legend-item"><span class="chart-legend-swatch" style="background:#10b981"></span>Portfolio</div>' +
+      '<div class="chart-legend-item"><span class="chart-legend-swatch" style="background:rgba(59,130,246,0.5)"></span>' + (chartState.benchTicker || 'Benchmark') + '</div>' +
       '<div class="chart-legend-item"><span class="chart-legend-swatch" style="background:rgba(77,90,110,0.5);border-top:1px dashed rgba(77,90,110,0.7);height:0"></span>Starting</div>';
 
     // Events
@@ -1151,8 +1161,8 @@ function paintChart() {
     ctx.beginPath(); ctx.moveTo(wx, wy - 3); ctx.lineTo(wx, wy + 3); ctx.stroke();
   }
 
-  // ── Live start divider ──
-  if (liveIdx > 0 && liveIdx < n) {
+  // ── Live start divider (only when both benchmark and portfolio present) ──
+  if (liveIdx > 0 && liveIdx < n && chartState.bt.length > 0) {
     var lx = xS(liveIdx);
     ctx.setLineDash([3, 3]);
     ctx.strokeStyle = 'rgba(16,185,129,0.3)';
@@ -1162,7 +1172,7 @@ function paintChart() {
     ctx.fillStyle = 'rgba(16,185,129,0.5)';
     ctx.font = '600 8px "JetBrains Mono", monospace';
     ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-    ctx.fillText('LIVE', lx, mt - 1);
+    ctx.fillText('PORTFOLIO', lx, mt - 1);
   }
 
   // ── Panel labels ──
@@ -1219,13 +1229,18 @@ function chartLeave() {
 function render(d) {
   var p = d.portfolio || {};
   var risk = d.risk || {};
-  var bt = d.backtest || {};
+
+  var manualPnl = ((d.manual_positions || {}).unrealized_pnl) || 0;
 
   // Drive flow field palette from portfolio state
   if (window.flowPalette) window.flowPalette(p.total_pnl || 0, (risk.exposure_pct || 0) / 100);
 
-  // Header
-  document.getElementById('version').textContent = d.config_version || '';
+  // Header — config_version may be an object {asx: "v9.2", sp500: "v2.0"}
+  var cv = d.config_version || '';
+  if (typeof cv === 'object') {
+    cv = Object.keys(cv).map(function(k) { return k.toUpperCase() + ' ' + cv[k]; }).join(' · ');
+  }
+  document.getElementById('version').textContent = cv;
   document.getElementById('updated').textContent = 'Updated ' + ago(d.timestamp);
 
   // Trading mode indicator
@@ -1274,7 +1289,7 @@ function render(d) {
       value: (p.num_open || 0) + '<span style="font-size:15px;color:var(--text-tertiary);font-weight:400"> / ' + (risk.max_positions || 10) + '</span>',
       c: 'flat',
       accent: 'accent-blue',
-      sub: exposurePct.toFixed(0) + '% capital deployed' + (manualPnlHeader ? ' · ' + ((d.manual_positions||{}).num_open||0) + ' manual' : '') + '<div class="exposure-bar"><div class="exposure-bar-fill" style="width:' + Math.min(exposurePct, 100) + '%"></div></div>'
+      sub: exposurePct.toFixed(0) + '% capital deployed' + (((d.manual_positions||{}).num_open||0) > 0 ? ' · ' + ((d.manual_positions||{}).num_open||0) + ' manual' : '') + '<div class="exposure-bar"><div class="exposure-bar-fill" style="width:' + Math.min(exposurePct, 100) + '%"></div></div>'
     },
     {
       label: 'Net P&L',
@@ -1301,17 +1316,13 @@ function render(d) {
 
   // P&L Breakdown
   var netPnl = (p.market_pnl || 0) + (p.realized_pnl || 0) - (p.total_commissions || 0);
-  var manualPnlHeader = (d.manual_positions || {}).unrealized_pnl || 0;
-  var combinedNet = netPnl + manualPnlHeader;
+  var combinedPnl = netPnl + manualPnl;
   var netCountEl = document.getElementById('pnl-net');
   if (netCountEl) {
-    netCountEl.textContent = $(combinedNet);
+    netCountEl.textContent = $(combinedPnl);
     netCountEl.className = 'section-count';
-    netCountEl.style.color = combinedNet >= 0 ? 'var(--green)' : 'var(--red)';
+    netCountEl.style.color = combinedPnl >= 0 ? 'var(--green)' : 'var(--red)';
   }
-
-  var manualPnl = (d.manual_positions || {}).unrealized_pnl || 0;
-  var combinedPnl = netPnl + manualPnl;
 
   var pnlHtml = '<div class="pnl-grid">';
   pnlHtml += '<div class="pnl-item"><div class="pnl-label">Atlas Unrealized</div><div class="pnl-value ' + cls(p.market_pnl) + '">' + $(p.market_pnl || 0) + '</div><div class="pnl-sub">' + (p.num_open || 0) + ' Atlas positions</div></div>';
@@ -1337,10 +1348,11 @@ function render(d) {
   }
   document.getElementById('body-pnl').innerHTML = pnlHtml;
 
-  // Equity chart
-  var btCurve = bt.equity_curve || [];
+  // Equity chart — portfolio vs benchmark
+  var benchCurve = d.benchmark_curve || [];
   var liveCurve = d.equity_curve || [];
-  drawEquityChart(btCurve, liveCurve, p.starting_equity || 5000);
+  var benchTicker = d.benchmark_ticker || 'SPY';
+  drawEquityChart(benchCurve, liveCurve, p.starting_equity || 5000, benchTicker);
 
   // Positions table
   var pos = p.open_positions || [];
@@ -1454,40 +1466,60 @@ function render(d) {
     manualEl.style.display = 'none';
   }
 
-  // Backtest metrics
-  var btMetrics = bt.metrics || {};
-  var hasBt = Object.keys(btMetrics).length > 0;
-  document.getElementById('sec-backtest').style.display = hasBt ? '' : 'none';
-  if (hasBt) {
-    var m = btMetrics;
-    var bh = '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;display:flex;align-items:center;gap:8px">';
-    bh += '<span>Walk-forward backtest</span>';
-    bh += '<span style="color:var(--text-tertiary)">·</span>';
-    bh += '<span class="mono" style="font-size:11px;color:var(--text-tertiary)">' + (bt.equity_curve || []).length + ' days</span>';
-    bh += '<span style="color:var(--text-tertiary)">·</span>';
-    bh += '<span class="mono" style="font-size:11px;color:var(--text-tertiary)">' + (m.total_trades || '—') + ' trades</span>';
-    bh += '</div>';
-    bh += '<div class="metrics-grid">';
-    bh += metric('CAGR', m.cagr ? (m.cagr * 100).toFixed(1) + '%' : '—');
-    bh += metric('Max Drawdown', m.max_drawdown ? (m.max_drawdown * 100).toFixed(2) + '%' : '—');
-    bh += metric('Sharpe', m.sharpe ? m.sharpe.toFixed(2) : '—');
-    bh += metric('Win Rate', m.win_rate ? (m.win_rate * 100).toFixed(1) + '%' : '—');
-    bh += metric('Profit Factor', m.profit_factor ? m.profit_factor.toFixed(2) : '—');
-    bh += metric('Total Trades', m.total_trades || '—');
-    bh += metric('Net P&L', m.total_pnl ? '$' + m.total_pnl.toFixed(0) : '—');
-    bh += metric('Return/DD', m.total_return && m.max_drawdown ? (m.total_return / m.max_drawdown).toFixed(1) + 'x' : '—');
-    bh += '</div>';
+  // Pending Orders
+  var allOrders = [];
+  var markets = d.markets || {};
+  Object.keys(markets).forEach(function(mid) {
+    var mo = markets[mid].pending_orders || [];
+    mo.forEach(function(o) { o.market = mid; allOrders.push(o); });
+  });
+  var ordersEl = document.getElementById('sec-orders');
+  if (allOrders.length > 0) {
+    ordersEl.style.display = '';
+    document.getElementById('orders-count').textContent = allOrders.length;
+    var oh = '<table id="tbl-orders"><thead><tr>';
+    oh += '<th>Market</th><th>Side</th><th>Ticker</th><th>Qty</th><th>Price</th><th>Type</th><th>Status</th><th>Created</th>';
+    oh += '</tr></thead><tbody>';
+    allOrders.forEach(function(o) {
+      var sideColor = o.side === 'BUY' ? 'var(--green)' : 'var(--red)';
+      var statusColor = o.status === 'FILLED_ALL' ? 'var(--green)' : o.status === 'FAILED' ? 'var(--red)' : 'var(--amber)';
+      oh += '<tr>';
+      oh += '<td><span class="strat strat-' + (o.market === 'sp500' ? 'trend_following' : 'mean_reversion') + '">' + (o.market || '').toUpperCase() + '</span></td>';
+      oh += '<td style="font-weight:600;color:' + sideColor + '">' + esc(o.side) + '</td>';
+      oh += '<td style="font-family:var(--mono);font-weight:600;font-size:12px">' + esc(o.ticker) + '</td>';
+      oh += '<td class="mono">' + o.qty + '</td>';
+      oh += '<td class="mono">' + $(o.price) + '</td>';
+      oh += '<td style="color:var(--text-tertiary);font-size:11px">' + esc(o.order_type) + '</td>';
+      oh += '<td style="color:' + statusColor + ';font-size:11px;font-weight:600">' + esc(o.status) + '</td>';
+      oh += '<td class="mono" style="color:var(--text-tertiary);font-size:11px">' + esc(o.created || '') + '</td>';
+      oh += '</tr>';
+    });
+    oh += '</tbody></table>';
+    document.getElementById('body-orders').innerHTML = oh;
+  } else {
+    ordersEl.style.display = 'none';
+  }
 
-    if (m.avg_trade || m.avg_hold_days) {
-      bh += '<div class="metrics-grid" style="border-top:1px solid var(--border)">';
-      bh += metric('Avg Trade', m.avg_trade ? '$' + m.avg_trade.toFixed(2) : '—');
-      bh += metric('Avg Hold', m.avg_hold_days ? m.avg_hold_days.toFixed(1) + 'd' : '—');
-      bh += metric('Avg Winner', m.avg_winner ? '$' + m.avg_winner.toFixed(2) : '—');
-      bh += metric('Avg Loser', m.avg_loser ? '$' + m.avg_loser.toFixed(2) : '—');
-      bh += '</div>';
-    }
-
-    document.getElementById('body-backtest').innerHTML = bh;
+  // Broker Account
+  var acct = d.account;
+  var acctEl = document.getElementById('sec-account');
+  if (acct) {
+    acctEl.style.display = '';
+    var ah = '<div class="pnl-grid">';
+    ah += '<div class="pnl-item"><div class="pnl-label">Total Equity</div><div class="pnl-value">' + $(acct.equity) + '</div><div class="pnl-sub">' + (acct.currency || 'AUD') + ' · Full Moomoo account</div></div>';
+    ah += '<div class="pnl-item"><div class="pnl-label">Cash</div><div class="pnl-value">' + $(acct.cash) + '</div><div class="pnl-sub">Available cash</div></div>';
+    ah += '<div class="pnl-item"><div class="pnl-label">Buying Power</div><div class="pnl-value">' + $(acct.buying_power) + '</div><div class="pnl-sub">Incl. margin</div></div>';
+    // Show per-market allocations
+    var allocHtml = '';
+    Object.keys(markets).forEach(function(mid) {
+      var mp = markets[mid].portfolio || {};
+      allocHtml += '<span class="mono" style="font-size:11px">' + mid.toUpperCase() + ': ' + $(mp.equity || 0) + '/' + $(mp.starting_equity || 0) + '</span> ';
+    });
+    ah += '<div class="pnl-item"><div class="pnl-label">Allocations</div><div class="pnl-value" style="font-size:14px">' + allocHtml + '</div><div class="pnl-sub">Atlas-managed</div></div>';
+    ah += '</div>';
+    document.getElementById('body-account').innerHTML = ah;
+  } else {
+    acctEl.style.display = 'none';
   }
 
   // Tasks
