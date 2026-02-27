@@ -2,24 +2,9 @@
   "market_id": "sp500",
   "mode": "live",
   "closed_trades": [],
-  "equity_history": [
-    {
-      "date": "2026-02-27",
-      "equity": 7358.22,
-      "cash": 4972.35,
-      "positions_value": 2385.87,
-      "num_positions": 1
-    },
-    {
-      "date": "2026-02-27",
-      "equity": 7358.15,
-      "cash": 4972.32,
-      "positions_value": 2385.83,
-      "num_positions": 1
-    }
-  ],
+  "equity_history": [],
   "daily_high_water": 4000,
   "halted": false,
   "halt_reason": "",
-  "last_saved": "2026-02-27T14:20:23.003512"
+  "last_saved": "2026-02-27T14:24:27.954508"
 }

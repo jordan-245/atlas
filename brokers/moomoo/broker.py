@@ -329,6 +329,9 @@ class MomooBroker(BrokerAdapter):
                      side.value, moomoo_code, qty, price,
                      order_type.value, remark)
 
+        # Round price to 2 decimals — Moomoo rejects excess precision
+        price = round(price, 2)
+
         kwargs_order = dict(
             price=price,
             qty=qty,

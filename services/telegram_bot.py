@@ -257,44 +257,57 @@ def _execute_live(plan: dict, trade_date: str, config: dict, market_id: str) -> 
 
     # ── Sync paper portfolio state with broker fills ──────────
     # Paper state tracks our dedicated allocation ($X for this market).
-    # After live execution, mirror successful fills into paper state
-    # so plan generation uses correct positions/cash next time.
+    # Only sync entries that actually FILLED (fill_price > 0).
+    # Pending limit orders (WAITING_SUBMIT) should not be recorded yet —
+    # they'll be synced by EOD settlement after they fill.
     try:
         paper_pf = PaperPortfolio(config, market_id=market_id)
+        synced = 0
 
         for entry_result in report.get("entries", []):
-            if entry_result.get("success"):
-                # Find the matching plan entry for metadata
-                plan_entry = next(
-                    (e for e in plan.get("proposed_entries", [])
-                     if e["ticker"] == entry_result.get("ticker")),
-                    None,
-                )
-                if plan_entry:
-                    class _Sig:
-                        def __init__(self, d, fill_price):
-                            self.ticker = d["ticker"]
-                            self.strategy = d["strategy"]
-                            self.entry_price = fill_price
-                            self.stop_price = d["stop_price"]
-                            self.take_profit = d.get("take_profit")
-                            self.position_size = entry_result.get("qty", d["position_size"])
-                            self.confidence = d.get("confidence", 0)
-                            self.rationale = d.get("rationale", "")
-                            self.sector = d.get("sector", "Unknown")
+            if not entry_result.get("success"):
+                continue
+            fill_px = entry_result.get("fill_price", 0)
+            if fill_px <= 0:
+                # Order submitted but not filled yet — skip paper sync
+                logger.info("Paper sync: %s pending (no fill yet), will sync on fill",
+                            entry_result.get("ticker"))
+                continue
 
-                    fill_px = entry_result.get("fill_price", entry_result.get("price", plan_entry["entry_price"]))
-                    paper_pf.execute_entry(_Sig(plan_entry, fill_px), fill_px, trade_date)
+            plan_entry = next(
+                (e for e in plan.get("proposed_entries", [])
+                 if e["ticker"] == entry_result.get("ticker")),
+                None,
+            )
+            if plan_entry:
+                class _Sig:
+                    def __init__(self, d, fp):
+                        self.ticker = d["ticker"]
+                        self.strategy = d["strategy"]
+                        self.entry_price = fp
+                        self.stop_price = d["stop_price"]
+                        self.take_profit = d.get("take_profit")
+                        self.position_size = entry_result.get("qty", d["position_size"])
+                        self.confidence = d.get("confidence", 0)
+                        self.rationale = d.get("rationale", "")
+                        self.sector = d.get("sector", "Unknown")
+
+                paper_pf.execute_entry(_Sig(plan_entry, fill_px), fill_px, trade_date)
+                synced += 1
 
         for exit_result in report.get("exits", []):
-            if exit_result.get("success"):
-                ticker = exit_result.get("ticker", "")
-                fill_px = exit_result.get("fill_price", exit_result.get("price", 0))
-                reason = exit_result.get("reason", "signal_exit")
-                paper_pf.execute_exit(ticker, fill_px, trade_date, reason)
+            if not exit_result.get("success"):
+                continue
+            fill_px = exit_result.get("fill_price", 0)
+            if fill_px <= 0:
+                continue
+            ticker = exit_result.get("ticker", "")
+            reason = exit_result.get("reason", "signal_exit")
+            paper_pf.execute_exit(ticker, fill_px, trade_date, reason)
+            synced += 1
 
-        logger.info("Paper state synced: %d positions, $%.2f cash",
-                     len(paper_pf.positions), paper_pf.cash)
+        logger.info("Paper state synced: %d fills recorded, %d positions, $%.2f cash",
+                     synced, len(paper_pf.positions), paper_pf.cash)
     except Exception as e:
         logger.error("Paper state sync failed (non-fatal): %s", e)
 
