@@ -736,7 +736,7 @@ tr:hover td { background: rgba(59, 130, 246, 0.03); }
   <!-- Pending Orders -->
   <div class="section" id="sec-orders" style="display:none;animation-delay:0.50s">
     <div class="section-head" onclick="toggle('orders')">
-      <div class="section-title">Pending Orders <span class="section-count" id="orders-count">0</span></div>
+      <div class="section-title">Today's Orders <span class="section-count" id="orders-count">0</span></div>
       <span class="chevron down" id="chev-orders">▾</span>
     </div>
     <div class="section-body" id="body-orders"></div>
@@ -1478,7 +1478,7 @@ function render(d) {
     ordersEl.style.display = '';
     document.getElementById('orders-count').textContent = allOrders.length;
     var oh = '<table id="tbl-orders"><thead><tr>';
-    oh += '<th>Market</th><th>Side</th><th>Ticker</th><th>Qty</th><th>Price</th><th>Type</th><th>Status</th><th>Created</th>';
+    oh += '<th>Market</th><th>Side</th><th>Ticker</th><th>Qty</th><th>Price</th><th>Filled</th><th>Type</th><th>Status</th><th>Created</th>';
     oh += '</tr></thead><tbody>';
     allOrders.forEach(function(o) {
       var sideColor = o.side === 'BUY' ? 'var(--green)' : 'var(--red)';
@@ -1489,6 +1489,7 @@ function render(d) {
       oh += '<td style="font-family:var(--mono);font-weight:600;font-size:12px">' + esc(o.ticker) + '</td>';
       oh += '<td class="mono">' + o.qty + '</td>';
       oh += '<td class="mono">' + $(o.price) + '</td>';
+      oh += '<td class="mono">' + (o.fill_price > 0 ? o.filled_qty + '×@' + $(o.fill_price) : '—') + '</td>';
       oh += '<td style="color:var(--text-tertiary);font-size:11px">' + esc(o.order_type) + '</td>';
       oh += '<td style="color:' + statusColor + ';font-size:11px;font-weight:600">' + esc(o.status) + '</td>';
       oh += '<td class="mono" style="color:var(--text-tertiary);font-size:11px">' + esc(o.created || '') + '</td>';

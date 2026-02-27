@@ -59,16 +59,49 @@ def get_portfolio(config):
     return state
 
 
+def _load_plan_metadata() -> dict:
+    """Load strategy/entry metadata from recent plans for position enrichment.
+
+    Returns {ticker: {strategy, entry_date, stop_price, confidence, sector, ...}}
+    from the most recent executed/approved plans.
+    """
+    plans_dir = PROJECT_ROOT / "paper_engine" / "plans"
+    if not plans_dir.exists():
+        return {}
+
+    meta = {}
+    # Scan last 30 plans (covers ~1 month of daily plans)
+    for plan_file in sorted(plans_dir.glob("plan_*.json"), reverse=True)[:30]:
+        plan = safe_json(plan_file, None)
+        if not plan:
+            continue
+        trade_date = plan.get("trade_date", "")
+        for entry in plan.get("proposed_entries", []):
+            ticker = entry.get("ticker", "")
+            if ticker and ticker not in meta:
+                meta[ticker] = {
+                    "strategy": entry.get("strategy", ""),
+                    "entry_date": trade_date,
+                    "stop_price": entry.get("stop_price", 0),
+                    "confidence": entry.get("confidence", 0),
+                    "sector": entry.get("sector", "Unknown"),
+                    "rationale": entry.get("rationale", ""),
+                }
+    return meta
+
+
 def get_live_broker_data(config):
     """Fetch account info and positions from Moomoo broker.
 
-    Returns (account_info_dict, positions_list, connected) or (None, [], False)
-    on failure. Enriches broker positions with paper-state metadata
-    (strategy, entry_date, stop_price, confidence, sector).
+    Returns (account_info_dict, positions_list, connected, orders_list)
+    or (None, [], False, []) on failure.
+
+    Enriches broker positions with metadata from plan history.
+    Broker is the sole source of truth for positions and equity.
     """
     trading = config.get("trading", {})
     if trading.get("broker") != "moomoo" or not trading.get("live_enabled"):
-        return None, [], False
+        return None, [], False, []
 
     try:
         from brokers.moomoo.broker import MomooBroker
@@ -76,17 +109,18 @@ def get_live_broker_data(config):
         broker = MomooBroker(config, live=True)
         if not broker.connect():
             logger.warning("Dashboard: broker connect failed")
-            return None, [], False
+            return None, [], False, []
 
         try:
             acct = broker.get_account_info()
             positions = broker.get_positions()
-            open_orders = broker.get_open_orders() or []
+            # Get ALL today's orders (including filled) for dashboard display
+            open_orders = broker.get_all_today_orders() if hasattr(broker, 'get_all_today_orders') else (broker.get_open_orders() or [])
         finally:
             broker.disconnect()
 
         if not acct:
-            return None, [], False
+            return None, [], False, []
 
         # Build account dict
         acct_data = {
@@ -100,16 +134,15 @@ def get_live_broker_data(config):
             "currency": acct.currency,
         }
 
-        # Build positions list — enrich with paper-state metadata
-        paper_state = get_portfolio(config)
-        paper_by_ticker = {}
-        for p in paper_state.get("positions", []):
-            paper_by_ticker[p.get("ticker", "")] = p
+        # Enrich broker positions with plan metadata (strategy, entry_date, etc.)
+        plan_meta = _load_plan_metadata()
 
         pos_list = []
         for pos in positions:
-            # Skip non-Atlas positions (e.g. manually held WDS, XOP)
-            paper = paper_by_ticker.get(pos.ticker)
+            meta = plan_meta.get(pos.ticker, {})
+            # Position is Atlas-managed if it appears in a plan OR has an
+            # Atlas-recognized strategy tag from the broker
+            is_atlas = bool(meta) or bool(pos.strategy and pos.strategy != "unknown")
 
             pos_dict = {
                 "ticker": pos.ticker,
@@ -120,18 +153,18 @@ def get_live_broker_data(config):
                 "unrealized_pnl": round(pos.unrealized_pnl, 2),
                 "unrealized_pnl_pct": round(pos.unrealized_pnl_pct, 2),
                 "cost_basis": round(pos.cost_basis, 2),
-                # Metadata from paper state (broker doesn't track these)
-                "strategy": paper.get("strategy", "") if paper else "",
-                "entry_date": paper.get("entry_date", "") if paper else "",
-                "stop_price": paper.get("stop_price", 0) if paper else 0,
-                "confidence": paper.get("confidence", 0) if paper else 0,
-                "sector": paper.get("sector", "Unknown") if paper else pos.sector,
-                "entry_value": paper.get("entry_value", pos.cost_basis) if paper else pos.cost_basis,
-                "is_atlas": paper is not None,
+                # Metadata from plan history
+                "strategy": meta.get("strategy", pos.strategy or ""),
+                "entry_date": meta.get("entry_date", pos.entry_date or ""),
+                "stop_price": meta.get("stop_price", pos.stop_price or 0),
+                "confidence": meta.get("confidence", 0),
+                "sector": meta.get("sector", pos.sector or "Unknown"),
+                "entry_value": pos.cost_basis,
+                "is_atlas": is_atlas,
             }
             pos_list.append(pos_dict)
 
-        # Pending orders
+        # Open orders (only truly open — filled orders already removed by broker)
         orders_list = []
         for o in open_orders:
             r = o.raw or {}
@@ -436,11 +469,11 @@ def generate_market(market_id: str, broker_cache: dict | None = None):
       Keys: "acct", "positions", "ok". If None, connects fresh.
     """
     config = get_config(market_id)
-    portfolio = get_portfolio(config)
+    portfolio = get_portfolio(config)  # paper state — used only for fallback mode
     plan = get_latest_plan()
     ledger = safe_json(PROJECT_ROOT / "journal" / "trade_ledger.json", [])
 
-    seq = portfolio.get("starting_equity", 5000)
+    seq = config.get("risk", {}).get("starting_equity", 5000)
     fees_cfg = config.get("fees", {})
     commission = fees_cfg.get("commission_per_trade", 3.0)
 
@@ -468,11 +501,7 @@ def generate_market(market_id: str, broker_cache: dict | None = None):
             broker_acct, broker_positions, broker_ok, _orders = get_live_broker_data(config)
 
     if broker_ok and broker_acct:
-        # Broker is the source of truth — no paper sync needed
-        portfolio = get_portfolio(config)
-
-        # Live mode: use broker for real-time positions/prices,
-        # but equity/cash from paper state (tracks per-market allocation).
+        # Broker is the sole source of truth
         positions = broker_positions
         atlas_positions = [p for p in positions if p.get("is_atlas", True)]
         manual_positions = [p for p in positions if not p.get("is_atlas", True)]
@@ -488,16 +517,17 @@ def generate_market(market_id: str, broker_cache: dict | None = None):
         # Manual positions value (not managed by Atlas)
         manual_value = sum(p.get("market_value", 0) for p in manual_positions)
 
-        # Equity/cash from paper state allocation (e.g. $4k for SP500)
-        # NOT the full broker account balance
-        paper_cash = portfolio.get("cash", seq)
-        paper_pos_value = sum(p.get("market_value", 0) for p in atlas_positions)
-        equity = round(paper_cash + paper_pos_value, 2)
-        cash = paper_cash
-        pos_value = paper_pos_value
+        # Equity/cash from broker — use the starting_equity allocation
+        # to calculate Atlas-specific P&L against the configured allocation
+        pos_value = atlas_value
+        # Cash allocated to Atlas = starting_equity - entry_value of open positions
+        cash = round(seq - total_entry_value, 2) if total_entry_value > 0 else seq
+        equity = round(cash + atlas_value, 2)
 
         total_pnl = round(equity - seq, 2)
         total_pnl_pct = round(total_pnl / seq * 100, 2) if seq > 0 else 0
+
+
     else:
         # Paper/fallback mode
         positions = portfolio.get("positions", [])
@@ -530,7 +560,10 @@ def generate_market(market_id: str, broker_cache: dict | None = None):
         market_pnl = round(pos_value - total_entry_value, 2)
 
     # Realized P&L from closed trades
-    closed = portfolio.get("closed_trades", []) or ledger or []
+    # In live mode, use live state file; otherwise paper state or ledger
+    live_state_file = PROJECT_ROOT / "paper_engine" / "state" / f"live_{market_id}.json"
+    live_closed = safe_json(live_state_file, {}).get("closed_trades", [])
+    closed = live_closed or portfolio.get("closed_trades", []) or ledger or []
     realized_pnl = round(sum(t.get("pnl", 0) for t in closed), 2)
 
     # ── Open positions ──────────────────────────────────────────

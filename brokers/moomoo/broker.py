@@ -447,6 +447,13 @@ class MomooBroker(BrokerAdapter):
         for _, row in data.iterrows():
             ticker = mapper.to_atlas(row.get("code", ""))
             status = _map_order_status(row.get("order_status"))
+
+            # Skip fully filled, cancelled, or failed orders — they're not "open"
+            raw_status = str(row.get("order_status", "")).upper()
+            if raw_status in ("FILLED_ALL", "CANCELLED_ALL", "CANCELLED_PART",
+                              "FAILED", "DELETED", "DISABLED"):
+                continue
+
             side_str = row.get("trd_side", "BUY")
             side = OrderSide.BUY if "BUY" in str(side_str).upper() else OrderSide.SELL
 
@@ -464,9 +471,41 @@ class MomooBroker(BrokerAdapter):
             ))
         return orders
 
+    def get_all_today_orders(self) -> list[OrderResult]:
+        """Return ALL orders from today including filled/cancelled (for status checks)."""
+        self._require_connected()
+        ret, data = self._trd_ctx.order_list_query(
+            trd_env=self.trd_env,
+            acc_id=self._acc_id,
+            refresh_cache=True,
+        )
+        if ret != ft.RET_OK:
+            logger.error("order_list_query failed: %s", data)
+            return []
+
+        orders = []
+        for _, row in data.iterrows():
+            ticker = mapper.to_atlas(row.get("code", ""))
+            status = _map_order_status(row.get("order_status"))
+            side_str = row.get("trd_side", "BUY")
+            side = OrderSide.BUY if "BUY" in str(side_str).upper() else OrderSide.SELL
+            orders.append(OrderResult(
+                success=True,
+                order_id=str(row.get("order_id", "")),
+                ticker=ticker,
+                side=side,
+                status=status,
+                requested_qty=int(row.get("qty", 0)),
+                filled_qty=int(row.get("dealt_qty", 0)),
+                requested_price=float(row.get("price", 0)),
+                fill_price=float(row.get("dealt_avg_price", 0)),
+                raw=row.to_dict() if hasattr(row, "to_dict") else {},
+            ))
+        return orders
+
     def get_order_status(self, order_id: str) -> OrderResult:
-        # Query today's orders and filter
-        orders = self.get_open_orders()
+        # Query all today's orders (including filled) and filter
+        orders = self.get_all_today_orders()
         for o in orders:
             if o.order_id == order_id:
                 return o
