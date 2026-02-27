@@ -162,17 +162,20 @@ def format_plan_message(plan: dict, market_id: str = "asx") -> str:
     return "\n".join(lines)
 
 
-def approval_keyboard(trade_date: str) -> InlineKeyboardMarkup:
-    """Build Approve / Reject inline buttons for a plan."""
+def approval_keyboard(trade_date: str, market_id: str = "asx") -> InlineKeyboardMarkup:
+    """Build Approve / Reject inline buttons for a plan.
+
+    Callback data format: plan:{date}:{action}:{market}
+    """
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
                 "✅ Approve & Execute",
-                callback_data=f"plan:{trade_date}:approve",
+                callback_data=f"plan:{trade_date}:approve:{market_id}",
             ),
             InlineKeyboardButton(
                 "❌ Reject",
-                callback_data=f"plan:{trade_date}:reject",
+                callback_data=f"plan:{trade_date}:reject:{market_id}",
             ),
         ]
     ])
@@ -308,14 +311,29 @@ def _execute_live(plan: dict, trade_date: str, config: dict, market_id: str) -> 
 
 def _execute_paper(plan: dict, trade_date: str, config: dict, market_id: str) -> str:
     """Execute plan through paper engine."""
+    import pandas as pd
     from paper_engine.engine import PaperPortfolio
-    from data.loader import load_data, get_latest_prices
     from markets.registry import get_market
 
     market = get_market(market_id)
-    tickers = market.get_tickers()
-    data = load_data(tickers, config) if tickers else {}
-    prices = get_latest_prices(data) if data else {}
+    try:
+        from universe.builder import get_universe_tickers
+        tickers = get_universe_tickers(market_id)
+    except Exception:
+        tickers = market.get_universe_tickers()
+
+    # Load cached OHLCV data and extract latest prices
+    base_cache = PROJECT_ROOT / config["data"]["cache_dir"]
+    market_cache = base_cache / market_id
+    data = {}
+    for ticker in tickers:
+        fname = ticker.replace(".", "_") + ".parquet"
+        path = market_cache / fname
+        if not path.exists():
+            path = base_cache / fname
+        if path.exists():
+            data[ticker] = pd.read_parquet(path)
+    prices = {t: float(df["close"].iloc[-1]) for t, df in data.items() if len(df) > 0}
 
     portfolio = PaperPortfolio(config, market_id=market_id)
     entries = plan.get("proposed_entries", [])
@@ -330,31 +348,34 @@ def _execute_paper(plan: dict, trade_date: str, config: dict, market_id: str) ->
         if not ticker:
             continue
         price = prices.get(ticker, ex.get("entry_price", 0))
-        reason = ex.get("reason", "planned_exit")
+        reason = ex.get("reason", ex.get("exit_reason", "planned_exit"))
         try:
-            portfolio.close_position(ticker, price, reason=reason, trade_date=trade_date)
+            portfolio.execute_exit(ticker, price, trade_date, reason)
             executed_exits += 1
         except Exception as e:
             logger.error("Paper exit %s failed: %s", ticker, e)
 
-    # Entries
+    # Entries — build signal-like objects for execute_entry()
+    class _Signal:
+        def __init__(self, d):
+            self.ticker = d["ticker"]
+            self.strategy = d["strategy"]
+            self.entry_price = d["entry_price"]
+            self.stop_price = d["stop_price"]
+            self.take_profit = d.get("take_profit")
+            self.position_size = d["position_size"]
+            self.confidence = d.get("confidence", 0)
+            self.rationale = d.get("rationale", "")
+            self.sector = d.get("sector", "Unknown")
+
     for entry in entries:
         ticker = entry.get("ticker")
         if not ticker:
             continue
         price = prices.get(ticker, entry["entry_price"])
         try:
-            portfolio.open_position(
-                ticker=ticker, entry_price=price,
-                position_size=entry["position_size"],
-                stop_price=entry["stop_price"],
-                take_profit=entry.get("take_profit"),
-                strategy=entry["strategy"],
-                confidence=entry["confidence"],
-                rationale=entry["rationale"],
-                sector=entry.get("sector", "Unknown"),
-                trade_date=trade_date,
-            )
+            sig = _Signal(entry)
+            portfolio.execute_entry(sig, price, trade_date)
             executed_entries += 1
         except Exception as e:
             logger.error("Paper entry %s failed: %s", ticker, e)
@@ -457,7 +478,11 @@ async def cmd_unhalt(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_approval_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Handle Approve / Reject button presses."""
+    """Handle Approve / Reject button presses.
+
+    Callback data format: plan:{date}:{action}:{market}
+    Legacy format (no market): plan:{date}:{action} — defaults to DEFAULT_MARKET.
+    """
     query = update.callback_query
     await query.answer()  # Acknowledge the button press immediately
 
@@ -465,18 +490,19 @@ async def handle_approval_callback(update: Update, ctx: ContextTypes.DEFAULT_TYP
         await query.edit_message_reply_markup(reply_markup=None)
         return
 
-    data = query.data  # e.g. "plan:2026-02-26:approve"
+    data = query.data  # e.g. "plan:2026-02-27:approve:sp500"
     parts = data.split(":")
-    if len(parts) != 3 or parts[0] != "plan":
+    if len(parts) < 3 or parts[0] != "plan":
         return
 
     trade_date = parts[1]
     action = parts[2]
+    market_id = parts[3] if len(parts) >= 4 else DEFAULT_MARKET
 
     if action == "reject":
         # Mark rejected — update the message
-        config = get_active_config(DEFAULT_MARKET)
-        portfolio = PaperPortfolio(config, market_id=DEFAULT_MARKET)
+        config = get_active_config(market_id)
+        portfolio = PaperPortfolio(config, market_id=market_id)
         plan_gen = TradePlanGenerator(portfolio, config)
         plan = plan_gen.load_plan(trade_date)
         if plan:
@@ -493,7 +519,7 @@ async def handle_approval_callback(update: Update, ctx: ContextTypes.DEFAULT_TYP
     if action == "approve":
         # Show "executing..." feedback
         await query.edit_message_text(
-            query.message.text_html + "\n\n⏳ <b>Approving and executing…</b>",
+            query.message.text_html + f"\n\n⏳ <b>Approving and executing [{market_id.upper()}]…</b>",
             parse_mode="HTML",
         )
 
@@ -502,7 +528,7 @@ async def handle_approval_callback(update: Update, ctx: ContextTypes.DEFAULT_TYP
             loop = asyncio.get_event_loop()
             result_text = await loop.run_in_executor(
                 None,
-                partial(_do_approve_and_execute, trade_date, DEFAULT_MARKET),
+                partial(_do_approve_and_execute, trade_date, market_id),
             )
         except Exception as e:
             logger.error("Execution failed: %s", e, exc_info=True)
@@ -560,8 +586,8 @@ def send_plan_for_approval(
     else:
         keyboard = {
             "inline_keyboard": [[
-                {"text": "✅ Approve & Execute", "callback_data": f"plan:{trade_date}:approve"},
-                {"text": "❌ Reject", "callback_data": f"plan:{trade_date}:reject"},
+                {"text": "✅ Approve & Execute", "callback_data": f"plan:{trade_date}:approve:{market_id}"},
+                {"text": "❌ Reject", "callback_data": f"plan:{trade_date}:reject:{market_id}"},
             ]]
         }
 
@@ -628,10 +654,10 @@ def main():
     app.add_handler(CommandHandler("halt", cmd_halt))
     app.add_handler(CommandHandler("unhalt", cmd_unhalt))
 
-    # Callback handler for inline buttons
+    # Callback handler for inline buttons (with optional :market suffix)
     app.add_handler(CallbackQueryHandler(
         handle_approval_callback,
-        pattern=r"^plan:\d{4}-\d{2}-\d{2}:(approve|reject)$",
+        pattern=r"^plan:\d{4}-\d{2}-\d{2}:(approve|reject)(:\w+)?$",
     ))
 
     logger.info("Bot polling started. Commands: /status /plan /halt /unhalt")

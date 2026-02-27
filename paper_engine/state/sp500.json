@@ -1,0 +1,44 @@
+{
+  "market_id": "sp500",
+  "cash": 3564.7235,
+  "positions": [
+    {
+      "ticker": "ON",
+      "strategy": "trend_following",
+      "entry_date": "2026-02-27",
+      "entry_price": 68.1941,
+      "shares": 3,
+      "stop_price": 62.5013,
+      "take_profit": null,
+      "confidence": 0.8101999999999999,
+      "rationale": "ON in uptrend (fast MA $68.80 > slow MA $66.85, spread 2.9%). Price pulled back 5.6% from recent high of $72.21 to $68.16. Trend active for 36 bars. Volume 0.8x avg. ATR=2.83, stop at $62.50.",
+      "sector": "Unknown",
+      "entry_value": 204.58,
+      "mae": 0.0,
+      "mfe": 0.0,
+      "stop_order_id": ""
+    },
+    {
+      "ticker": "CHTR",
+      "strategy": "trend_following",
+      "entry_date": "2026-02-27",
+      "entry_price": 228.4942,
+      "shares": 1,
+      "stop_price": 211.8972,
+      "take_profit": null,
+      "confidence": 0.7995,
+      "rationale": "CHTR in uptrend (fast MA $234.05 > slow MA $227.94, spread 2.7%). Price pulled back 8.0% from recent high of $248.19 to $228.38. Trend active for 13 bars. Volume 0.6x avg (LOW). ATR=8.24, stop at $211.90.",
+      "sector": "Unknown",
+      "entry_value": 228.49,
+      "mae": 0.0,
+      "mfe": 0.0,
+      "stop_order_id": ""
+    }
+  ],
+  "closed_trades": [],
+  "equity_history": [],
+  "daily_high_water": 4000,
+  "halted": false,
+  "halt_reason": "",
+  "last_saved": "2026-02-27T14:10:28.852397"
+}
