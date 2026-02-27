@@ -1,0 +1,18 @@
+{
+  "market_id": "asx",
+  "mode": "live",
+  "closed_trades": [],
+  "equity_history": [
+    {
+      "date": "2026-02-27",
+      "equity": 10367.83,
+      "cash": 7022.23,
+      "positions_value": 3345.6,
+      "num_positions": 1
+    }
+  ],
+  "daily_high_water": 5000,
+  "halted": false,
+  "halt_reason": "",
+  "last_saved": "2026-02-27T09:24:18.347788"
+}

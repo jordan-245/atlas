@@ -39,6 +39,7 @@ class Position:
         self.entry_value = round(entry_price * shares, 2)
         self.mae = 0.0  # max adverse excursion
         self.mfe = 0.0  # max favorable excursion
+        self.stop_order_id = ""  # Moomoo protective stop order ID (empty = no exchange stop)
 
     def current_value(self, price: float) -> float:
         return round(price * self.shares, 2)
@@ -76,6 +77,7 @@ class Position:
             "entry_value": self.entry_value,
             "mae": self.mae,
             "mfe": self.mfe,
+            "stop_order_id": self.stop_order_id,
         }
 
     @classmethod
@@ -92,6 +94,7 @@ class Position:
         pos.mae = d.get("mae", 0.0)
         pos.mfe = d.get("mfe", 0.0)
         pos.entry_value = d.get("entry_value", pos.entry_price * pos.shares)
+        pos.stop_order_id = d.get("stop_order_id", "")
         return pos
 
 

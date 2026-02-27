@@ -1,0 +1,291 @@
+"""Live Portfolio — broker-backed position/cash tracking.
+
+Drop-in replacement for PaperPortfolio when running in live mode.
+Reads positions and cash from the connected broker instead of a JSON file.
+Maintains its own closed-trade history and equity curve in
+    paper_engine/state/live_{market_id}.json
+
+Usage:
+    from brokers.live_portfolio import LivePortfolio
+
+    lp = LivePortfolio(config, market_id="asx")
+    lp.connect()   # connects to broker
+    # ... use like PaperPortfolio: lp.positions, lp.cash, lp.equity(), etc.
+    lp.disconnect()
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
+from brokers.base import PositionInfo
+from paper_engine.engine import Position
+
+logger = logging.getLogger("atlas.live_portfolio")
+
+PROJECT_ROOT = Path(__file__).parent.parent
+
+
+class LivePortfolio:
+    """Broker-backed portfolio that mirrors the PaperPortfolio interface.
+
+    Positions and cash come from the live broker.
+    Risk-limit checks, plan generation, and equity snapshots all work
+    against real broker state — no paper-engine coupling.
+    """
+
+    def __init__(self, config: dict, market_id: str = "asx"):
+        self.config = config
+        self.market_id = market_id
+
+        # Risk params (same as PaperPortfolio)
+        risk = config.get("risk", {})
+        self.starting_equity = risk.get("starting_equity", 5000)
+        self.max_risk_per_trade = risk.get("max_risk_per_trade_pct", 0.005)
+        self.max_positions = risk.get("max_open_positions", 10)
+        self.max_sector_conc = risk.get("max_sector_concentration", 2)
+        self.max_daily_dd = risk.get("max_daily_drawdown_pct", 0.02)
+
+        fees = config.get("fees", {})
+        self.commission_flat = fees.get("commission_per_trade", 0)
+        self.commission_pct = fees.get("commission_pct", 0)
+
+        # State read from broker (populated on connect)
+        self.positions: list[Position] = []
+        self.cash: float = 0.0
+        self._broker_equity: float = 0.0
+
+        # Persistent local state (closed trades, equity history)
+        self.closed_trades: list[dict] = []
+        self.equity_history: list[dict] = []
+        self.daily_high_water: float = self.starting_equity
+        self.halted: bool = False
+        self.halt_reason: str = ""
+
+        self._broker = None
+        self._connected = False
+
+        self._load_local_state()
+
+    # ── State file (local, tracks history only) ────────────────
+
+    def _state_path(self) -> Path:
+        return PROJECT_ROOT / "paper_engine" / "state" / f"live_{self.market_id}.json"
+
+    def _load_local_state(self):
+        path = self._state_path()
+        if path.exists():
+            try:
+                with open(path) as f:
+                    state = json.load(f)
+                self.closed_trades = state.get("closed_trades", [])
+                self.equity_history = state.get("equity_history", [])
+                self.daily_high_water = state.get("daily_high_water", self.starting_equity)
+                self.halted = state.get("halted", False)
+                self.halt_reason = state.get("halt_reason", "")
+                logger.info("Loaded live state: %d closed trades, %d equity pts",
+                            len(self.closed_trades), len(self.equity_history))
+            except Exception as e:
+                logger.warning("Failed to load live state: %s", e)
+
+    def save_state(self):
+        """Persist closed-trade history and equity curve."""
+        path = self._state_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        state = {
+            "market_id": self.market_id,
+            "mode": "live",
+            "closed_trades": self.closed_trades,
+            "equity_history": self.equity_history,
+            "daily_high_water": self.daily_high_water,
+            "halted": self.halted,
+            "halt_reason": self.halt_reason,
+            "last_saved": datetime.now().isoformat(),
+        }
+        with open(path, "w") as f:
+            json.dump(state, f, indent=2)
+
+    # ── Broker connection ──────────────────────────────────────
+
+    def connect(self) -> bool:
+        """Connect to broker and load positions + cash."""
+        from brokers.registry import get_broker
+        self._broker = get_broker(self.market_id, self.config)
+        if not self._broker.connect():
+            logger.error("LivePortfolio: broker connect failed")
+            return False
+        self._connected = True
+        self._refresh_from_broker()
+        return True
+
+    def disconnect(self):
+        if self._broker:
+            self._broker.disconnect()
+        self._connected = False
+
+    def _refresh_from_broker(self):
+        """Pull positions and account info from broker."""
+        if not self._broker:
+            return
+
+        # Account info
+        acct = self._broker.get_account_info()
+        self.cash = acct.cash
+        self._broker_equity = acct.equity
+
+        # Convert broker PositionInfo → engine Position objects
+        raw_positions = self._broker.get_positions()
+        self.positions = []
+        for pi in raw_positions:
+            # Filter to this market's tickers
+            if self.market_id == "asx" and not pi.ticker.endswith(".AX"):
+                continue
+            if self.market_id == "sp500" and pi.ticker.endswith(".AX"):
+                continue
+
+            pos = Position(
+                ticker=pi.ticker,
+                strategy=pi.strategy or "unknown",
+                entry_date=pi.entry_date or "unknown",
+                entry_price=pi.entry_price,
+                shares=pi.shares,
+                stop_price=pi.stop_price,
+                take_profit=pi.take_profit,
+                confidence=1.0,
+                rationale="live broker position",
+                sector=pi.sector or "Unknown",
+            )
+            pos.entry_value = pi.cost_basis or (pi.entry_price * pi.shares)
+            self.positions.append(pos)
+
+        logger.info("LivePortfolio: %d positions, cash=$%.2f, equity=$%.2f",
+                     len(self.positions), self.cash, self._broker_equity)
+
+    # ── Interface matching PaperPortfolio ──────────────────────
+
+    def equity(self, prices: dict[str, float] = None) -> float:
+        """Total equity from broker (prices arg ignored — broker has live prices)."""
+        if self._broker_equity > 0:
+            return self._broker_equity
+        # Fallback: calculate from positions
+        pos_value = sum(
+            p.current_value(prices.get(p.ticker, p.entry_price))
+            for p in self.positions
+        ) if prices else sum(p.entry_value for p in self.positions)
+        return round(self.cash + pos_value, 2)
+
+    def check_risk_limits(self, signal) -> tuple[bool, str]:
+        """Validate a proposed trade against risk limits (same logic as PaperPortfolio)."""
+        reasons = []
+
+        if len(self.positions) >= self.max_positions:
+            reasons.append(f"Max positions ({self.max_positions}) reached")
+
+        sector = getattr(signal, "sector", "Unknown")
+        sector_count = sum(1 for p in self.positions if p.sector == sector)
+        if sector_count >= self.max_sector_conc:
+            reasons.append(f"Max sector concentration ({self.max_sector_conc}) for {sector}")
+
+        if any(p.ticker == signal.ticker for p in self.positions):
+            reasons.append(f"Already holding {signal.ticker}")
+
+        risk_amount = abs(signal.entry_price - signal.stop_price) * signal.position_size
+        eq = self.equity()
+        max_risk = eq * self.max_risk_per_trade
+        if risk_amount > max_risk * 1.1:
+            reasons.append(f"Risk ${risk_amount:.2f} exceeds max ${max_risk:.2f}")
+
+        cost = signal.entry_price * signal.position_size
+        if cost > self.cash:
+            reasons.append(f"Insufficient cash: need ${cost:.2f}, have ${self.cash:.2f}")
+
+        if self.halted:
+            reasons.append(f"Trading halted: {self.halt_reason}")
+
+        if reasons:
+            return False, "; ".join(reasons)
+        return True, "All checks passed"
+
+    def check_daily_drawdown(self, prices: dict[str, float] = None):
+        """Check if daily drawdown limit breached."""
+        current_eq = self.equity(prices)
+        self.daily_high_water = max(self.daily_high_water, current_eq)
+        dd = (self.daily_high_water - current_eq) / self.daily_high_water if self.daily_high_water > 0 else 0
+        if dd >= self.max_daily_dd:
+            self.halted = True
+            self.halt_reason = f"Daily drawdown {dd:.2%} >= {self.max_daily_dd:.2%}"
+            logger.warning("HALT: %s", self.halt_reason)
+            return True, dd
+        return False, dd
+
+    def reset_daily_halt(self):
+        if self.halted:
+            logger.info("Resetting daily halt (was: %s)", self.halt_reason)
+        self.halted = False
+        self.halt_reason = ""
+
+    def portfolio_summary(self, prices: dict[str, float] = None) -> dict:
+        """Build summary matching PaperPortfolio.portfolio_summary format."""
+        eq = self.equity(prices)
+        total_pnl = eq - self.starting_equity
+        total_pnl_pct = round(total_pnl / self.starting_equity * 100, 2) if self.starting_equity else 0
+
+        open_positions = []
+        for p in self.positions:
+            price = prices.get(p.ticker, p.entry_price) if prices else p.entry_price
+            open_positions.append({
+                "ticker": p.ticker,
+                "strategy": p.strategy,
+                "entry_date": p.entry_date,
+                "entry_price": p.entry_price,
+                "current_price": price,
+                "shares": p.shares,
+                "unrealized_pnl": p.unrealized_pnl(price),
+                "unrealized_pnl_pct": p.unrealized_pnl_pct(price),
+                "stop_price": p.stop_price,
+            })
+
+        return {
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "equity": eq,
+            "cash": self.cash,
+            "starting_equity": self.starting_equity,
+            "total_pnl": round(total_pnl, 2),
+            "total_pnl_pct": total_pnl_pct,
+            "open_positions": open_positions,
+            "num_open": len(self.positions),
+            "num_closed_trades": len(self.closed_trades),
+            "halted": self.halted,
+        }
+
+    def get_snapshot(self, prices: dict[str, float] = None) -> dict:
+        """Convenience wrapper for dashboard/telegram."""
+        summary = self.portfolio_summary(prices)
+        return {
+            "equity": summary["equity"],
+            "cash": summary["cash"],
+            "open_positions": summary["num_open"],
+            "total_pnl": summary["total_pnl"],
+            "total_pnl_pct": summary["total_pnl_pct"],
+        }
+
+    def record_equity(self, trade_date: str, prices: dict[str, float] = None):
+        """Record daily equity snapshot."""
+        eq = self.equity(prices)
+        self.equity_history.append({
+            "date": trade_date,
+            "equity": eq,
+            "cash": self.cash,
+            "positions_value": round(eq - self.cash, 2),
+            "num_positions": len(self.positions),
+        })
+        self.save_state()
+
+    def record_closed_trade(self, trade_record: dict):
+        """Append a closed trade and persist."""
+        self.closed_trades.append(trade_record)
+        self.save_state()

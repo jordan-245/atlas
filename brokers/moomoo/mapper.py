@@ -25,15 +25,23 @@ def to_moomoo(ticker: str) -> str:
 def to_atlas(moomoo_code: str) -> str:
     """Convert Moomoo AU. ticker to Atlas .AX format.
 
+    Only converts AU. prefix tickers. Other markets (US., HK.) are
+    passed through unchanged since Atlas only manages ASX positions.
+
     >>> to_atlas('AU.BHP')
     'BHP.AX'
     >>> to_atlas('BHP.AX')
     'BHP.AX'
+    >>> to_atlas('US.XOP')
+    'US.XOP'
     """
     if moomoo_code.endswith(".AX"):
         return moomoo_code
-    code = moomoo_code.replace("AU.", "").upper()
-    return f"{code}.AX"
+    if moomoo_code.startswith("AU."):
+        code = moomoo_code[3:].upper()
+        return f"{code}.AX"
+    # Non-AU tickers (US., HK.) pass through unchanged
+    return moomoo_code
 
 
 def to_moomoo_list(tickers: list[str]) -> list[str]:

@@ -27,6 +27,13 @@ dashboard/data/
 *.secrets.json
 *-secrets.json
 
+# OpenD config (contains login credentials)
+OpenD.xml
+FutuOpenD.xml
+
+# Live trading halt file (runtime only)
+.live_halt
+
 # OS files
 .DS_Store
 Thumbs.db

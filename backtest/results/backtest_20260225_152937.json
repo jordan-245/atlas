@@ -1,0 +1,35 @@
+{
+  "timestamp": "20260225_152937",
+  "config_version": "v9.2_reoptimized_moomoo_fees",
+  "tickers_count": 160,
+  "metrics": {
+    "total_return": 0.0626,
+    "cagr": 0.031061,
+    "max_drawdown": 0.031451,
+    "sharpe": -0.1805,
+    "sortino": -0.2511,
+    "win_rate": 0.5385,
+    "profit_factor": 1.3937,
+    "avg_trade": 2.38,
+    "total_trades": 130,
+    "total_pnl": 309.98,
+    "exposure": 0.873,
+    "turnover": 28.9186,
+    "avg_equity": 5122.08,
+    "final_equity": 5312.99,
+    "avg_winner": 15.68,
+    "avg_loser": -13.12,
+    "largest_winner": 70.9,
+    "largest_loser": -66.67,
+    "avg_hold_days": 14.6
+  },
+  "benchmark_metrics": {
+    "cagr": 0.08462,
+    "max_drawdown": 0.141197,
+    "sharpe": 0.4027,
+    "sortino": 0.5117,
+    "total_return": 0.1757,
+    "final_equity": 5878.73
+  },
+  "total_trades": 130
+}

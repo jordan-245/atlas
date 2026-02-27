@@ -109,6 +109,44 @@ class DealInfo:
     raw: dict = field(default_factory=dict)
 
 
+@dataclass
+class OrderFeeInfo:
+    """Fee breakdown for a single order."""
+    order_id: str = ""
+    total_fee: float = 0.0
+    fee_details: list = field(default_factory=list)  # [(name, amount), ...]
+    raw: dict = field(default_factory=dict)
+
+
+@dataclass
+class MarketStateInfo:
+    """Market open/close status for a ticker."""
+    ticker: str = ""
+    market_state: str = ""          # MORNING, AFTERNOON, OVERNIGHT, REST, etc.
+    raw: dict = field(default_factory=dict)
+
+
+@dataclass
+class TradingDayInfo:
+    """A single trading day."""
+    date: str = ""                  # YYYY-MM-DD
+    trade_date_type: str = ""       # WHOLE, MORNING, AFTERNOON
+
+
+@dataclass
+class SlippageReport:
+    """Slippage analysis for a single order/deal."""
+    order_id: str = ""
+    ticker: str = ""
+    side: str = ""
+    requested_price: float = 0.0
+    fill_price: float = 0.0
+    slippage_abs: float = 0.0       # fill - requested (positive = worse for buyer)
+    slippage_pct: float = 0.0       # slippage as % of requested price
+    qty: int = 0
+    slippage_cost: float = 0.0      # slippage_abs * qty
+
+
 # ═══════════════════════════════════════════════════════════════
 # Abstract Broker
 # ═══════════════════════════════════════════════════════════════
@@ -210,6 +248,36 @@ class BrokerAdapter(ABC):
             Dict of ticker -> latest price.
         """
         return {}  # Default: not implemented, caller falls back to cache
+
+    # ── Extended queries (optional — broker-specific) ──────────
+
+    def get_history_orders(self, days: int = 30) -> list[OrderResult]:
+        """Get historical orders for the past N days."""
+        return []
+
+    def get_history_deals(self, days: int = 30) -> list[DealInfo]:
+        """Get historical deal fills for the past N days."""
+        return []
+
+    def get_order_fees(self, order_ids: list[str]) -> list[OrderFeeInfo]:
+        """Get fee breakdown for specific orders."""
+        return []
+
+    def get_market_states(self, tickers: list[str]) -> list[MarketStateInfo]:
+        """Get current market state (open/closed/etc) for tickers."""
+        return []
+
+    def get_trading_days(self, market: str = "US", days: int = 30) -> list[TradingDayInfo]:
+        """Get trading calendar for the past N days."""
+        return []
+
+    def get_max_trade_qty(self, ticker: str, price: float) -> Optional[int]:
+        """Query max buyable/sellable quantity for a ticker at given price."""
+        return None
+
+    def get_slippage_report(self, days: int = 30) -> list[SlippageReport]:
+        """Analyse slippage by comparing order prices to fill prices."""
+        return []
 
     # ── Convenience ────────────────────────────────────────────
 

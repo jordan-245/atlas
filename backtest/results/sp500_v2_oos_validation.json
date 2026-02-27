@@ -1,0 +1,77 @@
+{
+  "timestamp": "2026-02-27T13:40:59.389748",
+  "config_version": "v2.0",
+  "time_split": {
+    "is_metrics": {
+      "total_return": 0.3234,
+      "cagr": 0.1569,
+      "max_drawdown": 0.0539,
+      "sharpe": 1.0404,
+      "sortino": 1.6547,
+      "win_rate": 0.56,
+      "profit_factor": 1.4996,
+      "avg_trade": 7.39,
+      "total_trades": 425,
+      "total_pnl": 3142.22,
+      "exposure": 0.9627,
+      "turnover": 62.4026,
+      "avg_equity": 11389.7,
+      "final_equity": 13233.56,
+      "avg_winner": 39.63,
+      "avg_loser": -33.63,
+      "largest_winner": 209.35,
+      "largest_loser": -216.84,
+      "avg_hold_days": 11.1
+    },
+    "oos_metrics": {
+      "total_return": 0.064,
+      "cagr": 0.1596,
+      "max_drawdown": 0.0249,
+      "sharpe": 1.2252,
+      "sortino": 1.9151,
+      "win_rate": 0.5185,
+      "profit_factor": 1.612,
+      "avg_trade": 7.2,
+      "total_trades": 108,
+      "total_pnl": 777.96,
+      "exposure": 0.9905,
+      "turnover": 15.7121,
+      "avg_equity": 10187.66,
+      "final_equity": 10639.95,
+      "avg_winner": 36.59,
+      "avg_loser": -24.44,
+      "largest_winner": 164.05,
+      "largest_loser": -90.17,
+      "avg_hold_days": 11.7
+    },
+    "oos_is_sharpe_ratio": 1.1776,
+    "pass": true
+  },
+  "perturbation": {
+    "mean_cagr": 0.0858,
+    "neg_cagr_trials": 0,
+    "sharpe_mean": 0.3993,
+    "sharpe_std": 0.3552,
+    "trial_cagrs": [
+      0.0966,
+      0.1101,
+      0.1403,
+      0.131,
+      0.0483,
+      0.0783,
+      0.1184,
+      0.0243,
+      0.054,
+      0.0565
+    ],
+    "pass": true
+  },
+  "window_consistency": {
+    "total_windows": 21,
+    "profitable_windows": 16,
+    "pct_profitable": 76.19,
+    "worst_return": -0.017,
+    "pass": true
+  },
+  "overall_pass": true
+}

@@ -139,11 +139,92 @@ def _esc(text: str) -> str:
     return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def _fetch_cached_prices(tickers: list[str]) -> dict[str, float]:
+    """Read latest close prices from parquet cache for given tickers.
+
+    This avoids a network call — it reads whatever the most recent
+    ingest/settlement wrote to disk.
+    """
+    import pandas as pd
+
+    cache_dir = PROJECT_ROOT / "data" / "cache"
+    prices = {}
+    for ticker in tickers:
+        cache_key = ticker.replace(".", "_")
+        cache_path = cache_dir / f"{cache_key}.parquet"
+        if cache_path.exists():
+            try:
+                df = pd.read_parquet(cache_path)
+                if not df.empty and "close" in df.columns:
+                    prices[ticker] = float(df.iloc[-1]["close"])
+            except Exception:
+                pass
+    return prices
+
+
+def _build_portfolio_snapshot(market_id: str = "asx") -> Optional[str]:
+    """Build an HTML portfolio snapshot block with live prices from cache.
+
+    Returns None if portfolio can't be loaded.
+    """
+    try:
+        from utils.config import get_active_config
+        from paper_engine.engine import PaperPortfolio
+        from utils.helpers import format_currency
+        from markets.registry import get_market
+
+        config = get_active_config(market_id)
+        pp = PaperPortfolio(config, market_id=market_id)
+        market = get_market(market_id)
+        currency = market.currency
+
+        tickers = [p.ticker for p in pp.positions]
+        prices = _fetch_cached_prices(tickers) if tickers else {}
+        summary = pp.portfolio_summary(prices)
+
+        equity = summary["equity"]
+        cash = summary["cash"]
+        positions = summary.get("open_positions", [])
+        n_pos = len(positions)
+        invested = equity - cash
+        total_pnl = sum(p.get("unrealized_pnl", 0) for p in positions)
+        pnl_sign = "+" if total_pnl >= 0 else ""
+
+        lines = [
+            "<b>Portfolio:</b>",
+            f"  Equity: <b>{format_currency(equity, currency)}</b>",
+            f"  Cash: {format_currency(cash, currency)}",
+            f"  Invested: {format_currency(invested, currency)}",
+            f"  Positions: {n_pos}",
+            f"  Unrealised PnL: <b>{pnl_sign}{format_currency(total_pnl, currency)}</b>",
+        ]
+
+        # Top movers
+        sorted_pos = sorted(positions, key=lambda p: abs(p.get("unrealized_pnl", 0)), reverse=True)
+        if sorted_pos:
+            lines.append("")
+            lines.append("<b>Top Movers:</b>")
+            for p in sorted_pos[:5]:
+                ticker = p.get("ticker", "?")
+                pnl = p.get("unrealized_pnl", 0)
+                pnl_pct = p.get("unrealized_pnl_pct", 0)  # already ×100 from Position class
+                icon = "🟢" if pnl >= 0 else "🔴"
+                lines.append(
+                    f"  {icon} <b>{_esc(ticker)}</b>  "
+                    f"{'+' if pnl >= 0 else ''}{format_currency(pnl, currency)} "
+                    f"({'+' if pnl_pct >= 0 else ''}{pnl_pct:.1f}%)"
+                )
+
+        return "\n".join(lines)
+    except Exception as e:
+        logger.error("Failed to build portfolio snapshot: %s", e, exc_info=True)
+        return None
+
+
 def send_premarket_summary(plan_path: Optional[str] = None, market_id: str = "asx") -> bool:
     """Send a summary of the pre-market plan generation.
 
-    Reads the plan JSON and formats a concise alert with signal count,
-    top picks, and risk summary.
+    Includes portfolio snapshot with live prices and plan details.
     """
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
 
@@ -151,21 +232,25 @@ def send_premarket_summary(plan_path: Optional[str] = None, market_id: str = "as
         today = datetime.now().strftime("%Y-%m-%d")
         plan_path = str(PROJECT_ROOT / f"paper_engine/plans/plan_{today}.json")
 
+    # Portfolio snapshot (always include — this is the main content)
+    snapshot = _build_portfolio_snapshot(market_id)
+
     plan_file = Path(plan_path)
     if not plan_file.exists():
-        return send_message(
+        msg = (
             f"📊 <b>Atlas Pre-Market [{market_id.upper()}]</b>\n"
             f"<i>{now}</i>\n\n"
-            f"⚠️ No plan file generated today.\n"
-            f"Check logs for errors."
         )
+        if snapshot:
+            msg += snapshot + "\n\n"
+        msg += "⚠️ No plan file generated today.\nCheck logs for errors."
+        return send_message(msg)
 
     with open(plan_file) as f:
         plan = json.load(f)
 
     entries = plan.get("entries", [])
     exits = plan.get("exits", [])
-    meta = plan.get("metadata", plan)
 
     # Build entries summary
     if entries:
@@ -180,7 +265,7 @@ def send_premarket_summary(plan_path: Optional[str] = None, market_id: str = "as
         if len(entries) > 6:
             entry_text += f"\n  … +{len(entries) - 6} more"
     else:
-        entry_text = "  None"
+        entry_text = "  No new entries"
 
     # Build exits summary
     if exits:
@@ -193,83 +278,52 @@ def send_premarket_summary(plan_path: Optional[str] = None, market_id: str = "as
         if len(exits) > 4:
             exit_text += f"\n  … +{len(exits) - 4} more"
     else:
-        exit_text = "  None"
+        exit_text = "  No exits"
 
     msg = (
         f"📊 <b>Atlas Pre-Market [{market_id.upper()}]</b>\n"
         f"<i>{now}</i>\n\n"
-        f"<b>Entries ({len(entries)}):</b>\n{entry_text}\n\n"
-        f"<b>Exits ({len(exits)}):</b>\n{exit_text}\n\n"
-        f"Status: <b>awaiting approval</b>"
     )
+    if snapshot:
+        msg += snapshot + "\n\n"
+    msg += (
+        f"<b>Today's Plan:</b>\n"
+        f"  Entries: {len(entries)} | Exits: {len(exits)}\n"
+    )
+    if entries:
+        msg += f"\n<b>Entries ({len(entries)}):</b>\n{entry_text}\n"
+    if exits:
+        msg += f"\n<b>Exits ({len(exits)}):</b>\n{exit_text}\n"
+    if not entries and not exits:
+        msg += "  → <b>Hold all positions</b>\n"
+    msg += f"\nStatus: <b>awaiting approval</b>"
     return send_message(msg)
 
 
 def send_postclose_summary(market_id: str = "asx") -> bool:
-    """Send post-close settlement summary with equity and position snapshot."""
+    """Send post-close settlement summary with equity and position snapshot.
+
+    Fetches current prices from the parquet cache (which EOD settlement
+    has already refreshed) so unrealised PnL and equity are accurate.
+    """
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    try:
-        sys.path.insert(0, str(PROJECT_ROOT))
-        from utils.config import get_active_config
-        from paper_engine.engine import PaperPortfolio
-        from utils.helpers import format_currency
-
-        config = get_active_config(market_id)
-        pp = PaperPortfolio(config, market_id=market_id)
-        summary = pp.portfolio_summary()
-
-        from markets.registry import get_market
-        market = get_market(market_id)
-        currency = market.currency
-
-        equity = summary["equity"]
-        cash = summary["cash"]
-        positions = summary.get("open_positions", [])
-        n_pos = len(positions)
-        invested = equity - cash
-
-        # Calculate total unrealized PnL
-        total_pnl = sum(p.get("unrealized_pnl", 0) for p in positions)
-        pnl_sign = "+" if total_pnl >= 0 else ""
-
-        # Top movers
-        sorted_pos = sorted(positions, key=lambda p: abs(p.get("unrealized_pnl", 0)), reverse=True)
-        if sorted_pos:
-            mover_lines = []
-            for p in sorted_pos[:5]:
-                ticker = p.get("ticker", "?")
-                pnl = p.get("unrealized_pnl", 0)
-                pnl_pct = p.get("unrealized_pnl_pct", 0)
-                icon = "🟢" if pnl >= 0 else "🔴"
-                mover_lines.append(
-                    f"  {icon} <b>{_esc(ticker)}</b>  {'+' if pnl >= 0 else ''}{format_currency(pnl, currency)} ({'+' if pnl_pct >= 0 else ''}{pnl_pct:.1%})"
-                )
-            mover_text = "\n".join(mover_lines)
-        else:
-            mover_text = "  No positions"
-
+    snapshot = _build_portfolio_snapshot(market_id)
+    if snapshot:
         msg = (
             f"📈 <b>Atlas Post-Close [{market_id.upper()}]</b>\n"
             f"<i>{now}</i>\n\n"
-            f"<b>Portfolio:</b>\n"
-            f"  Equity: <b>{format_currency(equity, currency)}</b>\n"
-            f"  Cash: {format_currency(cash, currency)}\n"
-            f"  Invested: {format_currency(invested, currency)}\n"
-            f"  Positions: {n_pos}\n"
-            f"  Unrealised PnL: <b>{pnl_sign}{format_currency(total_pnl, currency)}</b>\n\n"
-            f"<b>Top Movers:</b>\n{mover_text}"
+            f"{snapshot}"
         )
         return send_message(msg)
 
-    except Exception as e:
-        logger.error("Failed to build post-close summary: %s", e, exc_info=True)
-        return send_message(
-            f"📈 <b>Atlas Post-Close [{market_id.upper()}]</b>\n"
-            f"<i>{now}</i>\n\n"
-            f"⚠️ Settlement completed but summary failed:\n"
-            f"<code>{_esc(str(e))}</code>"
-        )
+    # Fallback if snapshot build fails
+    return send_message(
+        f"📈 <b>Atlas Post-Close [{market_id.upper()}]</b>\n"
+        f"<i>{now}</i>\n\n"
+        f"⚠️ Settlement completed but summary failed.\n"
+        f"Check logs for details."
+    )
 
 
 def send_error(mode: str, detail: str, logfile: Optional[str] = None) -> bool:

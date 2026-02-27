@@ -1,3 +1,10 @@
+## Memory
+
+- **Read `memory/SUMMARY.md` at the start of every session**
+- After any correction, discovery, or decision: update it
+- Keep it under 100 lines — consolidate, don't append endlessly
+- If it gets long, compress repeated patterns into single rules
+
 ## Workflow Orchestration
 
 ### 1. Plan Node Default
@@ -44,6 +51,12 @@
 4. **Explain Changes**: High-level summary at each step
 5. **Document Results**: Add review section to `tasks/todo.md`
 6. **Capture Lessons**: Update `tasks/lessons.md` after corrections
+
+## Infrastructure
+
+- **VPS has 8 CPU cores** — leverage parallel execution for compute-heavy tasks like backtesting
+- Split work across cores (e.g. parallel backtest runs, concurrent data processing) to maximise throughput
+- Use subagents or multiprocessing to fan out work when tasks are independent
 
 ## Core Principles
 

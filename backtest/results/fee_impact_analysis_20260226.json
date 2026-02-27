@@ -1,0 +1,63 @@
+{
+  "timestamp": "2026-02-26T13:32:39.971969",
+  "purpose": "SP500 fee impact analysis \u2014 real Moomoo fees vs zero-fee assumption",
+  "data_source": "order_fee_query from Moomoo API (6 US orders, 90-day sample)",
+  "actual_fees": {
+    "avg_per_order_usd": 1.09,
+    "breakdown": {
+      "platform_fee": 0.99,
+      "settlement_fee": 0.1,
+      "trading_activity_fee": 0.03
+    },
+    "config_applied": {
+      "commission_per_trade": 1.1,
+      "commission_pct": 0.001,
+      "flat_fee_threshold": 5000.0
+    }
+  },
+  "sp500_zero_fee": {
+    "cagr_pct": 12.68,
+    "sharpe": 0.84,
+    "max_drawdown_pct": 8.45,
+    "profit_factor": 1.553,
+    "win_rate_pct": 58.8,
+    "total_trades": 415,
+    "avg_trade_pnl": 6.63,
+    "total_pnl": 2752.06,
+    "final_equity": 12578.58
+  },
+  "sp500_real_fee": {
+    "cagr_pct": 11.9,
+    "sharpe": 0.79,
+    "max_drawdown_pct": 6.79,
+    "profit_factor": 1.54,
+    "win_rate_pct": 57.8,
+    "total_trades": 408,
+    "avg_trade_pnl": 6.31,
+    "total_pnl": 2573.22,
+    "final_equity": 12412.26
+  },
+  "delta": {
+    "cagr_pct": -0.78,
+    "sharpe": -0.05,
+    "max_drawdown_pct": -1.66,
+    "profit_factor": -0.013,
+    "total_pnl": -178.84,
+    "trades_removed": 7
+  },
+  "benchmark": {
+    "spy_cagr_pct": 11.71,
+    "spy_sharpe": 0.564,
+    "spy_max_drawdown_pct": 17.6
+  },
+  "conclusion": "Real Moomoo fees reduce SP500 CAGR by 0.78% but strategy still beats benchmark. Max drawdown improves. Fees are a minor drag (~0.1% per trade). ASX config already had correct .00 fees.",
+  "asx_baseline": {
+    "cagr_pct": 0.98,
+    "sharpe": -0.198,
+    "max_drawdown_pct": 10.85,
+    "profit_factor": 1.04,
+    "total_trades": 322,
+    "fees_per_trade": 3.0,
+    "note": "ASX fees already correctly configured. Weak performance suggests parameter re-optimization needed."
+  }
+}

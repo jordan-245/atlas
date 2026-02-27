@@ -262,6 +262,29 @@ def calc_volume_ratio(volume: pd.Series, lookback: int = 20) -> pd.Series:
 
 
 
+def calc_wvf(close: pd.Series, low: pd.Series, period: int = 22) -> pd.Series:
+    """Calculate Williams VIX Fix — synthetic fear gauge for individual stocks.
+
+    WVF spikes during panic selling, making it a high-probability
+    mean reversion entry signal. PF 1.78 on S&P 500 (QuantifiedStrategies).
+
+    Formula: WVF = [(Highest Close over N periods - Low) / Highest Close] × 100
+
+    Args:
+        close: Series of close prices.
+        low: Series of low prices.
+        period: Lookback period (default 22 trading days ≈ 1 month).
+
+    Returns:
+        pd.Series of WVF values (higher = more fear/panic).
+    """
+    if len(close) < period:
+        return pd.Series(np.nan, index=close.index)
+    highest_close = close.rolling(period).max()
+    wvf = ((highest_close - low) / highest_close) * 100
+    return wvf
+
+
 def calc_ibs(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
     """Calculate Internal Bar Strength (IBS).
 

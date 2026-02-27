@@ -33,7 +33,7 @@ import numpy as np
 import pandas as pd
 
 from strategies.base import BaseStrategy, Signal
-from utils.helpers import calc_atr, calc_rsi, calc_zscore, calc_position_size, calc_volume_ratio
+from utils.helpers import calc_atr, calc_rsi, calc_zscore, calc_position_size, calc_volume_ratio, calc_ibs
 from utils.earnings import is_near_earnings
 
 logger = logging.getLogger(__name__)
@@ -65,10 +65,17 @@ class MeanReversion(BaseStrategy):
         self.earnings_blackout_enabled = earnings_cfg.get("enabled", True)
         self.earnings_blackout_before = earnings_cfg.get("days_before", 5)
         self.earnings_blackout_after = earnings_cfg.get("days_after", 1)
+        # US-optimization: SMA-200 trend filter (only buy in uptrends)
+        self.sma200_filter = strat_cfg.get("sma200_filter", False)
+        # US-optimization: IBS confirmation filter (low IBS = selling exhaustion)
+        self.ibs_max = strat_cfg.get("ibs_max", 1.0)  # 1.0 = disabled
         self._logger.info(
-            f"MeanReversion initialized: rsi_oversold={self.rsi_oversold}, "
+            f"MeanReversion initialized: rsi_period={self.rsi_period}, "
+            f"rsi_oversold={self.rsi_oversold}, "
             f"zscore_entry={self.zscore_entry}, profit_target={self.profit_target_atr_mult}x ATR, "
             f"vol_surge={self.vol_surge_threshold}x, "
+            f"sma200_filter={'ON' if self.sma200_filter else 'OFF'}, "
+            f"ibs_max={self.ibs_max}, "
             f"earnings_blackout={'ON' if self.earnings_blackout_enabled else 'OFF'}"
         )
 
@@ -133,6 +140,27 @@ class MeanReversion(BaseStrategy):
 
                 if not (is_rsi_oversold and is_zscore_extreme):
                     continue
+
+                # SMA-200 trend filter: only buy if price is above 200-day SMA
+                if self.sma200_filter:
+                    sma200 = close.rolling(200).mean()
+                    sma200_val = sma200.iloc[-1]
+                    if pd.isna(sma200_val) or close.iloc[-1] < sma200_val:
+                        self._logger.debug(
+                            f"{ticker}: below SMA(200) "
+                            f"(close={close.iloc[-1]:.2f}, sma200={sma200_val if not pd.isna(sma200_val) else 'N/A'}), skipping"
+                        )
+                        continue
+
+                # IBS confirmation filter: only buy if IBS is low (selling exhaustion)
+                if self.ibs_max < 1.0:
+                    ibs = calc_ibs(high, low, close)
+                    current_ibs = ibs.iloc[-1]
+                    if pd.isna(current_ibs) or current_ibs > self.ibs_max:
+                        self._logger.debug(
+                            f"{ticker}: IBS={current_ibs:.3f} > max {self.ibs_max}, skipping"
+                        )
+                        continue
 
                 # Phase 7A: Earnings blackout check
                 if self.earnings_blackout_enabled:

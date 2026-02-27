@@ -1,5 +1,6 @@
 {
-  "cash": 3621.425300000001,
+  "market_id": "asx",
+  "cash": 3894.367100000001,
   "positions": [
     {
       "ticker": "WES.AX",
@@ -13,8 +14,9 @@
       "rationale": "WES.AX in uptrend (fast MA $85.64 > slow MA $83.07, spread 3.1%). Price pulled back 5.6% from recent high of $89.26 to $84.24. Trend active for 25 bars. Volume 2.2x avg (HIGH). ATR=1.75, stop at $78.12.",
       "sector": "Consumer Discretionary",
       "entry_value": 252.97,
-      "mae": -0.0009985524467528118,
-      "mfe": 0.0
+      "mae": -0.0513992677811408,
+      "mfe": 0.0,
+      "stop_order_id": ""
     },
     {
       "ticker": "EVN.AX",
@@ -29,7 +31,8 @@
       "sector": "Materials",
       "entry_value": 120.04,
       "mae": -0.0009996820314452995,
-      "mfe": 0.0
+      "mfe": 0.08097296323588746,
+      "stop_order_id": ""
     },
     {
       "ticker": "S32.AX",
@@ -44,22 +47,8 @@
       "sector": "Materials",
       "entry_value": 144.19,
       "mae": -0.0010070556327723868,
-      "mfe": 0.0
-    },
-    {
-      "ticker": "BSL.AX",
-      "strategy": "trend_following",
-      "entry_date": "2026-02-20",
-      "entry_price": 27.8779,
-      "shares": 6,
-      "stop_price": 24.9402,
-      "take_profit": null,
-      "confidence": 1.0,
-      "rationale": "BSL.AX in uptrend (fast MA $29.25 > slow MA $27.71, spread 5.5%). Price pulled back 12.0% from recent high of $31.63 to $27.85. Trend active for 59 bars. Volume 0.4x avg (LOW). ATR=0.83, stop at $24.94.",
-      "sector": "Materials",
-      "entry_value": 167.27,
-      "mae": -0.0010007790590494186,
-      "mfe": 0.0
+      "mfe": 0.0481988199080091,
+      "stop_order_id": ""
     },
     {
       "ticker": "PDN.AX",
@@ -74,7 +63,8 @@
       "sector": "Materials",
       "entry_value": 105.95,
       "mae": -0.0009967725144732192,
-      "mfe": 0.0
+      "mfe": 0.05337077211437846,
+      "stop_order_id": ""
     },
     {
       "ticker": "SFR.AX",
@@ -89,22 +79,8 @@
       "sector": "Materials",
       "entry_value": 132.92,
       "mae": -0.0010006154429147707,
-      "mfe": 0.0
-    },
-    {
-      "ticker": "WAF.AX",
-      "strategy": "trend_following",
-      "entry_date": "2026-02-20",
-      "entry_price": 3.6036,
-      "shares": 32,
-      "stop_price": 3.0199,
-      "take_profit": null,
-      "confidence": 1.0,
-      "rationale": "WAF.AX in uptrend (fast MA $3.59 > slow MA $3.31, spread 8.3%). Price pulled back 7.9% from recent high of $3.91 to $3.60. Trend active for 30 bars. Volume 1.2x avg. ATR=0.17, stop at $3.02.",
-      "sector": "Materials",
-      "entry_value": 115.32,
-      "mae": -0.0009990274634897815,
-      "mfe": 0.0
+      "mfe": 0.07851911855475946,
+      "stop_order_id": ""
     },
     {
       "ticker": "BGL.AX",
@@ -119,7 +95,8 @@
       "sector": "Materials",
       "entry_value": 109.85,
       "mae": -0.001015926782642719,
-      "mfe": 0.0
+      "mfe": 0.032847975457356474,
+      "stop_order_id": ""
     },
     {
       "ticker": "REH.AX",
@@ -134,7 +111,8 @@
       "sector": "Industrials",
       "entry_value": 152.83,
       "mae": -0.0010004308048195533,
-      "mfe": 0.0
+      "mfe": 0.19764784471231528,
+      "stop_order_id": ""
     },
     {
       "ticker": "APX.AX",
@@ -148,11 +126,53 @@
       "rationale": "APX.AX in uptrend (fast MA $1.57 > slow MA $1.15, spread 36.4%). Price pulled back 24.7% from recent high of $1.90 to $1.43. Trend active for 37 bars. Volume 0.0x avg (LOW). ATR=0.16, stop at $0.86.",
       "sector": "Information Technology",
       "entry_value": 47.24,
-      "mae": -0.0009781000783061395,
-      "mfe": 0.0
+      "mae": -0.07433278770174946,
+      "mfe": 0.18066232864360696,
+      "stop_order_id": ""
     }
   ],
-  "closed_trades": [],
+  "closed_trades": [
+    {
+      "ticker": "BSL.AX",
+      "strategy": "trend_following",
+      "entry_date": "2026-02-20",
+      "exit_date": "2026-02-27",
+      "entry_price": 27.8779,
+      "exit_price": 27.6823,
+      "shares": 6,
+      "entry_value": 167.27,
+      "exit_value": 166.09,
+      "entry_commission": 3.0,
+      "exit_commission": 3.0,
+      "pnl": -7.18,
+      "pnl_pct": -4.29,
+      "mae": -0.1,
+      "mfe": 1.87,
+      "holding_days": 7,
+      "exit_reason": "signal_exit",
+      "confidence": 1.0
+    },
+    {
+      "ticker": "WAF.AX",
+      "strategy": "trend_following",
+      "entry_date": "2026-02-20",
+      "exit_date": "2026-02-27",
+      "entry_price": 3.6036,
+      "exit_price": 3.5265,
+      "shares": 32,
+      "entry_value": 115.32,
+      "exit_value": 112.85,
+      "entry_commission": 3.0,
+      "exit_commission": 3.0,
+      "pnl": -8.47,
+      "pnl_pct": -7.35,
+      "mae": -2.04,
+      "mfe": 0.0,
+      "holding_days": 7,
+      "exit_reason": "signal_exit",
+      "confidence": 1.0
+    }
+  ],
   "equity_history": [
     {
       "date": "2026-02-20",
@@ -160,10 +180,24 @@
       "cash": 3621.425300000001,
       "positions_value": 1347.22,
       "num_positions": 10
+    },
+    {
+      "date": "2026-02-25",
+      "equity": 5007.26,
+      "cash": 3621.425300000001,
+      "positions_value": 1385.83,
+      "num_positions": 10
+    },
+    {
+      "date": "2026-02-26",
+      "equity": 5025.31,
+      "cash": 3621.425300000001,
+      "positions_value": 1403.88,
+      "num_positions": 10
     }
   ],
-  "daily_high_water": 5000,
+  "daily_high_water": 5025.31,
   "halted": false,
   "halt_reason": "",
-  "last_saved": "2026-02-25T12:04:55.535808"
+  "last_saved": "2026-02-27T09:07:31.813917"
 }

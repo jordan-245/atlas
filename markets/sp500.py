@@ -43,6 +43,18 @@ class SP500Market(MarketProfile):
         return 0.05  # Fed funds rate proxy
 
     @property
+    def trading_days_per_year(self) -> int:
+        return 252  # NYSE/NASDAQ trade ~252 days/year
+
+    @property
+    def operator_timezone(self) -> str:
+        return "Australia/Brisbane"  # Operator is in AEST
+
+    @property
+    def pre_market_alert_hours_before(self) -> float:
+        return 5.5  # Alert at ~7:00 PM AEST (market opens ~12:30 AM AEST / 9:30 AM ET)
+
+    @property
     def trading_hours(self) -> TradingHours:
         return TradingHours(
             timezone="America/New_York",

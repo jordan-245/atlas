@@ -1,0 +1,1090 @@
+"""Live Trade Executor — bridges paper plan → Moomoo order execution.
+
+Reads an approved paper trade plan and executes it through the Moomoo broker.
+Maintains a shadow paper portfolio to keep paper and live state in sync.
+
+Safety architecture:
+    1. live_enabled must be True in config (default: False)
+    2. Plans must be APPROVED status before execution
+    3. Every order goes through pre-flight checks (value cap, daily limit, etc.)
+    4. Dry-run mode logs what WOULD happen without touching the broker
+    5. All executions are journaled to logs/live_executions.jsonl
+    6. Kill switch: set config trading.live_enabled=False or call emergency_halt()
+
+This module is the ONLY code path that sends real orders. Nothing else
+in Atlas can place live trades — this is enforced by keeping MomooBroker
+instantiation gated behind live_enabled checks.
+
+Usage:
+    executor = LiveExecutor(config)
+    executor.connect()
+    result = executor.execute_plan(plan, trade_date)
+    executor.disconnect()
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
+from brokers.base import (
+    AccountInfo, OrderResult, OrderSide, OrderStatus, OrderType, PositionInfo,
+)
+
+logger = logging.getLogger("atlas.live_executor")
+
+PROJECT_ROOT = Path(__file__).parent.parent
+EXECUTION_LOG = PROJECT_ROOT / "logs" / "live_executions.jsonl"
+HALT_FILE = PROJECT_ROOT / ".live_halt"
+
+
+# ═══════════════════════════════════════════════════════════════
+# Pre-flight safety checks
+# ═══════════════════════════════════════════════════════════════
+
+class PreflightError(Exception):
+    """Raised when a pre-flight safety check fails."""
+    pass
+
+
+def preflight_check_config(config: dict) -> list[str]:
+    """Validate config has all required safety fields. Returns list of errors."""
+    errors = []
+    trading = config.get("trading", {})
+
+    if not trading.get("live_enabled", False):
+        errors.append("trading.live_enabled is False")
+
+    safety = trading.get("live_safety", {})
+    if not safety:
+        errors.append("trading.live_safety section missing")
+    else:
+        if safety.get("max_order_value", 0) <= 0:
+            errors.append("live_safety.max_order_value must be > 0")
+        if safety.get("max_daily_orders", 0) <= 0:
+            errors.append("live_safety.max_daily_orders must be > 0")
+
+    if not config.get("moomoo", {}).get("opend_host"):
+        errors.append("moomoo.opend_host not configured")
+
+    return errors
+
+
+def preflight_check_order(
+    ticker: str,
+    side: OrderSide,
+    qty: int,
+    price: float,
+    safety: dict,
+    daily_order_count: int,
+) -> list[str]:
+    """Validate a single order against safety limits. Returns list of errors."""
+    errors = []
+    order_value = price * qty
+
+    max_value = safety.get("max_order_value", 2000)
+    if order_value > max_value:
+        errors.append(
+            f"Order value ${order_value:.2f} exceeds max ${max_value:.2f}"
+        )
+
+    max_daily = safety.get("max_daily_orders", 10)
+    if daily_order_count >= max_daily:
+        errors.append(
+            f"Daily order limit ({max_daily}) reached"
+        )
+
+    if qty <= 0:
+        errors.append(f"Invalid quantity: {qty}")
+
+    if price <= 0:
+        errors.append(f"Invalid price: {price}")
+
+    return errors
+
+
+# ═══════════════════════════════════════════════════════════════
+# Execution journal
+# ═══════════════════════════════════════════════════════════════
+
+def _journal_entry(event: str, data: dict):
+    """Append a line to the execution journal (JSONL)."""
+    entry = {
+        "timestamp": datetime.now().isoformat(),
+        "event": event,
+        **data,
+    }
+    EXECUTION_LOG.parent.mkdir(parents=True, exist_ok=True)
+    with open(EXECUTION_LOG, "a") as f:
+        f.write(json.dumps(entry, default=str) + "\n")
+
+
+# ═══════════════════════════════════════════════════════════════
+# Live Executor
+# ═══════════════════════════════════════════════════════════════
+
+class LiveExecutor:
+    """Executes approved trade plans through MomooBroker.
+
+    Instantiation alone does NOT connect to the broker or enable trading.
+    You must call connect() explicitly, and config must have
+    trading.live_enabled=True.
+    """
+
+    def __init__(self, config: dict):
+        self.config = config
+        self._broker = None
+        self._connected = False
+        self._daily_order_count = 0
+        self._daily_date = ""
+        self._halted = False
+        self._halt_reason = ""
+
+    @property
+    def is_live_enabled(self) -> bool:
+        """Whether live trading is enabled in config."""
+        return self.config.get("trading", {}).get("live_enabled", False)
+
+    @property
+    def is_dry_run(self) -> bool:
+        """Whether dry-run mode is active (logs but doesn't execute)."""
+        return self.config.get("trading", {}).get("live_safety", {}).get(
+            "dry_run_first", True
+        )
+
+    @property
+    def safety(self) -> dict:
+        return self.config.get("trading", {}).get("live_safety", {})
+
+    # ── Lifecycle ──────────────────────────────────────────────
+
+    def connect(self) -> bool:
+        """Connect to Moomoo broker. Fails fast if config isn't ready."""
+        # Check halt file
+        if HALT_FILE.exists():
+            reason = HALT_FILE.read_text().strip() or "Manual halt"
+            self._halted = True
+            self._halt_reason = reason
+            logger.error("HALTED: %s", reason)
+            return False
+
+        # Pre-flight config checks
+        errors = preflight_check_config(self.config)
+        if errors:
+            for e in errors:
+                logger.error("Pre-flight FAIL: %s", e)
+            _journal_entry("connect_blocked", {"errors": errors})
+            return False
+
+        from brokers.moomoo.broker import MomooBroker
+        self._broker = MomooBroker(self.config, live=True)
+        success = self._broker.connect()
+
+        if success:
+            self._connected = True
+            _journal_entry("connected", {
+                "broker": self._broker.name,
+                "dry_run": self.is_dry_run,
+            })
+            logger.info(
+                "LiveExecutor connected (dry_run=%s)", self.is_dry_run
+            )
+        else:
+            _journal_entry("connect_failed", {})
+            logger.error("LiveExecutor failed to connect to Moomoo")
+
+        return success
+
+    def disconnect(self):
+        """Disconnect from broker."""
+        if self._broker:
+            self._broker.disconnect()
+            self._broker = None
+        self._connected = False
+        _journal_entry("disconnected", {})
+        logger.info("LiveExecutor disconnected")
+
+    # ── Execution ──────────────────────────────────────────────
+
+    def execute_plan(self, plan: dict, trade_date: str) -> dict:
+        """Execute an approved trade plan.
+
+        Args:
+            plan: Trade plan dict (from TradePlanGenerator).
+            trade_date: YYYY-MM-DD string.
+
+        Returns:
+            Execution report dict with results for each order.
+        """
+        if not self._connected:
+            return self._error_report("Not connected", trade_date)
+
+        if self._halted:
+            return self._error_report(
+                f"HALTED: {self._halt_reason}", trade_date
+            )
+
+        # Verify plan is approved
+        status = plan.get("status", "")
+        if status != "APPROVED":
+            return self._error_report(
+                f"Plan status is '{status}', must be APPROVED", trade_date
+            )
+
+        # Pre-trade: check market state
+        all_plan_tickers = (
+            [e.get("ticker") for e in plan.get("proposed_entries", [])]
+            + [e.get("ticker") for e in plan.get("proposed_exits", [])]
+        )
+        all_plan_tickers = [t for t in all_plan_tickers if t]
+        if all_plan_tickers:
+            mkt_check = self.check_market_state(all_plan_tickers[:5])
+            if not mkt_check["is_tradeable"]:
+                logger.warning("Market state check: %s", mkt_check["message"])
+                # Don't block — just warn (AU state unavailable)
+
+        # Reset daily counter if new day
+        if trade_date != self._daily_date:
+            self._daily_order_count = 0
+            self._daily_date = trade_date
+
+        report = {
+            "trade_date": trade_date,
+            "executed_at": datetime.now().isoformat(),
+            "dry_run": self.is_dry_run,
+            "entries": [],
+            "exits": [],
+            "errors": [],
+        }
+
+        # Execute exits first (frees cash)
+        for exit_rec in plan.get("proposed_exits", []):
+            result = self._execute_exit(exit_rec, trade_date)
+            report["exits"].append(result)
+
+        # Execute entries
+        for entry_rec in plan.get("proposed_entries", []):
+            result = self._execute_entry(entry_rec, trade_date)
+            report["entries"].append(result)
+
+        # Place protective stop orders for filled entries
+        stop_orders = self.place_stops_for_plan(
+            plan, report["entries"], self.config, trade_date,
+        )
+        report["stop_orders"] = stop_orders
+
+        # Summary
+        report["total_entries"] = len(report["entries"])
+        report["total_exits"] = len(report["exits"])
+        report["successful_entries"] = sum(
+            1 for e in report["entries"] if e.get("success")
+        )
+        report["successful_exits"] = sum(
+            1 for e in report["exits"] if e.get("success")
+        )
+
+        _journal_entry("plan_executed", {
+            "trade_date": trade_date,
+            "entries": report["total_entries"],
+            "exits": report["total_exits"],
+            "stops_placed": len(stop_orders),
+            "dry_run": self.is_dry_run,
+        })
+
+        return report
+
+    def _execute_entry(self, entry: dict, trade_date: str) -> dict:
+        """Execute a single entry order."""
+        ticker = entry.get("ticker", "")
+        price = entry.get("entry_price", 0)
+        qty = entry.get("position_size", 0)
+
+        # Pre-flight check
+        errors = preflight_check_order(
+            ticker, OrderSide.BUY, qty, price,
+            self.safety, self._daily_order_count,
+        )
+        if errors:
+            result = {
+                "ticker": ticker, "side": "BUY", "qty": qty, "price": price,
+                "success": False, "errors": errors, "dry_run": self.is_dry_run,
+            }
+            report_msg = f"ENTRY BLOCKED {ticker}: {'; '.join(errors)}"
+            logger.warning(report_msg)
+            _journal_entry("order_blocked", result)
+            return result
+
+        if self.is_dry_run:
+            result = {
+                "ticker": ticker, "side": "BUY", "qty": qty, "price": price,
+                "success": True, "dry_run": True,
+                "message": "DRY RUN — order would be placed",
+            }
+            logger.info("DRY RUN BUY: %s %d x $%.2f", ticker, qty, price)
+            _journal_entry("dry_run_entry", result)
+            self._daily_order_count += 1
+            return result
+
+        # Live execution
+        order_result = self._broker.place_order(
+            ticker=ticker,
+            side=OrderSide.BUY,
+            qty=qty,
+            price=price,
+            order_type=OrderType.LIMIT,
+            remark=f"atlas_entry_{trade_date}",
+        )
+
+        result = {
+            "ticker": ticker, "side": "BUY", "qty": qty, "price": price,
+            "success": order_result.success,
+            "order_id": order_result.order_id,
+            "status": order_result.status.value,
+            "fill_price": order_result.fill_price,
+            "message": order_result.message,
+            "dry_run": False,
+        }
+
+        if order_result.success:
+            self._daily_order_count += 1
+            logger.info(
+                "LIVE BUY: %s %d x $%.2f → order_id=%s",
+                ticker, qty, price, order_result.order_id,
+            )
+        else:
+            logger.error(
+                "LIVE BUY FAILED: %s — %s",
+                ticker, order_result.message,
+            )
+
+        _journal_entry("live_entry", result)
+        return result
+
+    def _execute_exit(self, exit_rec: dict, trade_date: str) -> dict:
+        """Execute a single exit order."""
+        ticker = exit_rec.get("ticker", "")
+        reason = exit_rec.get("reason", "signal_exit")
+
+        # Cancel any protective stop order first (prevent double-sell)
+        stop_order_id = exit_rec.get("stop_order_id", "")
+        if stop_order_id:
+            self.cancel_protective_stop(stop_order_id, ticker)
+
+        # Get current position to determine qty and price
+        if self._broker:
+            positions = self._broker.get_positions()
+            pos = next((p for p in positions if p.ticker == ticker), None)
+        else:
+            pos = None
+
+        if not pos:
+            result = {
+                "ticker": ticker, "side": "SELL", "success": False,
+                "message": f"No live position in {ticker}",
+                "dry_run": self.is_dry_run,
+            }
+            _journal_entry("exit_no_position", result)
+            return result
+
+        qty = pos.shares
+        price = pos.current_price
+
+        # Pre-flight check
+        errors = preflight_check_order(
+            ticker, OrderSide.SELL, qty, price,
+            self.safety, self._daily_order_count,
+        )
+        if errors:
+            result = {
+                "ticker": ticker, "side": "SELL", "qty": qty, "price": price,
+                "success": False, "errors": errors, "dry_run": self.is_dry_run,
+            }
+            logger.warning("EXIT BLOCKED %s: %s", ticker, "; ".join(errors))
+            _journal_entry("order_blocked", result)
+            return result
+
+        if self.is_dry_run:
+            result = {
+                "ticker": ticker, "side": "SELL", "qty": qty, "price": price,
+                "success": True, "dry_run": True, "reason": reason,
+                "message": "DRY RUN — exit would be placed",
+            }
+            logger.info("DRY RUN SELL: %s %d x $%.2f [%s]", ticker, qty, price, reason)
+            _journal_entry("dry_run_exit", result)
+            self._daily_order_count += 1
+            return result
+
+        # Live execution
+        order_result = self._broker.place_order(
+            ticker=ticker,
+            side=OrderSide.SELL,
+            qty=qty,
+            price=price,
+            order_type=OrderType.LIMIT,
+            remark=f"atlas_exit_{reason}_{trade_date}",
+        )
+
+        result = {
+            "ticker": ticker, "side": "SELL", "qty": qty, "price": price,
+            "success": order_result.success,
+            "order_id": order_result.order_id,
+            "status": order_result.status.value,
+            "fill_price": order_result.fill_price,
+            "reason": reason,
+            "message": order_result.message,
+            "dry_run": False,
+        }
+
+        if order_result.success:
+            self._daily_order_count += 1
+            logger.info(
+                "LIVE SELL: %s %d x $%.2f → order_id=%s [%s]",
+                ticker, qty, price, order_result.order_id, reason,
+            )
+        else:
+            logger.error(
+                "LIVE SELL FAILED: %s — %s", ticker, order_result.message,
+            )
+
+        _journal_entry("live_exit", result)
+        return result
+
+    # ── Protective stop orders ─────────────────────────────────
+
+    def place_protective_stop(
+        self,
+        ticker: str,
+        qty: int,
+        stop_price: float,
+        strategy: str = "",
+        trailing_atr: float = 0.0,
+        trade_date: str = "",
+    ) -> Optional[str]:
+        """Place a protective STOP SELL or TRAILING_STOP SELL on the exchange.
+
+        Called after an entry LIMIT BUY fills. Returns the stop order ID,
+        or None on failure.
+
+        Args:
+            ticker: Position ticker (.AX format).
+            qty: Number of shares to protect (must match position).
+            stop_price: Hard stop price (used for STOP orders).
+            strategy: Strategy name — determines stop type.
+            trailing_atr: If > 0, place TRAILING_STOP with this dollar amount
+                         instead of a fixed STOP. Calculated as
+                         trailing_stop_atr_mult × ATR at entry time.
+            trade_date: For remark/journal.
+
+        Returns:
+            Order ID string if placed, None if failed or dry-run.
+        """
+        if not self._connected or not self._broker:
+            logger.error("Cannot place protective stop — not connected")
+            return None
+
+        use_trailing = trailing_atr > 0
+
+        if use_trailing:
+            order_type = OrderType.TRAILING_STOP
+            log_label = f"TRAILING_STOP SELL trail=${trailing_atr:.2f}"
+        else:
+            order_type = OrderType.STOP
+            log_label = f"STOP SELL trigger=${stop_price:.2f}"
+
+        logger.info(
+            "Placing protective stop: %s %s %d shares [%s]",
+            ticker, log_label, qty, strategy,
+        )
+
+        if self.is_dry_run:
+            _journal_entry("dry_run_protective_stop", {
+                "ticker": ticker, "qty": qty, "stop_price": stop_price,
+                "trailing_atr": trailing_atr, "order_type": order_type.value,
+                "strategy": strategy,
+            })
+            logger.info("DRY RUN: would place %s for %s", log_label, ticker)
+            return None
+
+        # Build order kwargs
+        if use_trailing:
+            # TRAILING_STOP SELL: price is reference, trail_value is the distance
+            order_result = self._broker.place_order(
+                ticker=ticker,
+                side=OrderSide.SELL,
+                qty=qty,
+                price=stop_price,  # reference/activation price
+                order_type=order_type,
+                remark=f"atlas_stop_{strategy}_{trade_date}"[:64],
+                trail_type="AMOUNT",
+                trail_value=trailing_atr,
+                trail_spread=0,
+            )
+        else:
+            # Fixed STOP SELL: aux_price is the trigger
+            order_result = self._broker.place_order(
+                ticker=ticker,
+                side=OrderSide.SELL,
+                qty=qty,
+                price=stop_price,  # limit price after trigger (= stop price for market-like fill)
+                order_type=order_type,
+                stop_price=stop_price,  # trigger price
+                remark=f"atlas_stop_{strategy}_{trade_date}"[:64],
+            )
+
+        if not order_result.success:
+            logger.error(
+                "Protective stop FAILED for %s: %s",
+                ticker, order_result.message,
+            )
+            _journal_entry("protective_stop_failed", {
+                "ticker": ticker, "error": order_result.message,
+                "order_type": order_type.value,
+            })
+            return None
+
+        order_id = order_result.order_id
+        logger.info(
+            "Protective stop placed: %s %s → order_id=%s",
+            ticker, log_label, order_id,
+        )
+        _journal_entry("protective_stop_placed", {
+            "ticker": ticker, "order_id": order_id,
+            "stop_price": stop_price, "trailing_atr": trailing_atr,
+            "order_type": order_type.value, "strategy": strategy,
+        })
+        return order_id
+
+    def cancel_protective_stop(self, order_id: str, ticker: str = "") -> bool:
+        """Cancel a protective stop order (e.g. before placing a new one or on exit)."""
+        if not self._connected or not self._broker or not order_id:
+            return False
+
+        result = self._broker.cancel_order(order_id)
+        if result.success:
+            logger.info("Cancelled protective stop %s for %s", order_id, ticker)
+            _journal_entry("protective_stop_cancelled", {
+                "order_id": order_id, "ticker": ticker,
+            })
+        else:
+            logger.warning(
+                "Failed to cancel protective stop %s for %s: %s",
+                order_id, ticker, result.message,
+            )
+        return result.success
+
+    def place_stops_for_plan(
+        self,
+        plan: dict,
+        entry_results: list[dict],
+        config: dict,
+        trade_date: str,
+    ) -> dict[str, str]:
+        """Place protective stops for all successfully filled entries.
+
+        Called after execute_plan(). Reads strategy config to determine
+        stop type (fixed vs trailing) and calculates trail amount.
+
+        Returns:
+            Dict of ticker → stop_order_id for successfully placed stops.
+        """
+        stop_orders = {}
+        entries = plan.get("proposed_entries", [])
+
+        for entry_rec, result in zip(entries, entry_results):
+            if not result.get("success"):
+                continue
+
+            ticker = entry_rec.get("ticker", "")
+            qty = entry_rec.get("position_size", 0)
+            stop_price = entry_rec.get("stop_price", 0)
+            strategy = entry_rec.get("strategy", "")
+
+            if not ticker or not qty or not stop_price:
+                continue
+
+            # Determine if this strategy uses trailing stops
+            strat_cfg = config.get("strategies", {}).get(strategy, {})
+            trailing_mult = strat_cfg.get("trailing_stop_atr_mult", 0)
+
+            trailing_atr = 0.0
+            if trailing_mult > 0:
+                # Calculate trail amount from entry signal features
+                atr_value = entry_rec.get("features", {}).get("atr", 0)
+                if atr_value > 0:
+                    trailing_atr = round(trailing_mult * atr_value, 4)
+
+            order_id = self.place_protective_stop(
+                ticker=ticker,
+                qty=qty,
+                stop_price=stop_price,
+                strategy=strategy,
+                trailing_atr=trailing_atr,
+                trade_date=trade_date,
+            )
+
+            if order_id:
+                stop_orders[ticker] = order_id
+
+        return stop_orders
+
+    # ── Broker ↔ Paper reconciliation ──────────────────────────
+
+    def reconcile_stops(self, portfolio) -> dict:
+        """Detect positions closed by exchange stop orders and sync paper state.
+
+        Compares paper positions (with stop_order_ids) against broker:
+        - If paper has a position but broker doesn't → stop was filled
+        - Queries the filled stop order to get fill price
+        - Closes the paper position at that price
+
+        Args:
+            portfolio: PaperPortfolio instance (mutated in place).
+
+        Returns:
+            Report dict with synced exits.
+        """
+        if not self._connected or not self._broker:
+            return {"error": "Not connected", "synced": []}
+
+        from datetime import datetime
+
+        trade_date = datetime.now().strftime("%Y-%m-%d")
+        broker_positions = self._broker.get_positions()
+        broker_tickers = {p.ticker for p in broker_positions}
+
+        synced = []
+
+        for pos in list(portfolio.positions):
+            if not pos.stop_order_id:
+                continue  # no exchange stop — skip
+
+            # Position still on broker → stop hasn't fired
+            if pos.ticker in broker_tickers:
+                continue
+
+            # Position GONE from broker but paper still has it → stop filled
+            logger.warning(
+                "RECONCILE: %s gone from broker (stop_order=%s) — syncing paper exit",
+                pos.ticker, pos.stop_order_id,
+            )
+
+            # Try to get the fill price from the stop order
+            fill_price = pos.stop_price  # default to stop price
+            try:
+                order_status = self._broker.get_order_status(pos.stop_order_id)
+                if order_status and order_status.fill_price > 0:
+                    fill_price = order_status.fill_price
+                    logger.info(
+                        "  Stop order %s filled at $%.2f",
+                        pos.stop_order_id, fill_price,
+                    )
+            except Exception as e:
+                logger.warning("  Could not query stop order %s: %s", pos.stop_order_id, e)
+
+            # Also check history deals for actual fill
+            try:
+                deals = self._broker.get_today_deals()
+                for deal in deals:
+                    if deal.ticker == pos.ticker and deal.side == OrderSide.SELL:
+                        if deal.price > 0:
+                            fill_price = deal.price
+                            logger.info("  Found deal fill at $%.2f", fill_price)
+                            break
+            except Exception as e:
+                logger.debug("  Deal query failed: %s", e)
+
+            # Close the paper position
+            result = portfolio.execute_exit(
+                pos.ticker, fill_price, trade_date, "broker_stop_fill"
+            )
+
+            if result:
+                synced.append({
+                    "ticker": pos.ticker,
+                    "stop_order_id": pos.stop_order_id,
+                    "fill_price": fill_price,
+                    "pnl": result.get("pnl", 0),
+                    "reason": "broker_stop_fill",
+                })
+                _journal_entry("reconcile_stop_fill", {
+                    "ticker": pos.ticker,
+                    "stop_order_id": pos.stop_order_id,
+                    "fill_price": fill_price,
+                    "pnl": result.get("pnl", 0),
+                })
+
+        if synced:
+            portfolio.save_state()
+            logger.info("Reconciliation: synced %d broker stop fills", len(synced))
+
+        report = {
+            "trade_date": trade_date,
+            "paper_positions": len(portfolio.positions),
+            "broker_positions": len(broker_tickers),
+            "synced": synced,
+        }
+        _journal_entry("reconciliation_complete", report)
+        return report
+
+    # ── Account queries (delegated to broker) ──────────────────
+
+    def get_account_info(self) -> Optional[AccountInfo]:
+        if not self._connected or not self._broker:
+            return None
+        return self._broker.get_account_info()
+
+    def get_positions(self) -> list[PositionInfo]:
+        if not self._connected or not self._broker:
+            return []
+        return self._broker.get_positions()
+
+    def get_open_orders(self) -> list[OrderResult]:
+        if not self._connected or not self._broker:
+            return []
+        return self._broker.get_open_orders()
+
+    # ── Emergency controls ─────────────────────────────────────
+
+    def emergency_halt(self, reason: str = "Manual emergency halt"):
+        """Immediately halt all live trading and cancel open orders."""
+        self._halted = True
+        self._halt_reason = reason
+        logger.critical("EMERGENCY HALT: %s", reason)
+        _journal_entry("emergency_halt", {"reason": reason})
+
+        # Write halt file (persists across restarts)
+        HALT_FILE.write_text(f"{reason}\n{datetime.now().isoformat()}")
+
+        # Cancel all open orders
+        if self._connected and self._broker:
+            try:
+                results = self._broker.cancel_all_orders()
+                logger.warning(
+                    "Cancelled %d orders during emergency halt",
+                    len(results),
+                )
+            except Exception as e:
+                logger.error("Failed to cancel orders during halt: %s", e)
+
+    def clear_halt(self):
+        """Clear the halt state. Requires manual intervention."""
+        if HALT_FILE.exists():
+            HALT_FILE.unlink()
+        self._halted = False
+        self._halt_reason = ""
+        _journal_entry("halt_cleared", {})
+        logger.info("Halt cleared")
+
+    # ── Market State Check ──────────────────────────────────────
+
+    def check_market_state(self, tickers: list[str] = None) -> dict:
+        """Check if markets are open before trading.
+
+        Returns dict with:
+            - is_tradeable: bool — whether we should proceed
+            - states: list of MarketStateInfo
+            - message: human-readable summary
+        """
+        if not self._connected or not self._broker:
+            return {"is_tradeable": False, "message": "Not connected", "states": []}
+
+        if not tickers:
+            tickers = ["US.SPY"]  # Default probe ticker
+
+        states = self._broker.get_market_states(tickers)
+        if not states:
+            # If market state query fails, don't block — just warn
+            logger.warning("Could not check market state, proceeding anyway")
+            return {"is_tradeable": True, "message": "Market state unknown", "states": []}
+
+        closed_states = {"REST", "OVERNIGHT", "AFTER_HOURS_END"}
+        tradeable = True
+        messages = []
+
+        for s in states:
+            if s.market_state == "AU_UNSUPPORTED":
+                messages.append(f"{s.ticker}: AU market state unavailable")
+            elif s.market_state in closed_states:
+                tradeable = False
+                messages.append(f"{s.ticker}: market {s.market_state}")
+            else:
+                messages.append(f"{s.ticker}: {s.market_state}")
+
+        result = {
+            "is_tradeable": tradeable,
+            "states": states,
+            "message": "; ".join(messages),
+        }
+        _journal_entry("market_state_check", {
+            "is_tradeable": tradeable,
+            "message": result["message"],
+        })
+        return result
+
+    # ── Post-Trade Fee & Slippage Analysis ─────────────────────
+
+    def get_fee_analysis(self, days: int = 90) -> dict:
+        """Analyse actual fees vs assumed fees in config.
+
+        Returns comparison report for backtest fee calibration.
+        """
+        if not self._connected or not self._broker:
+            return {"error": "Not connected"}
+
+        # Get filled orders to find order IDs
+        orders = self._broker.get_history_orders(days=days)
+        filled_ids = [
+            o.order_id for o in orders
+            if o.status.value in ("FILLED", "PARTIAL_FILLED") and o.order_id
+        ]
+
+        if not filled_ids:
+            return {"total_orders": 0, "message": "No filled orders in period"}
+
+        # Query actual fees
+        fees = self._broker.get_order_fees(filled_ids[:50])  # API limit safety
+
+        if not fees:
+            return {"total_orders": len(filled_ids), "message": "Fee query returned no data"}
+
+        # Compute actuals
+        total_actual = sum(f.total_fee for f in fees)
+        avg_actual = total_actual / len(fees) if fees else 0
+
+        # Compute fee breakdown
+        fee_breakdown = {}
+        for f in fees:
+            for name, amount in f.fee_details:
+                fee_breakdown.setdefault(name, {"count": 0, "total": 0.0})
+                fee_breakdown[name]["count"] += 1
+                fee_breakdown[name]["total"] += amount
+
+        # Compare with config assumptions
+        config_flat = self.config.get("fees", {}).get("commission_per_trade", 3.0)
+        config_pct = self.config.get("fees", {}).get("commission_pct", 0.0003)
+
+        # Get average order value from filled orders
+        order_map = {o.order_id: o for o in orders}
+        order_values = []
+        for f in fees:
+            o = order_map.get(f.order_id)
+            if o and o.fill_price > 0 and o.filled_qty > 0:
+                order_values.append(o.fill_price * o.filled_qty)
+        avg_order_value = sum(order_values) / len(order_values) if order_values else 0
+
+        # Expected fee per config
+        expected_per_trade = max(config_flat, avg_order_value * config_pct)
+
+        report = {
+            "period_days": days,
+            "total_orders_filled": len(filled_ids),
+            "orders_with_fees": len(fees),
+            "total_actual_fees": round(total_actual, 2),
+            "avg_actual_fee": round(avg_actual, 2),
+            "fee_breakdown": {
+                name: {"count": v["count"], "avg": round(v["total"] / v["count"], 2)}
+                for name, v in fee_breakdown.items()
+            },
+            "config_commission_flat": config_flat,
+            "config_commission_pct": config_pct,
+            "avg_order_value": round(avg_order_value, 2),
+            "expected_fee_per_config": round(expected_per_trade, 2),
+            "fee_delta": round(avg_actual - expected_per_trade, 2),
+            "fee_delta_pct": round(
+                ((avg_actual - expected_per_trade) / expected_per_trade * 100)
+                if expected_per_trade > 0 else 0, 1
+            ),
+        }
+
+        _journal_entry("fee_analysis", report)
+        return report
+
+    def get_slippage_analysis(self, days: int = 90) -> dict:
+        """Analyse actual slippage vs assumed slippage in config.
+
+        Returns comparison report for backtest slippage calibration.
+        """
+        if not self._connected or not self._broker:
+            return {"error": "Not connected"}
+
+        slippage_data = self._broker.get_slippage_report(days=days)
+        if not slippage_data:
+            return {"total_orders": 0, "message": "No filled orders for slippage analysis"}
+
+        buy_slips = [s for s in slippage_data if s.side == "BUY"]
+        sell_slips = [s for s in slippage_data if s.side == "SELL"]
+
+        config_slip = self.config.get("fees", {}).get("slippage_pct", 0.001)
+
+        def _slip_stats(slips):
+            if not slips:
+                return {"count": 0}
+            pcts = [s.slippage_pct for s in slips]
+            costs = [s.slippage_cost for s in slips]
+            return {
+                "count": len(slips),
+                "avg_slippage_pct": round(sum(pcts) / len(pcts), 4),
+                "max_slippage_pct": round(max(pcts), 4),
+                "min_slippage_pct": round(min(pcts), 4),
+                "total_slippage_cost": round(sum(costs), 2),
+                "avg_slippage_cost": round(sum(costs) / len(costs), 2),
+            }
+
+        report = {
+            "period_days": days,
+            "total_orders": len(slippage_data),
+            "config_slippage_pct": config_slip * 100,
+            "buy_slippage": _slip_stats(buy_slips),
+            "sell_slippage": _slip_stats(sell_slips),
+            "all_slippage": _slip_stats(slippage_data),
+            "details": [
+                {
+                    "ticker": s.ticker, "side": s.side,
+                    "requested": s.requested_price, "filled": s.fill_price,
+                    "slip_pct": s.slippage_pct, "cost": s.slippage_cost,
+                }
+                for s in slippage_data
+            ],
+        }
+
+        # Calibration recommendation
+        actual_avg = report["all_slippage"].get("avg_slippage_pct", 0)
+        if actual_avg != 0:
+            report["recommendation"] = (
+                f"Config slippage: {config_slip*100:.2f}% | "
+                f"Actual avg: {actual_avg:.4f}% | "
+                f"{'Config is conservative' if config_slip*100 > actual_avg else 'Config may underestimate slippage'}"
+            )
+
+        _journal_entry("slippage_analysis", report)
+        return report
+
+    def get_execution_history(self, days: int = 30) -> dict:
+        """Full execution history with fees, slippage, and P&L per trade."""
+        if not self._connected or not self._broker:
+            return {"error": "Not connected"}
+
+        orders = self._broker.get_history_orders(days=days)
+        deals = self._broker.get_history_deals(days=days)
+
+        # Get fees for filled orders
+        filled_ids = [
+            o.order_id for o in orders
+            if o.status.value in ("FILLED", "PARTIAL_FILLED") and o.order_id
+        ]
+        fees = {}
+        if filled_ids:
+            fee_list = self._broker.get_order_fees(filled_ids[:50])
+            fees = {f.order_id: f for f in fee_list}
+
+        # Build per-order summary
+        history = []
+        for order in orders:
+            order_deals = [d for d in deals if d.order_id == order.order_id]
+            total_qty = sum(d.qty for d in order_deals)
+            vwap = (
+                sum(d.price * d.qty for d in order_deals) / total_qty
+                if total_qty > 0 else 0
+            )
+            fee_info = fees.get(order.order_id)
+
+            history.append({
+                "order_id": order.order_id,
+                "ticker": order.ticker,
+                "side": order.side.value,
+                "status": order.status.value,
+                "requested_qty": order.requested_qty,
+                "filled_qty": total_qty,
+                "requested_price": order.requested_price,
+                "fill_vwap": round(vwap, 4),
+                "fee": fee_info.total_fee if fee_info else 0,
+                "fee_details": fee_info.fee_details if fee_info else [],
+                "deal_count": len(order_deals),
+                "create_time": order.raw.get("create_time", ""),
+                "error_msg": order.message if order.status == OrderStatus.FAILED else "",
+            })
+
+        return {
+            "period_days": days,
+            "total_orders": len(orders),
+            "filled": sum(1 for h in history if h["status"] in ("FILLED", "PARTIAL_FILLED")),
+            "cancelled": sum(1 for h in history if h["status"] == "CANCELLED"),
+            "failed": sum(1 for h in history if h["status"] == "FAILED"),
+            "total_fees": round(sum(h["fee"] for h in history), 2),
+            "orders": history,
+        }
+
+    # ── Reconciliation ─────────────────────────────────────────
+
+    def reconcile_with_paper(self, paper_positions: list[dict]) -> dict:
+        """Compare live positions with paper portfolio.
+
+        Returns a report of discrepancies. Does NOT auto-correct.
+        """
+        if not self._connected or not self._broker:
+            return {"error": "Not connected"}
+
+        live_positions = self._broker.get_positions()
+        live_map = {p.ticker: p for p in live_positions if p.ticker.endswith(".AX")}
+        paper_map = {p["ticker"]: p for p in paper_positions}
+
+        discrepancies = []
+
+        # Check paper positions missing from live
+        for ticker, paper in paper_map.items():
+            if ticker not in live_map:
+                discrepancies.append({
+                    "ticker": ticker,
+                    "type": "PAPER_ONLY",
+                    "paper_shares": paper.get("shares", 0),
+                    "live_shares": 0,
+                })
+            else:
+                live = live_map[ticker]
+                if paper.get("shares", 0) != live.shares:
+                    discrepancies.append({
+                        "ticker": ticker,
+                        "type": "QTY_MISMATCH",
+                        "paper_shares": paper.get("shares", 0),
+                        "live_shares": live.shares,
+                    })
+
+        # Check live positions missing from paper
+        for ticker, live in live_map.items():
+            if ticker not in paper_map:
+                discrepancies.append({
+                    "ticker": ticker,
+                    "type": "LIVE_ONLY",
+                    "paper_shares": 0,
+                    "live_shares": live.shares,
+                })
+
+        report = {
+            "timestamp": datetime.now().isoformat(),
+            "paper_count": len(paper_map),
+            "live_count": len(live_map),
+            "discrepancies": discrepancies,
+            "in_sync": len(discrepancies) == 0,
+        }
+
+        _journal_entry("reconciliation", report)
+        return report
+
+    # ── Helpers ────────────────────────────────────────────────
+
+    def _error_report(self, message: str, trade_date: str) -> dict:
+        logger.error("Execution blocked: %s", message)
+        _journal_entry("execution_blocked", {
+            "trade_date": trade_date, "reason": message,
+        })
+        return {
+            "trade_date": trade_date,
+            "executed_at": datetime.now().isoformat(),
+            "error": message,
+            "entries": [],
+            "exits": [],
+        }

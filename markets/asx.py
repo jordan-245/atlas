@@ -43,6 +43,18 @@ class ASXMarket(MarketProfile):
         return 0.04  # RBA cash rate proxy
 
     @property
+    def trading_days_per_year(self) -> int:
+        return 252  # ASX trades ~252 days/year
+
+    @property
+    def operator_timezone(self) -> str:
+        return "Australia/Brisbane"  # AEST, no DST
+
+    @property
+    def pre_market_alert_hours_before(self) -> float:
+        return 1.5  # Alert at 08:30 AEST (market opens 10:00 AEST)
+
+    @property
     def trading_hours(self) -> TradingHours:
         return TradingHours(
             timezone="Australia/Sydney",

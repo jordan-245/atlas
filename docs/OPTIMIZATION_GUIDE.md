@@ -6,6 +6,36 @@
 | v9.1 | 2026-02-18 | -0.35% | -0.30 | 0.98 | 12.84% | Post data-refresh degradation |
 | v9.2 | 2026-02-18 | +11.21% | +0.67 | 1.30 | 7.76% | Full coordinate descent reoptimization |
 | v9.3 | 2026-02-19 | +6.65% | +0.29 | 1.14 | 12.32% | 50/50 blend (rejected - lower perf, same stability) |
+| v9.4 | 2026-02-25 | +8.81% | +0.42 | 1.23 | 10.11% | Parallel reopt with robust scoring (338 trades, 72.7% WF win rate) |
+
+## Key Learnings from v9.4 Optimization (2026-02-25)
+
+### 1. Scoring Function Fix (Critical)
+- The original scoring function allowed `inf` scores from PF=inf when only 3-4 trades
+- This caused convergence to degenerate low-trade solutions (the "sharp peak" problem)
+- **Fix**: min 15 trades, PF capped at 4.0, trade count scaling ramp 15→50
+- Result: 338 trades (was 133) — much more statistically robust
+
+### 2. Parallel Reoptimization
+- All strategies optimized concurrently via ProcessPoolExecutor (4 workers)
+- Runtime ~128 min (was ~45 min sequential per-strategy, but now all at once)
+- Script: `scripts/reoptimize_parallel.py`
+
+### 3. What Changed
+- **Mean Reversion**: wider profit target (1.5→3.0), tighter stop (2.5→2.0), longer hold (7→20), relaxed RSI (35→40)
+- **BB Squeeze**: wider stop (1.0→1.5), tighter trailing (3.0→2.5)
+- **Trend Following**: faster slow MA (50→30), tighter stop (3.5→2.0), longer hold (25→30)
+- **Opening Gap**: wider gap (-0.01→-0.025), relaxed IBS (0.35→0.50), much shorter hold (15→3)
+
+### 4. Validation Results
+- Walk-forward: 72.7% window win rate (up from 59.1%)
+- Perturbation: mean CAGR 1.14% with 2/10 collapses (sharp peak persists but improved)
+- OOS time-split test is structurally broken (data too short for WF engine)
+
+### 5. Known Issues to Fix
+- `validate_oos.py` has hardcoded `OPTIMIZED_PARAMS` — should read from config
+- OOS time-split needs larger data window or different methodology
+- `dividend_capture` strategy not implemented (excluded from optimization)
 
 ## Key Learnings from v9.2 Optimization
 

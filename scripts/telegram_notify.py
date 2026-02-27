@@ -5,6 +5,7 @@ Called by pi-cron.sh to send alerts after daily runs.
 
 Usage:
     python3 scripts/telegram_notify.py premarket-ok  [plan_path] [market_id]
+    python3 scripts/telegram_notify.py premarket-approve [plan_path] [market_id]
     python3 scripts/telegram_notify.py postclose-ok  [market_id]
     python3 scripts/telegram_notify.py error         <mode> [logfile]
     python3 scripts/telegram_notify.py test
@@ -35,6 +36,13 @@ def main():
         plan_path = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] else None
         market_id = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else "asx"
         ok = send_premarket_summary(plan_path=plan_path, market_id=market_id)
+
+    elif cmd == "premarket-approve":
+        # Send plan with Approve/Reject inline buttons (requires bot to be running)
+        from services.telegram_bot import send_plan_for_approval
+        plan_path = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] else None
+        market_id = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else "asx"
+        ok = send_plan_for_approval(plan_path=plan_path, market_id=market_id)
 
     elif cmd == "postclose-ok":
         market_id = sys.argv[2] if len(sys.argv) > 2 else "asx"

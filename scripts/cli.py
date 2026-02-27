@@ -211,12 +211,30 @@ def cmd_plan(args):
         print("ERROR: No data available. Run 'ingest' first.")
         return
     prices = get_latest_prices(data)
-    portfolio = PaperPortfolio(config, market_id=market_id)
+
+    # Use broker-backed portfolio in live mode, paper otherwise
+    is_live = (config.get("trading", {}).get("broker", "paper") != "paper"
+               and config.get("trading", {}).get("live_enabled", False))
+    if is_live:
+        from brokers.live_portfolio import LivePortfolio
+        portfolio = LivePortfolio(config, market_id=market_id)
+        if not portfolio.connect():
+            print("ERROR: Cannot connect to broker. Falling back to paper portfolio.")
+            portfolio = PaperPortfolio(config, market_id=market_id)
+            is_live = False
+        else:
+            print("LIVE MODE: Plan based on broker positions (%d pos, $%.2f cash)" %
+                  (len(portfolio.positions), portfolio.cash))
+    else:
+        portfolio = PaperPortfolio(config, market_id=market_id)
+
     plan_gen = TradePlanGenerator(portfolio, config)
     decision_journal = DecisionJournal()
     halted, dd = portfolio.check_daily_drawdown(prices)
     if halted:
         print("TRADING HALTED: Daily drawdown %.2f%% >= %.2f%%" % (dd * 100, config["risk"]["max_daily_drawdown_pct"] * 100))
+        if is_live:
+            portfolio.disconnect()
         return
     strategies = get_strategies(config)
     all_signals = []
@@ -240,6 +258,9 @@ def cmd_plan(args):
     plan = plan_gen.generate_plan(all_signals, exit_recommendations, prices, trade_date)
     print(plan_gen.format_plan_text(plan))
     print("\nPlan saved to paper_engine/plans/plan_%s.json" % trade_date)
+
+    if is_live:
+        portfolio.disconnect()
 
 
 def cmd_paper_run(args):
@@ -640,6 +661,224 @@ def cmd_halt(args):
         broker.disconnect()
 
 
+def cmd_history(args):
+    """Show live execution history with fees and fill quality."""
+    market_id = getattr(args, "market", DEFAULT_MARKET)
+    config = get_active_config(market_id)
+    days = getattr(args, "days", 30)
+
+    from brokers.live_executor import LiveExecutor
+    executor = LiveExecutor(config)
+
+    # Override live_enabled check for read-only queries
+    config_override = dict(config)
+    config_override.setdefault("trading", {})["live_enabled"] = True
+    executor_ro = LiveExecutor(config_override)
+
+    from brokers.moomoo.broker import MomooBroker
+    broker = MomooBroker(config, live=True)
+    if not broker.connect():
+        print("ERROR: Failed to connect to Moomoo broker")
+        return
+
+    executor_ro._broker = broker
+    executor_ro._connected = True
+
+    try:
+        print("\n" + "=" * 65)
+        print("  EXECUTION HISTORY — last %d days" % days)
+        print("=" * 65)
+
+        history = executor_ro.get_execution_history(days=days)
+        if "error" in history:
+            print("\n  ❌ %s" % history["error"])
+            return
+
+        print("\n  Orders: %d total | %d filled | %d cancelled | %d failed" % (
+            history["total_orders"], history["filled"],
+            history["cancelled"], history["failed"]))
+        print("  Total fees: $%.2f" % history["total_fees"])
+
+        if history["orders"]:
+            print("\n  %-14s %-6s %-8s %6s %8s %8s %8s  %s" % (
+                "ORDER_ID", "SIDE", "TICKER", "QTY", "REQ_PX", "FILL_PX", "FEE", "STATUS"))
+            print("  " + "-" * 80)
+            for o in history["orders"]:
+                print("  %-14s %-6s %-8s %6d %8.2f %8.2f %8.2f  %s" % (
+                    o["order_id"][:14], o["side"], o["ticker"][:8],
+                    o["filled_qty"], o["requested_price"],
+                    o["fill_vwap"], o["fee"], o["status"]))
+                if o["error_msg"]:
+                    print("    └ ❌ %s" % o["error_msg"][:60])
+
+    finally:
+        broker.disconnect()
+
+
+def cmd_fees(args):
+    """Analyse actual broker fees vs config assumptions."""
+    market_id = getattr(args, "market", DEFAULT_MARKET)
+    config = get_active_config(market_id)
+    days = getattr(args, "days", 90)
+
+    from brokers.moomoo.broker import MomooBroker
+    from brokers.live_executor import LiveExecutor
+
+    broker = MomooBroker(config, live=True)
+    if not broker.connect():
+        print("ERROR: Failed to connect to Moomoo broker")
+        return
+
+    config_override = dict(config)
+    config_override.setdefault("trading", {})["live_enabled"] = True
+    executor = LiveExecutor(config_override)
+    executor._broker = broker
+    executor._connected = True
+
+    try:
+        print("\n" + "=" * 65)
+        print("  FEE ANALYSIS — last %d days" % days)
+        print("=" * 65)
+
+        report = executor.get_fee_analysis(days=days)
+        if "error" in report:
+            print("\n  ❌ %s" % report["error"])
+            return
+        if report.get("total_orders_filled", 0) == 0:
+            print("\n  No filled orders in the last %d days." % days)
+            return
+
+        print("\n  Filled orders:    %d" % report["orders_with_fees"])
+        print("  Avg order value:  $%.2f" % report["avg_order_value"])
+        print()
+        print("  Actual fees:")
+        print("    Total:          $%.2f" % report["total_actual_fees"])
+        print("    Per order avg:  $%.2f" % report["avg_actual_fee"])
+        if report.get("fee_breakdown"):
+            print("    Breakdown:")
+            for name, info in report["fee_breakdown"].items():
+                print("      %-25s  avg $%.2f  (%d orders)" % (name, info["avg"], info["count"]))
+
+        print()
+        print("  Config assumptions:")
+        print("    Flat fee:       $%.2f" % report["config_commission_flat"])
+        print("    Pct fee:        %.2f%%" % (report["config_commission_pct"] * 100))
+        print("    Expected/trade: $%.2f" % report["expected_fee_per_config"])
+
+        print()
+        delta = report["fee_delta"]
+        delta_pct = report["fee_delta_pct"]
+        if abs(delta) < 0.50:
+            print("  ✅ Config fees match reality (delta: $%.2f / %.1f%%)" % (delta, delta_pct))
+        elif delta > 0:
+            print("  ⚠️  Actual fees HIGHER than config by $%.2f (%.1f%%)" % (delta, delta_pct))
+            print("     Consider increasing commission_per_trade to $%.2f" % report["avg_actual_fee"])
+        else:
+            print("  ℹ️  Actual fees LOWER than config by $%.2f (%.1f%%)" % (abs(delta), abs(delta_pct)))
+            print("     Config is conservative — backtest results are slightly pessimistic")
+
+        # Slippage
+        print("\n" + "=" * 65)
+        print("  SLIPPAGE ANALYSIS — last %d days" % days)
+        print("=" * 65)
+
+        slip = executor.get_slippage_analysis(days=days)
+        if slip.get("total_orders", 0) == 0:
+            print("\n  No data for slippage analysis.")
+        else:
+            all_s = slip.get("all_slippage", {})
+            print("\n  Config slippage:  %.2f%%" % slip.get("config_slippage_pct", 0))
+            print("  Actual avg:       %.4f%%" % all_s.get("avg_slippage_pct", 0))
+            print("  Total slip cost:  $%.2f" % all_s.get("total_slippage_cost", 0))
+            print("  Orders analysed:  %d" % all_s.get("count", 0))
+
+            if slip.get("recommendation"):
+                print("\n  💡 %s" % slip["recommendation"])
+
+            if slip.get("details"):
+                print("\n  %-8s %-6s %8s %8s %8s %8s" % (
+                    "TICKER", "SIDE", "REQ_PX", "FILL_PX", "SLIP%", "COST"))
+                print("  " + "-" * 55)
+                for d in slip["details"]:
+                    print("  %-8s %-6s %8.2f %8.2f %8.4f %8.2f" % (
+                        d["ticker"][:8], d["side"],
+                        d["requested"], d["filled"],
+                        d["slip_pct"], d["cost"]))
+
+    finally:
+        broker.disconnect()
+
+
+def cmd_market_check(args):
+    """Check if markets are open and show trading calendar."""
+    market_id = getattr(args, "market", DEFAULT_MARKET)
+    config = get_active_config(market_id)
+
+    from brokers.moomoo.broker import MomooBroker
+
+    broker = MomooBroker(config, live=True)
+    if not broker.connect():
+        print("ERROR: Failed to connect to Moomoo broker")
+        return
+
+    try:
+        print("\n" + "=" * 55)
+        print("  MARKET STATUS CHECK")
+        print("=" * 55)
+
+        # Market state for probe tickers
+        probe_tickers = ["US.SPY", "US.AAPL"]
+        states = broker.get_market_states(probe_tickers)
+        if states:
+            print("\n  Market states:")
+            for s in states:
+                icon = "🟢" if s.market_state in ("MORNING", "AFTERNOON") else "🔴"
+                print("    %s %s: %s" % (icon, s.ticker, s.market_state))
+        else:
+            print("\n  ⚠️  Could not query market states")
+
+        # Trading calendar
+        for mkt in ["US", "HK"]:
+            tdays = broker.get_trading_days(market=mkt, days=14)
+            if tdays:
+                today = datetime.now().strftime("%Y-%m-%d")
+                is_today_trading = any(t.date == today for t in tdays)
+                print("\n  %s trading days (last 14):" % mkt)
+                for t in tdays[-7:]:
+                    marker = " ← today" if t.date == today else ""
+                    print("    %s  %s%s" % (t.date, t.trade_date_type, marker))
+                if is_today_trading:
+                    print("    ✅ %s market is a trading day today" % mkt)
+                else:
+                    print("    ❌ %s market is NOT a trading day today" % mkt)
+
+        # User info / quote rights
+        try:
+            import moomoo as ft
+            ret, data = broker._quote_ctx.get_user_info()
+            if ret == ft.RET_OK:
+                print("\n  API quota:")
+                if isinstance(data, dict):
+                    for key in ["sub_quota", "history_kl_quota", "us_qot_right",
+                                "hk_qot_right", "api_level"]:
+                        if key in data:
+                            print("    %-25s %s" % (key, data[key]))
+        except Exception:
+            pass
+
+        # Subscription usage
+        try:
+            ret, data = broker._quote_ctx.query_subscription()
+            if ret == ft.RET_OK and isinstance(data, dict):
+                print("\n  Subscriptions: %s/%s used" % (
+                    data.get("total_used", "?"), data.get("remain", "?")))
+        except Exception:
+            pass
+
+    finally:
+        broker.disconnect()
+
+
 def cmd_sync(args):
     """Reconcile Atlas paper state with live broker positions."""
     market_id = getattr(args, "market", DEFAULT_MARKET)
@@ -705,6 +944,64 @@ def cmd_sync(args):
         broker.disconnect()
 
 
+def cmd_schedule(args):
+    """Show recommended cron schedule for all active markets."""
+    from zoneinfo import ZoneInfo
+
+    print("\n" + "=" * 70)
+    print("  ATLAS CRON SCHEDULE")
+    print("=" * 70)
+
+    markets = list_registered_markets()
+    for mid in markets:
+        market = get_market(mid)
+        s = market.get_cron_schedule()
+        ex_tz = ZoneInfo(market.trading_hours.timezone)
+        op_tz = ZoneInfo(market.operator_timezone)
+
+        from datetime import datetime as dt
+        today = dt.now(ex_tz).date()
+        oh, om = map(int, market.trading_hours.market_open.split(":"))
+        ch, cm = map(int, market.trading_hours.market_close.split(":"))
+        open_op = dt(today.year, today.month, today.day, oh, om, tzinfo=ex_tz).astimezone(op_tz)
+        close_op = dt(today.year, today.month, today.day, ch, cm, tzinfo=ex_tz).astimezone(op_tz)
+        tz_label = dt.now(op_tz).strftime("%Z")
+
+        print(f"\n  {market.display_name} ({mid})")
+        print(f"  {'─' * 50}")
+        print(f"  Exchange:        {market.trading_hours.market_open}–{market.trading_hours.market_close} {dt.now(ex_tz).strftime('%Z')}")
+        print(f"  Operator local:  {open_op.strftime('%I:%M %p')}–{close_op.strftime('%I:%M %p')} {tz_label}")
+        print(f"  Pre-market:      {s['premarket']} {tz_label}")
+        print(f"  Intraday:        {s['intraday_start']}–{s['intraday_end']} {tz_label}")
+        print(f"  Post-close:      {s['postclose']} {tz_label}")
+        print(f"  Trading days/yr: {market.trading_days_per_year}")
+
+    # Print crontab snippet
+    print(f"\n{'=' * 70}")
+    print("  CRONTAB SNIPPET (copy to: crontab -e)")
+    print(f"{'=' * 70}")
+    print("TZ=Australia/Brisbane\n")
+
+    for mid in markets:
+        market = get_market(mid)
+        s = market.get_cron_schedule()
+        ph, pm_v = s["premarket"].split(":")
+        pch, pcm = s["postclose"].split(":")
+        ish, _ = s["intraday_start"].split(":")
+        ieh, _ = s["intraday_end"].split(":")
+        start_h, end_h = int(ish), int(ieh)
+        if start_h <= end_h:
+            intra_hours = ",".join(str(h) for h in range(start_h, end_h + 1))
+        else:
+            intra_hours = ",".join(str(h) for h in list(range(start_h, 24)) + list(range(0, end_h + 1)))
+
+        print(f"# --- {market.display_name} ({mid}) ---")
+        print(f"{pm_v} {ph} * * {s['weekdays']} /root/atlas/scripts/pi-cron.sh premarket {mid}")
+        print(f"30 {intra_hours} * * {s['weekdays']} cd /root/atlas && python3 scripts/intraday_monitor.py -m {mid} >> logs/intraday_{mid}.log 2>&1")
+        print(f"{pcm} {pch} * * {s['weekdays']} /root/atlas/scripts/pi-cron.sh postclose {mid}")
+        print()
+
+
 def main():
     parser = argparse.ArgumentParser(prog="atlas", description="Atlas Multi-Market Swing Trading Lab")
     # Global --market flag
@@ -736,6 +1033,13 @@ def main():
     subparsers.add_parser("halt", help="Emergency: cancel all open orders")
     subparsers.add_parser("sync", help="Reconcile Atlas state with broker positions")
     subparsers.add_parser("setup-secrets", help="Securely configure broker credentials")
+    # New analytics commands
+    p = subparsers.add_parser("history", help="Show live execution history with fees")
+    p.add_argument("--days", type=int, default=30)
+    p = subparsers.add_parser("fees", help="Analyse actual fees vs config assumptions")
+    p.add_argument("--days", type=int, default=90)
+    subparsers.add_parser("market-check", help="Check market state and trading calendar")
+    subparsers.add_parser("schedule", help="Show recommended cron schedule for all markets")
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -749,6 +1053,9 @@ def main():
         "broker": cmd_broker_status, "live-run": cmd_live_run,
         "orders": cmd_orders, "halt": cmd_halt, "sync": cmd_sync,
         "setup-secrets": cmd_setup_secrets,
+        "history": cmd_history, "fees": cmd_fees,
+        "market-check": cmd_market_check,
+        "schedule": cmd_schedule,
     }
     cmd_func = commands.get(args.command)
     if cmd_func:

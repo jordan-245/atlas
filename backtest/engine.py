@@ -96,11 +96,19 @@ class BacktestEngine:
         self.backtest_config = config.get("backtest", {})
         self.trading_config = config.get("trading", {})
 
-        # Walk-forward parameters
-        self.train_window = self.backtest_config.get("train_window_days", 252)
-        self.test_window = self.backtest_config.get("test_window_days", 63)
-        self.step_days = self.backtest_config.get("step_days", 21)
-        self.min_history = self.backtest_config.get("min_history_days", 60)
+        # Walk-forward parameters — derive defaults from market profile
+        try:
+            from markets import get_market
+            _bt_defaults = get_market(self.market_id).get_backtest_defaults()
+        except (ImportError, KeyError):
+            _bt_defaults = {
+                "train_window_days": 252, "test_window_days": 63,
+                "step_days": 21, "min_history_days": 60,
+            }
+        self.train_window = self.backtest_config.get("train_window_days", _bt_defaults["train_window_days"])
+        self.test_window = self.backtest_config.get("test_window_days", _bt_defaults["test_window_days"])
+        self.step_days = self.backtest_config.get("step_days", _bt_defaults["step_days"])
+        self.min_history = self.backtest_config.get("min_history_days", _bt_defaults["min_history_days"])
 
         # Risk parameters
         self.starting_equity = self.risk_config.get("starting_equity", 5000)

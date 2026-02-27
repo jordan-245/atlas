@@ -26,8 +26,8 @@ export TZ="Australia/Brisbane"
 export HOME="${HOME:-/root}"
 export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
 
-MARKET="${ATLAS_MARKET:-asx}"
 MODE="${1:-}"
+MARKET="${2:-${ATLAS_MARKET:-asx}}"
 TIMESTAMP="$(date '+%Y%m%d_%H%M%S')"
 
 # --- Helper: send Telegram alert (best-effort, never blocks cron exit) ---
@@ -62,10 +62,18 @@ pi --print \
 EXIT_CODE=$?
 echo "$(date -Iseconds) pi-cron $MODE finished (exit=$EXIT_CODE)" >> "$LOG_DIR/pi-cron.log"
 
+# --- Dashboard refresh (always, regardless of pi exit) ---
+python3 dashboard/generate_data.py >> "$LOG_DIR/dashboard-refresh.log" 2>&1 || true
+
 # --- Telegram alerts ---
 if [ $EXIT_CODE -eq 0 ]; then
     case "$MODE" in
-        premarket)  notify premarket-ok "" "$MARKET" ;;
+        premarket)
+            # Send plan with Approve/Reject buttons (bot handles callbacks)
+            notify premarket-approve "" "$MARKET"
+            # Fallback: also send plain summary if approve fails
+            [ $? -ne 0 ] && notify premarket-ok "" "$MARKET"
+            ;;
         postclose)  notify postclose-ok "$MARKET" ;;
     esac
 else

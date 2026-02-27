@@ -21,6 +21,7 @@ import pandas as pd
 
 from strategies.base import BaseStrategy, Signal
 from utils.helpers import calc_atr, calc_ibs, calc_position_size, calc_rsi, calc_volume_ratio
+from utils.earnings import is_near_earnings
 
 logger = logging.getLogger(__name__)
 
@@ -40,15 +41,25 @@ class OpeningGap(BaseStrategy):
         self.sma_exit_period = strat_cfg.get("sma_exit_period", 5)
         self.ibs_exit_threshold = strat_cfg.get("ibs_exit_threshold", 0.8)
         self.max_hold_days = strat_cfg.get("max_hold_days", 7)
+        # US-optimization: SMA-200 trend filter (only buy gap-downs in uptrends)
+        self.sma200_filter = strat_cfg.get("sma200_filter", False)
+        # Earnings blackout (gap-down after earnings may not mean revert)
+        earnings_cfg = strat_cfg.get("earnings_blackout", {})
+        self.earnings_blackout_enabled = earnings_cfg.get("enabled", False)
+        self.earnings_blackout_before = earnings_cfg.get("days_before", 5)
+        self.earnings_blackout_after = earnings_cfg.get("days_after", 1)
 
         self._logger.info(
             "OpeningGap initialized: gap_thresh=%.3f, ibs_confirm=%.2f, "
             "rsi14_max=%d, vol_surge=%.1fx, atr=%d, stop=%.1fx, "
-            "sma_exit=%d, ibs_exit=%.2f, max_hold=%d",
+            "sma_exit=%d, ibs_exit=%.2f, max_hold=%d, "
+            "sma200_filter=%s, earnings_blackout=%s",
             self.gap_threshold, self.ibs_confirm, self.rsi14_max,
             self.vol_surge_threshold, self.atr_period,
             self.atr_stop_mult, self.sma_exit_period,
             self.ibs_exit_threshold, self.max_hold_days,
+            'ON' if self.sma200_filter else 'OFF',
+            'ON' if self.earnings_blackout_enabled else 'OFF',
         )
 
     @property
@@ -107,6 +118,27 @@ class OpeningGap(BaseStrategy):
 
                 if gap_pct >= self.gap_threshold:
                     continue  # Not a significant gap down
+
+                # SMA-200 trend filter: only buy gap-downs in uptrends
+                if self.sma200_filter:
+                    sma200 = close.rolling(200).mean()
+                    sma200_val = sma200.iloc[-1]
+                    if pd.isna(sma200_val) or today_close < sma200_val:
+                        continue
+
+                # Earnings blackout: skip gap-downs near earnings
+                if self.earnings_blackout_enabled:
+                    reference_date = df.index[-1]
+                    try:
+                        if is_near_earnings(
+                            ticker,
+                            reference_date=reference_date,
+                            blackout_days_before=self.earnings_blackout_before,
+                            blackout_days_after=self.earnings_blackout_after,
+                        ):
+                            continue
+                    except Exception:
+                        pass  # Gracefully degrade if earnings data unavailable
 
                 # --- Entry Condition 2: Oversold confirmation ---
                 ibs_series = calc_ibs(high, low, close)

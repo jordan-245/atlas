@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Quick Moomoo API connectivity test.
+"""Moomoo API connectivity test.
 
-Tests: OpenD connection → account discovery → trade unlock → account info → quote snapshot.
-Does NOT place any orders.
+Tests: OpenD connection → account discovery → account info → positions → quote.
+Does NOT place any orders or expose credentials.
 """
 import sys
-import json
+import os
 
-sys.path.insert(0, "/root/atlas")
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from brokers.secrets import get_secret
 
@@ -23,28 +23,30 @@ except ImportError:
     print("\n❌ moomoo-api not installed. Run: pip install moomoo-api")
     sys.exit(1)
 
-# 2. Check trade password
-pwd = get_secret("MOOMOO_TRADE_PWD")
-if pwd:
-    print(f"✅ Trade password loaded ({pwd[:2]}****)")
-else:
-    print("❌ No trade password found")
-    sys.exit(1)
-
-# 3. Config
+# 2. Config (non-sensitive)
 HOST = "127.0.0.1"
 PORT = 11111
-TRD_ENV = ft.TrdEnv.SIMULATE
 SEC_FIRM = ft.SecurityFirm.FUTUAU
 
 print(f"\n── Connecting to OpenD at {HOST}:{PORT} ──\n")
 
-# 4. Trade context
+# 3. Quote context
 trd_ctx = None
 quote_ctx = None
 try:
+    quote_ctx = ft.OpenQuoteContext(host=HOST, port=PORT)
+    ret, data = quote_ctx.get_global_state()
+    if ret == ft.RET_OK:
+        print(f"✅ OpenD status: {data.get('program_status_type', '?')}")
+        print(f"   Quote: {'✅' if data.get('qot_logined') else '❌'}")
+        print(f"   Trade: {'✅' if data.get('trd_logined') else '❌'}")
+    else:
+        print(f"❌ Global state failed: {data}")
+        sys.exit(1)
+
+    # 4. Trade context — FUTUAU firm to see real AU account
     trd_ctx = ft.OpenSecTradeContext(
-        filter_trdmarket=ft.TrdMarket.AU,
+        filter_trdmarket=ft.TrdMarket.HK,
         host=HOST, port=PORT,
         security_firm=SEC_FIRM,
     )
@@ -55,73 +57,65 @@ try:
     if ret != ft.RET_OK:
         print(f"❌ get_acc_list failed: {data}")
         sys.exit(1)
+
+    real_acc_id = None
     print(f"✅ Accounts found: {len(data)}")
     for _, row in data.iterrows():
-        print(f"   acc_id={row['acc_id']}  env={row.get('trd_env','')}  type={row.get('acc_type','')}")
+        env = row.get("trd_env", "")
+        markets = row.get("trdmarket_auth", "")
+        acc_id = row["acc_id"]
+        print(f"   acc_id={acc_id}  env={env}  markets={markets}")
+        if env == "REAL" and "AU" in str(markets):
+            real_acc_id = int(acc_id)
 
-    # Find sim account
-    acc_id = 0
-    for _, row in data.iterrows():
-        if row.get("trd_env") == str(TRD_ENV):
-            acc_id = int(row["acc_id"])
-            break
-    if acc_id == 0:
-        acc_id = int(data.iloc[0]["acc_id"])
-    print(f"   → Using acc_id={acc_id}")
+    if real_acc_id:
+        print(f"   → Real AU account: {real_acc_id}")
 
-    # 6. Unlock trade
-    ret, data = trd_ctx.unlock_trade(password=pwd)
-    if ret != ft.RET_OK:
-        print(f"❌ Trade unlock FAILED: {data}")
-        print("   Check your trade password is correct")
-        sys.exit(1)
-    print("✅ Trade unlocked")
+        # 6. Account info
+        ret, data = trd_ctx.accinfo_query(
+            trd_env=ft.TrdEnv.REAL, acc_id=real_acc_id, refresh_cache=True,
+        )
+        if ret == ft.RET_OK:
+            row = data.iloc[0]
+            equity = float(row.get("total_assets", 0))
+            aud_cash = float(row.get("au_cash", 0))
+            print(f"✅ Account — total: ${equity:,.2f}  AUD cash: ${aud_cash:,.2f}")
+        else:
+            print(f"⚠️  accinfo_query: {data}")
 
-    # 7. Account info
-    ret, data = trd_ctx.accinfo_query(
-        trd_env=TRD_ENV, acc_id=acc_id,
-        refresh_cache=True, currency=ft.Currency.AUD,
-    )
-    if ret == ft.RET_OK:
-        row = data.iloc[0]
-        equity = row.get("total_assets", 0)
-        cash = row.get("cash", row.get("avl_withdrawal_cash", 0))
-        print(f"✅ Account info — equity: ${equity:,.2f}  cash: ${cash:,.2f}")
+        # 7. Positions
+        ret, data = trd_ctx.position_list_query(
+            trd_env=ft.TrdEnv.REAL, acc_id=real_acc_id, refresh_cache=True,
+        )
+        if ret == ft.RET_OK:
+            positions = [
+                (r.get("code"), int(r.get("qty", 0)))
+                for _, r in data.iterrows() if int(r.get("qty", 0)) > 0
+            ]
+            print(f"✅ Positions: {len(positions)} open")
+            for code, qty in positions:
+                print(f"   {code}: {qty} shares")
+        else:
+            print(f"⚠️  positions: {data}")
     else:
-        print(f"⚠️  accinfo_query failed: {data}")
+        print("   ⚠️  No real AU account found")
 
-    # 8. Positions
-    ret, data = trd_ctx.position_list_query(
-        trd_env=TRD_ENV, acc_id=acc_id, refresh_cache=True,
-    )
-    if ret == ft.RET_OK:
-        positions = [(r.get("code"), int(r.get("qty", 0))) for _, r in data.iterrows() if int(r.get("qty", 0)) > 0]
-        print(f"✅ Positions: {len(positions)} open")
-        for code, qty in positions[:5]:
-            print(f"   {code}: {qty} shares")
-    else:
-        print(f"⚠️  position_list_query failed: {data}")
-
-    # 9. Quote context
-    quote_ctx = ft.OpenQuoteContext(host=HOST, port=PORT)
-    print("✅ Quote context connected")
-
-    # 10. Test snapshot (BHP)
-    ret, data = quote_ctx.get_market_snapshot(["AU.BHP"])
+    # 8. HK quote test (AU quotes unsupported server-side)
+    ret, data = quote_ctx.get_market_snapshot(["HK.00700"])
     if ret == ft.RET_OK:
         price = data.iloc[0].get("last_price", 0)
         name = data.iloc[0].get("name", "")
-        print(f"✅ Quote snapshot — BHP: ${price:.2f} ({name})")
+        print(f"✅ HK quote — {name}: ${price:.2f}")
     else:
-        print(f"⚠️  Quote snapshot failed: {data}")
+        print(f"⚠️  HK quote: {data}")
 
     print("\n" + "=" * 55)
-    print("  🎉 ALL TESTS PASSED — Moomoo API is working!")
+    print("  ✅ Moomoo API connectivity OK")
     print("=" * 55 + "\n")
 
 except ConnectionRefusedError:
-    print(f"❌ Connection REFUSED — OpenD is not running on {HOST}:{PORT}")
-    print("   Start OpenD first, then re-run this test")
+    print(f"❌ Connection REFUSED — OpenD not running on {HOST}:{PORT}")
+    print("   Start: python3 scripts/start_opend.py start")
     sys.exit(1)
 except Exception as e:
     print(f"❌ Error: {e}")

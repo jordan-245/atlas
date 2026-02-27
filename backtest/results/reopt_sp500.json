@@ -1,0 +1,25 @@
+{
+  "timestamp": "2026-02-27T11:04:02.503234",
+  "market_id": "sp500",
+  "n_tickers": 284,
+  "active_strategies": [
+    "mean_reversion",
+    "trend_following",
+    "opening_gap"
+  ],
+  "baseline_combined": {
+    "trades": 430,
+    "cagr": 0.028189,
+    "sharpe": -0.2123,
+    "max_dd": 0.090767,
+    "pf": 1.1343,
+    "wr": 0.5419,
+    "total_pnl": 772.73
+  },
+  "results_path": "/root/atlas/backtest/results/reopt_sp500.json",
+  "backup_config_path": "/root/atlas/config/active_config_pre_reopt_sp500_20260227_110005.json",
+  "active_config_path": "/root/atlas/config/active/sp500.json",
+  "candidate_config_path": "/root/atlas/config/sp500_candidate_optimized.json",
+  "active_config_overwritten": false,
+  "parallel_workers": 3
+}

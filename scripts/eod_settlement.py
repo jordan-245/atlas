@@ -95,10 +95,17 @@ def check_stop_losses(portfolio, prices, lows, trade_date, dry_run):
     Uses the day's intraday low (not just the close) to detect stop breaches,
     consistent with the backtest engine. Exit is recorded at the stop price
     (simulating a stop-market order), not at the intraday low.
+
+    Positions with a stop_order_id (exchange stop placed) are skipped —
+    the broker handles those, and reconcile_stops() syncs them to paper.
     """
     exits = []
     for pos in list(portfolio.positions):
         if pos.ticker not in prices:
+            continue
+        # Skip positions protected by exchange stop orders
+        if getattr(pos, "stop_order_id", ""):
+            log.info(f"  {pos.ticker}: exchange stop active (order {pos.stop_order_id}), skipping paper check")
             continue
         intraday_low = lows.get(pos.ticker, prices[pos.ticker])
         close_price  = prices[pos.ticker]
@@ -220,7 +227,13 @@ def generate_eod_report(portfolio, prices, trade_date, stop_exits, tp_exits):
         lines.append(f"   Total realized: ${total_realized:+.2f}")
         lines.append("")
 
-    lines.append(f"Settlement completed at {datetime.now(BRISBANE).strftime('%I:%M %p AEST')}")
+    try:
+        from markets import get_market
+        _settle_tz = get_market(market_id).operator_tz() if 'market_id' in dir() else BRISBANE
+    except Exception:
+        _settle_tz = BRISBANE
+    _settle_now = datetime.now(_settle_tz)
+    lines.append(f"Settlement completed at {_settle_now.strftime('%I:%M %p %Z')}")
     lines.append("=" * 55)
 
     return "\n".join(lines)
@@ -251,26 +264,61 @@ def save_eod_report(report, trade_date):
 def main():
     parser = argparse.ArgumentParser(description="Atlas End-of-Day Settlement")
     parser.add_argument("--dry-run", action="store_true", help="Preview without executing exits")
+    parser.add_argument("--market", "-m", default="asx", help="Market ID (default: asx)")
     args = parser.parse_args()
 
-    now = datetime.now(BRISBANE)
+    market_id = args.market
+
+    # Use market-aware timezone for "now" and weekend detection
+    try:
+        from markets import get_market
+        _market = get_market(market_id)
+        _tz = _market.operator_tz()
+        _is_weekend = _market.is_weekend(datetime.now(_tz).weekday())
+        _tz_label = datetime.now(_tz).strftime("%Z")
+    except (ImportError, KeyError):
+        _tz = BRISBANE
+        _is_weekend = datetime.now(_tz).weekday() >= 5
+        _tz_label = "AEST"
+
+    now = datetime.now(_tz)
     trade_date = now.strftime("%Y-%m-%d")
 
     log.info("=" * 60)
-    log.info(f"END-OF-DAY SETTLEMENT -- {trade_date}")
+    log.info(f"END-OF-DAY SETTLEMENT [{market_id.upper()}] -- {trade_date}")
     log.info(f"Mode: {'DRY RUN' if args.dry_run else 'LIVE'}")
     log.info("=" * 60)
 
     # Check if trading day
-    if now.weekday() >= 5:
-        log.info(f"Today is {now.strftime('%A')} - not a trading day, skipping EOD.")
+    if _is_weekend:
+        log.info(f"Today is {now.strftime('%A')} - not a trading day for {market_id}, skipping EOD.")
         print(f"Not a trading day ({now.strftime('%A')}). No settlement needed.")
         return
 
     # Load config and portfolio
-    config = load_config()
+    config = load_config(market_id=market_id) if 'market_id' in load_config.__code__.co_varnames else load_config()
     from paper_engine.engine import PaperPortfolio
-    portfolio = PaperPortfolio(config)
+    portfolio = PaperPortfolio(config, market_id=market_id)
+
+    # Reconcile broker-side stop fills before checking anything
+    if config.get("trading", {}).get("mode") == "live" and config.get("trading", {}).get("live_enabled"):
+        try:
+            from brokers.live_executor import LiveExecutor
+            executor = LiveExecutor(config)
+            if executor.connect():
+                recon = executor.reconcile_stops(portfolio)
+                synced = recon.get("synced", [])
+                if synced:
+                    log.info(f"Reconciled {len(synced)} broker stop fills before settlement:")
+                    for s in synced:
+                        log.info(f"  {s['ticker']}: filled at ${s['fill_price']:.2f}, PnL ${s['pnl']:+.2f}")
+                else:
+                    log.info("Reconciliation: paper and broker in sync")
+                executor.disconnect()
+            else:
+                log.warning("Could not connect to broker for reconciliation — proceeding with paper-only settlement")
+        except Exception as e:
+            log.warning(f"Broker reconciliation failed: {e} — proceeding with paper-only settlement")
 
     if not portfolio.positions:
         log.info("No open positions. Recording equity and updating dashboard.")

@@ -1,0 +1,35 @@
+{
+  "timestamp": "20260227_105929",
+  "config_version": "v1.0",
+  "tickers_count": 200,
+  "metrics": {
+    "total_return": 0.2412,
+    "cagr": 0.119001,
+    "max_drawdown": 0.067899,
+    "sharpe": 0.79,
+    "sortino": 1.0645,
+    "win_rate": 0.5784,
+    "profit_factor": 1.5257,
+    "avg_trade": 6.16,
+    "total_trades": 408,
+    "total_pnl": 2514.28,
+    "exposure": 0.9979,
+    "turnover": 47.7624,
+    "avg_equity": 10930.92,
+    "final_equity": 12412.26,
+    "avg_winner": 30.92,
+    "avg_loser": -27.81,
+    "largest_winner": 222.53,
+    "largest_loser": -96.82,
+    "avg_hold_days": 17.8
+  },
+  "benchmark_metrics": {
+    "cagr": 0.11585,
+    "max_drawdown": 0.175998,
+    "sharpe": 0.5564,
+    "sortino": 0.7732,
+    "total_return": 0.2442,
+    "final_equity": 12441.88
+  },
+  "total_trades": 408
+}
