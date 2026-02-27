@@ -35,8 +35,8 @@ def safe_json(path, default=None):
         return default if default is not None else {}
 
 
-def get_config():
-    return safe_json(PROJECT_ROOT / "config" / "active" / "asx.json", {})
+def get_config(market_id: str = "asx"):
+    return safe_json(PROJECT_ROOT / "config" / "active" / f"{market_id}.json", {})
 
 
 def get_portfolio(config):
@@ -81,6 +81,7 @@ def get_live_broker_data(config):
         try:
             acct = broker.get_account_info()
             positions = broker.get_positions()
+            open_orders = broker.get_open_orders() or []
         finally:
             broker.disconnect()
 
@@ -130,13 +131,32 @@ def get_live_broker_data(config):
             }
             pos_list.append(pos_dict)
 
-        logger.info("Dashboard: broker data OK — equity=$%.2f, %d positions",
-                     acct_data["equity"], len(pos_list))
-        return acct_data, pos_list, True
+        # Pending orders
+        orders_list = []
+        for o in open_orders:
+            r = o.raw or {}
+            from brokers.moomoo.mapper import to_atlas
+            orders_list.append({
+                "order_id": o.order_id,
+                "ticker": to_atlas(r.get("code", o.ticker)),
+                "side": o.side.value if o.side else r.get("trd_side", "?"),
+                "qty": int(r.get("qty", o.requested_qty)),
+                "price": round(float(r.get("price", o.requested_price)), 2),
+                "order_type": r.get("order_type", "?"),
+                "status": r.get("order_status", "?"),
+                "created": r.get("create_time", ""),
+                "filled_qty": int(r.get("dealt_qty", o.filled_qty)),
+                "fill_price": round(float(r.get("dealt_avg_price", o.fill_price)), 2),
+                "market": r.get("order_market", ""),
+            })
+
+        logger.info("Dashboard: broker data OK — equity=$%.2f, %d positions, %d orders",
+                     acct_data["equity"], len(pos_list), len(orders_list))
+        return acct_data, pos_list, True, orders_list
 
     except Exception as e:
         logger.error("Dashboard: broker fetch failed: %s", e, exc_info=True)
-        return None, [], False
+        return None, [], False, []
 
 
 def get_latest_plan():
@@ -307,8 +327,13 @@ def parse_tasks():
     return tasks
 
 
-def generate():
-    config = get_config()
+def generate_market(market_id: str, broker_cache: dict | None = None):
+    """Generate dashboard data for a single market.
+
+    broker_cache: optional dict to reuse a single broker connection.
+      Keys: "acct", "positions", "ok". If None, connects fresh.
+    """
+    config = get_config(market_id)
     portfolio = get_portfolio(config)
     plan = get_latest_plan()
     ledger = safe_json(PROJECT_ROOT / "journal" / "trade_ledger.json", [])
@@ -325,16 +350,28 @@ def generate():
     # ── Try live broker data first ──────────────────────────────
     broker_acct, broker_positions, broker_ok = None, [], False
     if is_live_mode:
-        broker_acct, broker_positions, broker_ok = get_live_broker_data(config)
+        if broker_cache and broker_cache.get("ok"):
+            # Reuse shared broker connection — filter positions to this market
+            broker_acct = broker_cache["acct"]
+            all_broker_pos = broker_cache["positions"]
+            # Filter positions by market
+            if market_id == "sp500":
+                broker_positions = [p for p in all_broker_pos if not p.get("ticker", "").endswith(".AX")]
+            elif market_id == "asx":
+                broker_positions = [p for p in all_broker_pos if p.get("ticker", "").endswith(".AX")]
+            else:
+                broker_positions = all_broker_pos
+            broker_ok = True
+        else:
+            broker_acct, broker_positions, broker_ok, _orders = get_live_broker_data(config)
 
     if broker_ok and broker_acct:
-        # Live mode: equity/cash from broker
-        account_equity = broker_acct["equity"]
-        cash = broker_acct["cash"]
+        # Live mode: use broker for real-time positions/prices,
+        # but equity/cash from paper state (tracks per-market allocation).
         positions = broker_positions
         atlas_positions = [p for p in positions if p.get("is_atlas", True)]
         manual_positions = [p for p in positions if not p.get("is_atlas", True)]
-        all_positions = positions  # includes non-Atlas (WDS, XOP etc)
+        all_positions = positions
         data_source = "moomoo"
 
         # Atlas P&L: only from Atlas-managed positions
@@ -346,13 +383,16 @@ def generate():
         # Manual positions value (not managed by Atlas)
         manual_value = sum(p.get("market_value", 0) for p in manual_positions)
 
-        # Equity = full account value (shown in header)
-        equity = account_equity
-        # Atlas P&L = unrealised on Atlas positions only
-        total_pnl = round(sum(p.get("unrealized_pnl", 0) for p in atlas_positions)
-                          - total_commissions, 2)
+        # Equity/cash from paper state allocation (e.g. $4k for SP500)
+        # NOT the full broker account balance
+        paper_cash = portfolio.get("cash", seq)
+        paper_pos_value = sum(p.get("market_value", 0) for p in atlas_positions)
+        equity = round(paper_cash + paper_pos_value, 2)
+        cash = paper_cash
+        pos_value = paper_pos_value
+
+        total_pnl = round(equity - seq, 2)
         total_pnl_pct = round(total_pnl / seq * 100, 2) if seq > 0 else 0
-        pos_value = broker_acct["market_value"]
     else:
         # Paper/fallback mode
         positions = portfolio.get("positions", [])
@@ -563,18 +603,137 @@ def generate():
         "tasks": tasks,
     }
 
+    # Add pending orders from broker cache
+    if broker_cache and broker_cache.get("orders"):
+        # Filter orders to this market
+        all_orders = broker_cache["orders"]
+        if market_id == "sp500":
+            market_orders = [o for o in all_orders if o.get("market") == "US"]
+        elif market_id == "asx":
+            market_orders = [o for o in all_orders if o.get("market") in ("AU", "")]
+        else:
+            market_orders = all_orders
+        result["pending_orders"] = market_orders
+    else:
+        result["pending_orders"] = []
+
+    return result
+
+
+def generate():
+    """Generate multi-market dashboard data.
+
+    Connects to broker once, shares the connection for all live markets,
+    then writes a combined payload to dashboard-data.json.
+    """
+    from markets.registry import list_markets
+
+    markets = list_markets()  # ['asx', 'sp500']
+
+    # ── Single broker connection shared across markets ──────────
+    broker_cache = None
+    for mid in markets:
+        cfg = get_config(mid)
+        trading = cfg.get("trading", {})
+        if (trading.get("mode") == "live"
+                and trading.get("broker") == "moomoo"
+                and trading.get("live_enabled", False)):
+            acct, positions, ok, orders = get_live_broker_data(cfg)
+            if ok:
+                broker_cache = {"acct": acct, "positions": positions, "ok": True, "orders": orders}
+            break  # one connection serves all markets (same Moomoo account)
+
+    # ── Generate per-market data ────────────────────────────────
+    market_data = {}
+    for mid in markets:
+        print(f"\n  Generating {mid}...")
+        data = generate_market(mid, broker_cache=broker_cache)
+        market_data[mid] = data
+
+    # ── Pick primary market for top-level fields (backward compat) ──
+    # Use sp500 if it's in live mode, otherwise asx
+    primary = "sp500" if "sp500" in market_data else markets[0]
+    primary_data = market_data[primary]
+
+    # ── Merge: combine positions and stats from all markets ─────
+    all_positions = []
+    all_manual = []
+    all_closed = []
+    total_equity = 0
+    total_cash = 0
+    combined_strats = {}
+
+    for mid, md in market_data.items():
+        pf = md.get("portfolio", {})
+        # Tag positions with market
+        for p in pf.get("open_positions", []):
+            p["market"] = mid
+            all_positions.append(p)
+        for p in md.get("manual_positions", {}).get("positions", []):
+            p["market"] = mid
+            all_manual.append(p)
+        for t in md.get("closed_trades", []):
+            t["market"] = mid
+            all_closed.append(t)
+        # Strategy summary merge
+        for s in md.get("strategy_summary", []):
+            key = s["strategy"]
+            if key not in combined_strats:
+                combined_strats[key] = {"strategy": key, "positions": 0, "unrealized_pnl": 0, "market_value": 0}
+            combined_strats[key]["positions"] += s["positions"]
+            combined_strats[key]["unrealized_pnl"] += s["unrealized_pnl"]
+            combined_strats[key]["market_value"] += s["market_value"]
+
+    # ── Build combined result ───────────────────────────────────
+    now = datetime.now(BRISBANE)
+    broker_acct_data = broker_cache["acct"] if broker_cache else None
+
+    result = {
+        "timestamp": now.isoformat(),
+        "project": "Atlas",
+        "markets": market_data,
+        # Top-level summary (combined across markets)
+        "trading_mode": primary_data.get("trading_mode", "paper"),
+        "data_source": primary_data.get("data_source", "paper"),
+        "broker": primary_data.get("broker", "paper"),
+        "config_version": {mid: md.get("config_version", "?") for mid, md in market_data.items()},
+        "account": {
+            "equity": broker_acct_data["equity"] if broker_acct_data else 0,
+            "cash": broker_acct_data["cash"] if broker_acct_data else 0,
+            "buying_power": broker_acct_data["buying_power"] if broker_acct_data else 0,
+            "currency": broker_acct_data["currency"] if broker_acct_data else "AUD",
+        } if broker_acct_data else None,
+        "portfolio": primary_data.get("portfolio", {}),
+        "manual_positions": {
+            "positions": all_manual,
+            "num_open": len(all_manual),
+            "unrealized_pnl": round(sum(p.get("pnl", 0) for p in all_manual), 2),
+            "market_value": round(sum(p.get("current_price", 0) * p.get("shares", 0) for p in all_manual), 2),
+        },
+        "strategy_summary": list(combined_strats.values()),
+        "equity_curve": primary_data.get("equity_curve", []),
+        "backtest": primary_data.get("backtest", {}),
+        "plan": primary_data.get("plan"),
+        "closed_trades": all_closed,
+        "risk": primary_data.get("risk", {}),
+        "tasks": primary_data.get("tasks", {}),
+    }
+
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     with open(OUTPUT, "w") as f:
         json.dump(result, f, indent=2, default=str)
 
-    print(f"Dashboard data written to {OUTPUT}")
-    print(f"  Mode           : {mode_label} (source: {result['data_source']})")
-    print(f"  Config version : {result['config_version']}")
-    print(f"  Equity         : ${equity:,.2f}")
-    print(f"  Cash           : ${cash:,.2f}")
-    print(f"  Open positions : {len(open_pos)} ({len(atlas_positions)} Atlas)")
-    print(f"  Closed trades  : {len(closed)}")
-    print(f"  Backtest pts   : {len(backtest['equity_curve'])}")
+    print(f"\nDashboard data written to {OUTPUT}")
+    for mid, md in market_data.items():
+        pf = md.get("portfolio", {})
+        label = f"{'🔴 LIVE' if md.get('trading_mode') == 'live' else '📝 PAPER'}"
+        print(f"  {mid.upper():6s} {label}: ${pf.get('equity',0):,.2f} equity, "
+              f"{pf.get('num_open',0)} positions, "
+              f"v{md.get('config_version','?')}")
+    if broker_acct_data:
+        print(f"  BROKER: ${broker_acct_data['equity']:,.2f} total equity, "
+              f"${broker_acct_data['cash']:,.2f} cash, "
+              f"${broker_acct_data['buying_power']:,.2f} buying power")
 
 
 if __name__ == "__main__":
