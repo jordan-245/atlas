@@ -51,7 +51,22 @@ case "$MODE" in
     research)
         LOGFILE="$LOG_DIR/research_${TIMESTAMP}.log"
         SKILL_DIR="$RESEARCH_SKILL_DIR"
-        PROMPT="Run one full atlas-research-loop cycle: read current state (journal, health check, queue), generate hypotheses if queue is empty, execute queued experiments via research_runner.py --run-all --agent-id ${AGENT_ID}, evaluate results, and send promotion requests for any passing experiments. Summarize all outcomes at the end."
+
+        # Quick check: any queued experiments? Skip spawning agent if nothing to do.
+        QUEUED_COUNT=$(cd "$PROJECT" && python3 -c "
+import json
+q = json.load(open('research/queue.json'))
+print(sum(1 for e in q if e.get('status') == 'queued'))
+" 2>/dev/null || echo "0")
+
+        if [ "$QUEUED_COUNT" = "0" ]; then
+            echo "$(date -Iseconds) Research queue empty — no experiments to run" >> "$LOG_DIR/pi-cron.log"
+            notify research-idle "" 2>/dev/null || true
+            exit 0
+        fi
+
+        echo "$(date -Iseconds) Research queue has $QUEUED_COUNT experiments" >> "$LOG_DIR/pi-cron.log"
+        PROMPT="Run one full atlas-research-loop cycle: read current state (journal, health check, queue — $QUEUED_COUNT experiments queued), execute queued experiments via research_runner.py --run-all --agent-id ${AGENT_ID}, evaluate results, and send promotion requests for any passing experiments. Summarize all outcomes at the end."
 
         # Lock file check — prevent concurrent research sessions
         if [ -f "$RESEARCH_LOCK" ]; then

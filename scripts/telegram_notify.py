@@ -58,6 +58,10 @@ def main():
         market_id = sys.argv[2] if len(sys.argv) > 2 else "sp500"
         ok = send_research_complete(market_id=market_id)
 
+    elif cmd == "research-idle":
+        from utils.telegram import send_message
+        ok = send_message("🔬 Research cron: queue empty — nothing to run. Seed new experiments to resume.")
+
     elif cmd == "test":
         ok = send_startup()
 
