@@ -256,6 +256,8 @@ class BacktestEngine:
         rs_data: Optional[Dict[str, pd.DataFrame]] = None,
         equity_history: Optional[List[float]] = None,
         vix_series: Optional[pd.Series] = None,
+        fred_yield_curve: Optional[pd.Series] = None,
+        fred_claims: Optional[pd.Series] = None,
     ) -> float:
         """Simulate one trading day.
 
@@ -1174,6 +1176,8 @@ class BacktestEngine:
                     rs_data=rs_data,
                     equity_history=equity_history,
                     vix_series=vix_series,
+                    fred_yield_curve=fred_yield_curve,
+                    fred_claims=fred_claims,
                 )
 
                 # Record daily equity (mark-to-market)
