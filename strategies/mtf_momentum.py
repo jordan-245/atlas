@@ -133,7 +133,8 @@ class MTFMomentum(BaseStrategy):
                 # Daily pullback check
                 daily_rsi = calc_rsi(df["close"], self.daily_rsi_period)
                 daily_sma = df["close"].rolling(self.daily_sma_period).mean()
-                current_atr = calc_atr(df, self.atr_period)
+                atr_series = calc_atr(df["high"], df["low"], df["close"], self.atr_period)
+                current_atr = float(atr_series.iloc[-1])
 
                 if daily_rsi.iloc[-1] >= self.daily_rsi_max:
                     continue
@@ -147,8 +148,8 @@ class MTFMomentum(BaseStrategy):
                 if pct_from_sma > self.pullback_sma_pct:
                     continue
 
-                vol_ratio = calc_volume_ratio(df)
-                if vol_ratio < self.vol_min_ratio:
+                vol_ratio = calc_volume_ratio(df["volume"])
+                if vol_ratio.iloc[-1] < self.vol_min_ratio:
                     continue
 
                 entry_price = today_close
@@ -225,7 +226,8 @@ class MTFMomentum(BaseStrategy):
                 entry_date = pd.Timestamp(pos.get("entry_date", df.index[-1]))
                 days_held = (df.index[-1] - entry_date).days
 
-                current_atr = calc_atr(df, self.atr_period)
+                atr_series = calc_atr(df["high"], df["low"], df["close"], self.atr_period)
+                current_atr = float(atr_series.iloc[-1])
                 if pd.isna(current_atr):
                     continue
 
