@@ -222,8 +222,9 @@ def get_latest_plan(market_id: str = ""):
         if len(parts) == 2 or (not market_id):
             plan = safe_json(f, None)
             if plan:
-                # Filter by market_id if specified
-                if market_id and plan.get("market_id", "") not in ("", market_id):
+                # Filter by market_id if specified — require an exact match so
+                # legacy plans with no market_id don't bleed into per-market views
+                if market_id and plan.get("market_id", "") != market_id:
                     continue
                 return plan
     return None
@@ -609,6 +610,9 @@ def generate_market(market_id: str, broker_cache: dict | None = None):
         all_positions = positions
         data_source = "offline"
         cash = portfolio.get("cash", seq)
+        # When no capital is allocated and no positions exist, cash must be 0
+        if seq == 0 and len(positions) == 0:
+            cash = 0
 
         # Collect tickers needing prices
         tickers = {p.get("ticker", "") for p in positions}
@@ -1443,8 +1447,9 @@ def _merge_benchmark_curves(market_data: dict, exchange_rates: dict,
             return amount * exchange_rates.get("USDAUD", 1.41)
         return amount
 
-    # Build per-market date→equity dicts (in AUD)
-    per_market = {}  # {mid: {date: equity_aud}}
+    # Build per-market date→equity dicts (in AUD) and per-market starting values
+    per_market = {}   # {mid: {date: equity_aud}}
+    start_vals = {}   # {mid: starting equity in AUD, used as fill-value before first data point}
     tickers = []
     all_dates = set()
     for mid, md in market_data.items():
@@ -1463,11 +1468,24 @@ def _merge_benchmark_curves(market_data: dict, exchange_rates: dict,
                 series[date] = _to_aud(eq, ccy)
                 all_dates.add(date)
         per_market[mid] = series
+        # Starting equity for this market (AUD) — used as fill-value before first
+        # benchmark data point so the combined sum equals combined_starting_aud
+        # from day 1 and the scale factor stays at 1.0.
+        seq = md.get("portfolio", {}).get("starting_equity", 0)
+        if seq > 0:
+            start_vals[mid] = _to_aud(seq, ccy)
+        elif series:
+            # Fallback: use first available benchmark value
+            start_vals[mid] = min(series.values())
+        else:
+            start_vals[mid] = 0
 
     if not all_dates or not per_market:
         return [], "Benchmark"
 
-    # Forward-fill each market series across all dates, then sum
+    # Forward-fill each market series across all dates, then sum.
+    # Markets with no data yet contribute their starting equity so the combined
+    # sum is stable from day 1 and the scale factor is 1.0 (no inflation).
     sorted_dates = sorted(all_dates)
     combined = []
     for d in sorted_dates:
@@ -1475,7 +1493,7 @@ def _merge_benchmark_curves(market_data: dict, exchange_rates: dict,
         for mid, series in per_market.items():
             if d in series:
                 series["_last"] = series[d]  # track last known value
-            total += series.get("_last", 0)
+            total += series.get("_last", start_vals.get(mid, 0))
         combined.append((d, total))
 
     # Scale so first point = combined_starting_aud
