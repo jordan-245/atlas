@@ -20,9 +20,9 @@
     "params_override": null,
     "config_snapshot": null,
     "claimed_by": "atlas-research",
-    "claimed_at": "2026-02-27T23:02:48.447351+00:00",
+    "claimed_at": "2026-03-01T00:18:39.323929+00:00",
     "created_at": "2026-02-27T05:29:01.019261+00:00",
-    "updated_at": "2026-02-27T23:02:48.447356+00:00",
+    "updated_at": "2026-03-01T00:18:39.323941+00:00",
     "tags": [
       "wave1",
       "dormant",
@@ -31,7 +31,7 @@
       "solo"
     ],
     "depends_on": [],
-    "notes": "Requires weekly data aggregation from daily bars. Uses weekly SMA + RSI for trend, daily RSI + SMA proximity for entry."
+    "notes": "Requires weekly data aggregation from daily bars. Uses weekly SMA + RSI for trend, daily RSI + SMA proximity for entry. [Reset: generate_signals() signature mismatch fixed 2026-02-28]"
   },
   "config_snapshot": {
     "version": "v2.0",
@@ -255,15 +255,55 @@
     "method": "single_strategy_test",
     "params_override": null
   },
-  "outputs": null,
+  "outputs": {
+    "experiment_id": "wave1_mtf_mo_solo",
+    "strategy": "mtf_momentum",
+    "market": "sp500",
+    "mode": "solo",
+    "params_override": null,
+    "n_tickers": 284,
+    "config_version": "v2.0",
+    "timestamp": "2026-03-01T00:18:41.051452+00:00",
+    "solo": {
+      "total_trades": 0,
+      "cagr_pct": 0.0,
+      "sharpe": 0.0,
+      "sortino": 0.0,
+      "max_drawdown_pct": 0.0,
+      "win_rate_pct": 0.0,
+      "profit_factor": 0.0,
+      "total_pnl": 0,
+      "avg_trade": 0.0,
+      "final_equity": 4000.0,
+      "expectancy_r": 0.0,
+      "avg_r": 0.0,
+      "r_count": 0,
+      "edge_p_value": 1.0,
+      "edge_significant": false,
+      "var_95_pct": -0.0,
+      "cvar_95_pct": -0.0,
+      "calmar": 0.0,
+      "mc_p95_drawdown_pct": 0.0,
+      "mc_fragile": false
+    },
+    "runtime_s": 684.5,
+    "output_path": "/root/atlas/research/experiments/eval-wave1_mtf_mo_solo.json"
+  },
   "metadata": {
     "agent_id": "atlas-research",
-    "started_at": "2026-02-27T23:02:48.449578+00:00",
-    "error": "MTFMomentum.generate_signals() takes 3 positional arguments but 4 were given"
+    "started_at": "2026-03-01T00:18:39.326614+00:00",
+    "finished_at": "2026-03-01T00:30:04.797892+00:00",
+    "runtime_s": 684.5
   },
   "verdict": "fail",
-  "verdict_rationale": "MTFMomentum.generate_signals() takes 3 positional arguments but 4 were given",
-  "learnings": [],
+  "verdict_rationale": "Code bug: 'The truth value of a Series is ambiguous' errors on ~50% of tickers. calc_atr signature fixed but deeper Series comparison issues remain in generate_signals(). 0 usable signals. This is a CODE failure, not a hypothesis rejection.",
+  "learnings": [
+    "calc_atr() call fixed (was passing df instead of df['high'],df['low'],df['close'])",
+    "Second bug: Series comparison ambiguity in signal generation logic",
+    "Strategy needs full code audit \u2014 multiple comparison operators likely use raw Series",
+    "PATTERN: Dormant strategies have accumulated API drift bugs",
+    "DO NOT re-queue until code is audited and unit-tested"
+  ],
   "promoted": false,
   "candidate_config_path": null
 }

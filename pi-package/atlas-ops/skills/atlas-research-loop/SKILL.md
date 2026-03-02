@@ -212,11 +212,28 @@ if len(recent) >= 1:
     print("Rate limit: max 1 promotion per week per market. Defer.")
 ```
 
-### Step 5: Send promotion request
-Use Telegram to send a structured promotion request:
+### Step 5: Send promotion request with Approve/Reject buttons
+Use the promotion-request command which sends inline Approve/Reject buttons via Telegram:
 ```bash
-cd /root/atlas && python3 scripts/telegram_notify.py \
-    --message "🔬 Research Promotion Request\n\nExperiment: {exp_id}\nStrategy: momentum_breakout\nMarket: SP500\n\nBefore → After:\nSharpe: 1.04 → 1.08\nCAGR: 15.69% → 17.2%\nDD: 5.39% → 5.1%\n\nOOS: ALL PASS\n\nApprove? Reply YES to promote."
+cd /root/atlas && python3 scripts/telegram_notify.py promotion-request {exp_id} {market_id}
+```
+This loads the candidate config and validation results, then sends a rich message with
+Before→After metric comparisons, OOS results, and **inline Approve/Reject buttons** that
+the Telegram bot handles for one-tap promotion.
+
+Prerequisites before calling:
+1. Candidate must be staged: `python3 scripts/research_promote.py --stage --experiment-id {exp_id} --market {market_id}`
+2. OOS validation should be complete (the command will use cached results if available)
+
+Alternatively, you can use the Python API directly:
+```python
+from utils.telegram import send_research_promotion_request
+send_research_promotion_request(
+    experiment_id=exp_id,
+    market=market_id,
+    comparisons=comparisons,  # dict from regression check
+    oos_details=oos_details,  # dict from OOS validation
+)
 ```
 
 ### Step 6: NEVER auto-promote

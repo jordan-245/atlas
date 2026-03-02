@@ -495,23 +495,35 @@ class TradePlanGenerator:
         return plan
 
     def _save_plan(self, plan: dict, trade_date: str):
+        market_id = plan.get("market_id", "") or self.config.get("market", "")
         plans_dir = PROJECT_ROOT / self.PLANS_DIR
         plans_dir.mkdir(parents=True, exist_ok=True)
-        path = plans_dir / f"plan_{trade_date}.json"
+        # Per-market plan file (e.g. plan_asx_2026-03-02.json)
+        if market_id:
+            path = plans_dir / f"plan_{market_id}_{trade_date}.json"
+        else:
+            path = plans_dir / f"plan_{trade_date}.json"
         with open(path, "w") as f:
             json.dump(plan, f, indent=2, default=str)
         logger.info(f"Trade plan saved: {path}")
 
-    def load_plan(self, trade_date: str) -> Optional[dict]:
-        path = PROJECT_ROOT / self.PLANS_DIR / f"plan_{trade_date}.json"
-        if path.exists():
-            with open(path) as f:
-                return json.load(f)
+    def load_plan(self, trade_date: str, market_id: str = "") -> Optional[dict]:
+        plans_dir = PROJECT_ROOT / self.PLANS_DIR
+        market_id = market_id or self.config.get("market", "")
+        # Try per-market file first, fall back to legacy shared file
+        candidates = []
+        if market_id:
+            candidates.append(plans_dir / f"plan_{market_id}_{trade_date}.json")
+        candidates.append(plans_dir / f"plan_{trade_date}.json")
+        for path in candidates:
+            if path.exists():
+                with open(path) as f:
+                    return json.load(f)
         return None
 
-    def approve_plan(self, trade_date: str) -> Optional[dict]:
+    def approve_plan(self, trade_date: str, market_id: str = "") -> Optional[dict]:
         """Mark a plan as approved."""
-        plan = self.load_plan(trade_date)
+        plan = self.load_plan(trade_date, market_id=market_id)
         if plan:
             plan["status"] = "APPROVED"
             plan["approved_at"] = datetime.now().isoformat()

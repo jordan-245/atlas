@@ -4,15 +4,46 @@
   "closed_trades": [],
   "equity_history": [
     {
-      "date": "2026-02-27",
-      "equity": 10367.83,
-      "cash": 7022.23,
-      "positions_value": 3345.6,
-      "num_positions": 1
+      "date": "2026-03-02",
+      "equity": 3999.0,
+      "cash": 3999.0,
+      "positions_value": 0,
+      "num_positions": 0,
+      "note": "IBKR account inception \u2014 fresh start"
+    },
+    {
+      "date": "2026-03-02",
+      "equity": 3999.0,
+      "cash": 3999.0,
+      "positions_value": 0.0,
+      "num_positions": 0,
+      "total_realized_pnl": 0,
+      "total_closed_trades": 0,
+      "positions": []
+    },
+    {
+      "date": "2026-03-02",
+      "equity": 3999.0,
+      "cash": 3999.0,
+      "positions_value": 0.0,
+      "num_positions": 0,
+      "total_realized_pnl": 0,
+      "total_closed_trades": 0,
+      "positions": []
+    },
+    {
+      "date": "2026-03-02",
+      "equity": 3999.0,
+      "cash": 3999.0,
+      "positions_value": 0.0,
+      "num_positions": 0,
+      "total_realized_pnl": 0,
+      "total_closed_trades": 0,
+      "positions": []
     }
   ],
-  "daily_high_water": 5000,
+  "daily_high_water": 3999.0,
   "halted": false,
   "halt_reason": "",
-  "last_saved": "2026-02-27T09:24:18.347788"
+  "last_saved": "2026-03-02T16:30:41.888723"
 }

@@ -312,7 +312,9 @@ def calc_position_size(equity: float, risk_pct: float,
                        entry_price: float, stop_price: float,
                        commission_per_trade: float = 5.0,
                        commission_pct: float = 0.0008,
-                       min_shares: int = 1) -> dict:
+                       min_shares: int = 1,
+                       min_position_value: float = 0.0,
+                       max_position_value: float = 0.0) -> dict:
     """Calculate position size based on fixed-fractional risk.
 
     Determines how many shares to buy so that if the stop-loss is hit,
@@ -386,9 +388,22 @@ def calc_position_size(equity: float, risk_pct: float,
     if shares * entry_price > equity:
         shares = int(math.floor(equity / entry_price))
 
-    # Enforce minimum
+    # Enforce maximum position value (portfolio allocation cap)
+    if max_position_value > 0 and shares > 0:
+        if shares * entry_price > max_position_value:
+            shares = int(math.floor(max_position_value / entry_price))
+
+    # Enforce minimum shares
     if 0 < shares < min_shares:
         shares = 0  # Can't meet minimum, don't trade
+
+    # Enforce minimum position value (e.g. ASX $500 marketable parcel)
+    if min_position_value > 0 and shares > 0:
+        if shares * entry_price < min_position_value:
+            shares = int(math.ceil(min_position_value / entry_price))
+        # Check we can still afford it
+        if shares * entry_price > equity:
+            shares = 0  # Can't meet minimum with available equity
 
     # Calculate actuals
     position_value = shares * entry_price

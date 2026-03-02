@@ -153,8 +153,8 @@ PARAM_GRIDS = {
         'rsi_oversold': [20, 25, 30, 35, 40, 45],
         'zscore_entry': [-3.0, -2.5, -2.0, -1.5, -1.0],
         'atr_stop_mult': [2.0, 2.5, 3.0, 3.5, 4.0],
-        'profit_target_atr_mult': [1.0, 1.5, 2.0, 2.5, 3.0],
-        'max_hold_days': [5, 7, 10, 15, 20],
+        'profit_target_atr_mult': [1.5, 2.0, 2.5, 3.0, 4.0, 5.0],
+        'max_hold_days': [5, 7, 10, 15, 20, 30],
     },
     'bb_squeeze': {
         'bb_std': [1.5, 2.0, 2.5, 3.0],
@@ -167,15 +167,15 @@ PARAM_GRIDS = {
     'trend_following': {
         'fast_ma': [5, 10, 15, 20],
         'slow_ma': [20, 30, 40, 50, 60],
-        'pullback_pct': [0.01, 0.02, 0.03, 0.04, 0.05],
-        'atr_stop_mult': [2.0, 2.5, 3.0, 3.5, 4.0],
-        'max_hold_days': [10, 15, 20, 25, 30],
+        'pullback_pct': [0.01, 0.02, 0.03, 0.04, 0.05, 0.06],
+        'atr_stop_mult': [2.0, 2.5, 3.0, 3.5, 4.0, 5.0],
+        'max_hold_days': [10, 15, 20, 25, 30, 40],
     },
     'opening_gap': {
-        'gap_threshold': [-0.03, -0.025, -0.02, -0.015, -0.01],
+        'gap_threshold': [-0.04, -0.03, -0.025, -0.02, -0.015],
         'ibs_confirm': [0.15, 0.2, 0.3, 0.4, 0.5],
         'rsi14_max': [30, 40, 50, 60, 70],
-        'atr_stop_mult': [1.5, 2.0, 2.5, 3.0, 3.5],
+        'atr_stop_mult': [1.5, 2.0, 2.5, 3.0, 3.5, 4.0],
         'max_hold_days': [3, 5, 7, 10, 15],
     },
     'dividend_capture': {

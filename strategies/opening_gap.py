@@ -78,6 +78,8 @@ class OpeningGap(BaseStrategy):
         risk_pct = self.risk_config.get("max_risk_per_trade_pct", 0.005)
         commission_per_trade = self.fees_config.get("commission_per_trade", 5.0)
         commission_pct = self.fees_config.get("commission_pct", 0.0008)
+        min_position_value = self.fees_config.get("min_position_value", 0.0)
+        max_position_value = self.config.get("trading", {}).get("live_safety", {}).get("max_order_value", 0.0)
 
         # Minimum rows needed for all indicators
         # RSI(14), ATR(14), SMA(5), volume_ratio(20) + buffer
@@ -215,6 +217,8 @@ class OpeningGap(BaseStrategy):
                         stop_price=stop_price,
                         commission_per_trade=commission_per_trade,
                         commission_pct=commission_pct,
+                        min_position_value=min_position_value,
+                        max_position_value=max_position_value,
                     )
                 except (ValueError, ZeroDivisionError):
                     continue

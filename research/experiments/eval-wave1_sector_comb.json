@@ -1,0 +1,140 @@
+{
+  "experiment_id": "wave1_sector_comb",
+  "strategy": "sector_rotation",
+  "market": "sp500",
+  "mode": "combined",
+  "params_override": {
+    "sector_momentum_period": 60,
+    "top_sectors": 2,
+    "rebalance_days": 20,
+    "atr_stop_mult": 2.5,
+    "max_hold_days": 30,
+    "stocks_per_sector": 2
+  },
+  "n_tickers": 284,
+  "config_version": "v2.1",
+  "timestamp": "2026-03-01T23:34:59.799116+00:00",
+  "baseline": {
+    "total_trades": 270,
+    "cagr_pct": 11.6579,
+    "sharpe": 0.8681,
+    "sortino": 1.2013,
+    "max_drawdown_pct": 5.3324,
+    "win_rate_pct": 58.89,
+    "profit_factor": 1.6613,
+    "total_pnl": 985.47,
+    "avg_trade": 3.65,
+    "final_equity": 4944.27,
+    "expectancy_r": 0.214,
+    "avg_r": 0.214,
+    "r_count": 270,
+    "edge_p_value": 0.000891,
+    "edge_significant": true,
+    "var_95_pct": 0.624,
+    "cvar_95_pct": 1.02,
+    "calmar": 2.1862,
+    "mc_p95_drawdown_pct": 5.27,
+    "mc_fragile": false,
+    "strategy_breakdown": {
+      "trend_following": {
+        "trades": 156,
+        "total_pnl": 684.8,
+        "win_rate_pct": 55.1
+      },
+      "mean_reversion": {
+        "trades": 108,
+        "total_pnl": 259.9,
+        "win_rate_pct": 63.0
+      },
+      "opening_gap": {
+        "trades": 6,
+        "total_pnl": 40.77,
+        "win_rate_pct": 83.3
+      }
+    }
+  },
+  "combined": {
+    "total_trades": 339,
+    "cagr_pct": 11.0611,
+    "sharpe": 0.5478,
+    "sortino": 0.7299,
+    "max_drawdown_pct": 11.5701,
+    "win_rate_pct": 48.67,
+    "profit_factor": 1.4366,
+    "total_pnl": 1049.53,
+    "avg_trade": 3.1,
+    "final_equity": 4893.6,
+    "expectancy_r": 0.1712,
+    "avg_r": 0.1712,
+    "r_count": 339,
+    "edge_p_value": 0.009225,
+    "edge_significant": true,
+    "var_95_pct": 1.208,
+    "cvar_95_pct": 1.749,
+    "calmar": 0.956,
+    "mc_p95_drawdown_pct": 7.6,
+    "mc_fragile": false,
+    "strategy_breakdown": {
+      "sector_rotation": {
+        "trades": 178,
+        "total_pnl": 665.52,
+        "win_rate_pct": 42.1
+      },
+      "trend_following": {
+        "trades": 86,
+        "total_pnl": 261.73,
+        "win_rate_pct": 52.3
+      },
+      "mean_reversion": {
+        "trades": 71,
+        "total_pnl": 107.27,
+        "win_rate_pct": 59.2
+      },
+      "opening_gap": {
+        "trades": 4,
+        "total_pnl": 15.01,
+        "win_rate_pct": 75.0
+      }
+    }
+  },
+  "delta": {
+    "cagr_pct": -0.5968,
+    "sharpe": -0.3203,
+    "sortino": -0.4714,
+    "max_drawdown_pct": 6.2377,
+    "win_rate_pct": -10.22,
+    "profit_factor": -0.2247,
+    "total_pnl": 64.06,
+    "total_trades": 69
+  },
+  "solo": {
+    "total_trades": 237,
+    "cagr_pct": 9.6133,
+    "sharpe": 0.4262,
+    "sortino": 0.5542,
+    "max_drawdown_pct": 12.6801,
+    "win_rate_pct": 44.3,
+    "profit_factor": 1.4757,
+    "total_pnl": 976.83,
+    "avg_trade": 4.12,
+    "final_equity": 4771.73,
+    "expectancy_r": 0.2275,
+    "avg_r": 0.2275,
+    "r_count": 237,
+    "edge_p_value": 0.015129,
+    "edge_significant": true,
+    "var_95_pct": 1.206,
+    "cvar_95_pct": 1.818,
+    "calmar": 0.7581,
+    "mc_p95_drawdown_pct": 7.65,
+    "mc_fragile": false,
+    "strategy_breakdown": {
+      "sector_rotation": {
+        "trades": 237,
+        "total_pnl": 976.83,
+        "win_rate_pct": 44.3
+      }
+    }
+  },
+  "runtime_s": 440.6
+}

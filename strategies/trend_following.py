@@ -84,6 +84,8 @@ class TrendFollowing(BaseStrategy):
         risk_pct = self.risk_config.get("max_risk_per_trade_pct", 0.005)
         commission_per_trade = self.fees_config.get("commission_per_trade", 5.0)
         commission_pct = self.fees_config.get("commission_pct", 0.0008)
+        min_position_value = self.fees_config.get("min_position_value", 0.0)
+        max_position_value = self.config.get("trading", {}).get("live_safety", {}).get("max_order_value", 0.0)
 
         # Minimum rows needed: slow_ma + atr_period + buffer
         min_rows = self.slow_ma_period + self.atr_period + 10
@@ -186,6 +188,8 @@ class TrendFollowing(BaseStrategy):
                         stop_price=stop_price,
                         commission_per_trade=commission_per_trade,
                         commission_pct=commission_pct,
+                        min_position_value=min_position_value,
+                        max_position_value=max_position_value,
                     )
                 except ValueError as e:
                     self._logger.debug(f"{ticker}: position sizing error: {e}")

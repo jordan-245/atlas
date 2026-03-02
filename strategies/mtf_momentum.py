@@ -156,12 +156,16 @@ class MTFMomentum(BaseStrategy):
                 stop_price = entry_price - self.atr_stop_mult * current_atr
                 take_profit = entry_price + 3.0 * current_atr
 
+                risk_pct = self.risk_config.get("max_risk_per_trade_pct", 0.005)
+                commission_per_trade = self.fees_config.get("commission_per_trade", 1.1)
+                commission_pct = self.fees_config.get("commission_pct", 0.001)
                 pos = calc_position_size(
-                    capital=equity,
+                    equity=equity,
+                    risk_pct=risk_pct,
                     entry_price=entry_price,
                     stop_price=stop_price,
-                    risk_pct=self._risk_per_trade,
-                    max_position_pct=self._max_position_pct,
+                    commission_per_trade=commission_per_trade,
+                    commission_pct=commission_pct,
                 )
                 if pos["shares"] < 1:
                     continue

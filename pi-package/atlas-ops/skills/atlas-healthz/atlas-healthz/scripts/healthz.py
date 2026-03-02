@@ -76,7 +76,7 @@ def check_infra(project: Path) -> list:
     """Infrastructure: services, ports, systemd units."""
     results = []
 
-    # OpenD gateway (moomoo)
+    # OpenD gateway (moomoo — SP500)
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.settimeout(2)
@@ -85,6 +85,16 @@ def check_infra(project: Path) -> list:
         results.append({"check": "opend_gateway", "verdict": "ok", "message": "Port 11111 reachable"})
     except Exception:
         results.append({"check": "opend_gateway", "verdict": "fail", "message": "OpenD not reachable on port 11111. Run: systemctl start opend"})
+
+    # IB Gateway (IBKR — ASX)
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(2)
+        s.connect(("127.0.0.1", 4001))
+        s.close()
+        results.append({"check": "ibkr_gateway", "verdict": "ok", "message": "IB Gateway responding on port 4001"})
+    except Exception:
+        results.append({"check": "ibkr_gateway", "verdict": "fail", "message": "IB Gateway not reachable on port 4001. Run: cd /root/atlas/docker && docker compose -f docker-compose-ibgw.yml up -d"})
 
     # Telegram bot service
     try:
@@ -111,10 +121,15 @@ def check_infra(project: Path) -> list:
         has_telegram = bool(secrets.get("telegram_bot_token")) and bool(secrets.get("telegram_chat_id"))
         has_moomoo = bool(secrets.get("moomoo_rsa_key_path") or secrets.get("moomoo_password_md5")
                          or secrets.get("MOOMOO_LOGIN_PWD_MD5") or secrets.get("moomoo"))
+        has_ibkr = bool(secrets.get("IBKR_ACCOUNT_ID") or secrets.get("IBEAM_ACCOUNT"))
         results.append({"check": "secrets_telegram", "verdict": "ok" if has_telegram else "fail",
                         "message": "Telegram credentials present" if has_telegram else "Missing telegram_bot_token or telegram_chat_id in ~/.atlas-secrets.json"})
-        results.append({"check": "secrets_broker", "verdict": "ok" if has_moomoo else "warn",
-                        "message": "Broker credentials present" if has_moomoo else "No moomoo credentials in ~/.atlas-secrets.json"})
+        broker_ok = has_moomoo or has_ibkr
+        broker_names = []
+        if has_moomoo: broker_names.append("moomoo")
+        if has_ibkr: broker_names.append("ibkr")
+        results.append({"check": "secrets_broker", "verdict": "ok" if broker_ok else "warn",
+                        "message": f"Broker credentials: {', '.join(broker_names)}" if broker_ok else "No broker credentials in ~/.atlas-secrets.json"})
     else:
         results.append({"check": "secrets_file", "verdict": "fail", "message": "~/.atlas-secrets.json not found"})
 
@@ -238,7 +253,8 @@ def check_broker(project: Path, market_id: str) -> list:
         return results
 
     cfg = _load_json(cfg_path)
-    if cfg.get("trading", {}).get("broker") != "moomoo":
+    broker_name = cfg.get("trading", {}).get("broker", "paper")
+    if broker_name == "paper":
         results.append({"check": "broker", "verdict": "ok", "message": "Broker is 'paper' — no live connection to check"})
         return results
 
@@ -246,10 +262,10 @@ def check_broker(project: Path, market_id: str) -> list:
         from brokers.registry import get_broker
         broker = get_broker(market_id, cfg)
         if not broker.connect():
-            results.append({"check": "broker_connect", "verdict": "fail", "message": "Broker connection failed"})
+            results.append({"check": "broker_connect", "verdict": "fail", "message": f"Broker ({broker_name}) connection failed"})
             return results
 
-        results.append({"check": "broker_connect", "verdict": "ok", "message": "Connected to Moomoo"})
+        results.append({"check": "broker_connect", "verdict": "ok", "message": f"Connected to {broker_name}"})
 
         info = broker.get_account_info()
         results.append({"check": "broker_account", "verdict": "ok",
@@ -657,12 +673,26 @@ def main():
     parser.add_argument("--project", default=None, help="Project root override")
     args = parser.parse_args()
 
+    # In JSON mode, suppress all stdout noise from third-party SDKs
+    # (moomoo/futu SDK prints ANSI log lines to stdout on broker connect,
+    # which corrupts the JSON output and breaks cron message parsing).
+    if args.json:
+        import io, logging as _logging
+        # Redirect stdout during health check run, capture it
+        _real_stdout = sys.stdout
+        sys.stdout = io.StringIO()
+        # Also silence all loggers that write to stdout
+        for name in ('futu', 'moomoo', 'OpenQuoteContext', 'OpenSecTradeContext'):
+            _logging.getLogger(name).setLevel(_logging.CRITICAL)
+
     project = Path(args.project) if args.project else PROJECT
     sections = [args.section] if args.section else None
 
     report = run_healthcheck(project, args.market, sections)
 
     if args.json:
+        # Restore real stdout and print clean JSON
+        sys.stdout = _real_stdout
         print(json.dumps(report, indent=2))
     else:
         print(format_report(report))

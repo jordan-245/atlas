@@ -8,6 +8,7 @@ Usage:
     python3 scripts/telegram_notify.py premarket-approve [plan_path] [market_id]
     python3 scripts/telegram_notify.py postclose-ok  [market_id]
     python3 scripts/telegram_notify.py error         <mode> [logfile]
+    python3 scripts/telegram_notify.py promotion-request <experiment_id> <market_id>
     python3 scripts/telegram_notify.py test
 """
 
@@ -57,6 +58,38 @@ def main():
     elif cmd == "research-complete":
         market_id = sys.argv[2] if len(sys.argv) > 2 else "sp500"
         ok = send_research_complete(market_id=market_id)
+
+    elif cmd == "promotion-request":
+        # Send promotion request with Approve/Reject inline buttons
+        experiment_id = sys.argv[2] if len(sys.argv) > 2 else None
+        market_id = sys.argv[3] if len(sys.argv) > 3 else "sp500"
+        if not experiment_id:
+            print("Error: experiment_id required")
+            print("Usage: python3 scripts/telegram_notify.py promotion-request <experiment_id> <market_id>")
+            sys.exit(1)
+
+        # Load experiment and validation data to build the rich message
+        from scripts.research_promote import validate_candidate, CANDIDATES_DIR, send_promotion_request
+        from research.models import load_experiment
+
+        candidate_path = CANDIDATES_DIR / f'{market_id}_{experiment_id}.json'
+        if not candidate_path.exists():
+            print(f"Error: Candidate config not found at {candidate_path}")
+            print("Run --stage first: python3 scripts/research_promote.py --stage --experiment-id <id> --market <market>")
+            sys.exit(1)
+
+        # Run validation (skip OOS if already done — check for existing results)
+        oos_path = PROJECT_ROOT / 'backtest' / 'results' / f'oos_promotion_{experiment_id}.json'
+        skip_oos = oos_path.exists()
+        if skip_oos:
+            print(f"OOS results already exist at {oos_path}, using cached results")
+
+        validation = validate_candidate(experiment_id, market_id, skip_oos=skip_oos)
+        ok = send_promotion_request(experiment_id, market_id, validation)
+        if ok:
+            print(f"Promotion request sent with Approve/Reject buttons for {experiment_id}")
+        else:
+            print("Failed to send promotion request")
 
     elif cmd == "research-idle":
         from utils.telegram import send_message

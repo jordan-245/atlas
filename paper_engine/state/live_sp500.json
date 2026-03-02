@@ -11,11 +11,45 @@
       "num_positions": 0,
       "total_realized_pnl": 0.0,
       "total_closed_trades": 0,
-      "positions": []
+      "positions": [],
+      "note": "Pre-entry snapshot (entries filled later in session)"
+    },
+    {
+      "date": "2026-02-28",
+      "equity": 4004.57,
+      "cash": 3570.5,
+      "positions_value": 434.07,
+      "num_positions": 2,
+      "total_realized_pnl": 0.0,
+      "total_closed_trades": 0,
+      "positions": [
+        {
+          "ticker": "ON",
+          "strategy": "trend_following",
+          "shares": 3,
+          "entry_price": 68.16,
+          "current_price": 68.16,
+          "unrealized_pnl": 0.0,
+          "mae": 0.0,
+          "mfe": 0.0,
+          "holding_days": 1
+        },
+        {
+          "ticker": "CHTR",
+          "strategy": "trend_following",
+          "shares": 1,
+          "entry_price": 228.38,
+          "current_price": 228.38,
+          "unrealized_pnl": 0.0,
+          "mae": 0.0,
+          "mfe": 0.0,
+          "holding_days": 1
+        }
+      ]
     }
   ],
-  "daily_high_water": 4000,
+  "daily_high_water": 4004.57,
   "halted": false,
   "halt_reason": "",
-  "last_saved": "2026-02-28T22:52:35.063484"
+  "last_saved": "2026-03-02T09:41:46.883175"
 }

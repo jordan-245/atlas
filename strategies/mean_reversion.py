@@ -104,6 +104,8 @@ class MeanReversion(BaseStrategy):
         risk_pct = self.risk_config.get("max_risk_per_trade_pct", 0.005)
         commission_per_trade = self.fees_config.get("commission_per_trade", 5.0)
         commission_pct = self.fees_config.get("commission_pct", 0.0008)
+        min_position_value = self.fees_config.get("min_position_value", 0.0)
+        max_position_value = self.config.get("trading", {}).get("live_safety", {}).get("max_order_value", 0.0)
 
         # Minimum rows needed
         min_rows = max(self.rsi_period, self.zscore_lookback, self.atr_period) + 10
@@ -228,6 +230,8 @@ class MeanReversion(BaseStrategy):
                         stop_price=stop_price,
                         commission_per_trade=commission_per_trade,
                         commission_pct=commission_pct,
+                        min_position_value=min_position_value,
+                        max_position_value=max_position_value,
                     )
                 except ValueError as e:
                     self._logger.debug(f"{ticker}: position sizing error: {e}")

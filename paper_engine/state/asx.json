@@ -131,48 +131,7 @@
       "stop_order_id": ""
     }
   ],
-  "closed_trades": [
-    {
-      "ticker": "BSL.AX",
-      "strategy": "trend_following",
-      "entry_date": "2026-02-20",
-      "exit_date": "2026-02-27",
-      "entry_price": 27.8779,
-      "exit_price": 27.6823,
-      "shares": 6,
-      "entry_value": 167.27,
-      "exit_value": 166.09,
-      "entry_commission": 3.0,
-      "exit_commission": 3.0,
-      "pnl": -7.18,
-      "pnl_pct": -4.29,
-      "mae": -0.1,
-      "mfe": 1.87,
-      "holding_days": 7,
-      "exit_reason": "signal_exit",
-      "confidence": 1.0
-    },
-    {
-      "ticker": "WAF.AX",
-      "strategy": "trend_following",
-      "entry_date": "2026-02-20",
-      "exit_date": "2026-02-27",
-      "entry_price": 3.6036,
-      "exit_price": 3.5265,
-      "shares": 32,
-      "entry_value": 115.32,
-      "exit_value": 112.85,
-      "entry_commission": 3.0,
-      "exit_commission": 3.0,
-      "pnl": -8.47,
-      "pnl_pct": -7.35,
-      "mae": -2.04,
-      "mfe": 0.0,
-      "holding_days": 7,
-      "exit_reason": "signal_exit",
-      "confidence": 1.0
-    }
-  ],
+  "closed_trades": [],
   "equity_history": [
     {
       "date": "2026-02-20",

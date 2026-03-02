@@ -160,6 +160,10 @@ class BacktestEngine:
         self.flat_fee_threshold = self.fees_config.get("flat_fee_threshold", 2000.0)
         # Minimum position value to avoid commission-dominated micro-trades
         self.min_position_value = self.fees_config.get("min_position_value", 500.0)
+        # Maximum position value (e.g. for equal-weight allocation with small equity)
+        self.max_position_value = self.config.get("trading", {}).get(
+            "live_safety", {}
+        ).get("max_order_value", 0)
 
         # Phase1-Fix5: Minimum confidence threshold
         self.min_confidence = self.risk_config.get("min_confidence", 0.0)
@@ -784,6 +788,14 @@ class BacktestEngine:
                         continue
 
                     position_value = shares * fill_price
+
+                    # Cap at max position value (equal-weight allocation)
+                    if self.max_position_value > 0 and position_value > self.max_position_value:
+                        shares = int(self.max_position_value / fill_price)
+                        position_value = shares * fill_price
+
+                    if shares <= 0:
+                        continue
 
                     # Phase1-Fix2: Skip positions below minimum value
                     if position_value < self.min_position_value:

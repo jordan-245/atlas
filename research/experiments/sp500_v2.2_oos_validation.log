@@ -1,0 +1,58 @@
+======================================================================
+ATLAS SP500 OOS VALIDATION — PARALLEL (8 workers)
+======================================================================
+Config: v2.2 — /root/atlas/config/active/sp500.json
+
+Loading sp500 data...
+Loaded 284 tickers in 1s
+IS tickers: 284 | OOS tickers: 284
+
+Dispatching 13 backtests across 8 workers...
+
+  ✓ [IS] Trades=71 CAGR=8.99% Sharpe=0.534 PF=1.481 DD=4.3% [80s]
+  ✓ [OOS] Trades=96 CAGR=12.65% Sharpe=0.962 PF=1.707 DD=5.3% [111s]
+  ✓ [PERTURB-2] Trades=685 CAGR=1.57% Sharpe=-0.228 PF=1.056 DD=13.2% [211s]
+  ✓ [PERTURB-5] Trades=803 CAGR=4.56% Sharpe=0.016 PF=1.141 DD=9.4% [224s]
+  ✓ [PERTURB-1] Trades=792 CAGR=3.43% Sharpe=-0.073 PF=1.138 DD=14.6% [230s]
+  ✓ [PERTURB-4] Trades=694 CAGR=-0.63% Sharpe=-0.494 PF=1.022 DD=14.9% [233s]
+  ✓ [PERTURB-3] Trades=713 CAGR=0.59% Sharpe=-0.361 PF=1.056 DD=14.7% [238s]
+  ✓ [FULL] Trades=299 CAGR=13.29% Sharpe=0.983 PF=1.681 DD=5.5% [281s]
+  ✓ [PERTURB-6] Trades=696 CAGR=3.86% Sharpe=-0.059 PF=1.143 DD=10.5% [222s]
+  ✓ [PERTURB-7] Trades=752 CAGR=5.80% Sharpe=0.128 PF=1.207 DD=13.4% [231s]
+  ✓ [PERTURB-8] Trades=706 CAGR=-0.04% Sharpe=-0.383 PF=1.025 DD=13.6% [214s]
+  ✓ [PERTURB-9] Trades=757 CAGR=3.18% Sharpe=-0.076 PF=1.127 DD=15.4% [217s]
+  ✓ [PERTURB-10] Trades=695 CAGR=1.46% Sharpe=-0.319 PF=1.097 DD=11.8% [221s]
+
+All 13 backtests done in 453s wall (vs 2714s sequential → 6.0× speedup)
+
+----------------------------------------------------------------------
+TEST 1: Time-Period Split
+----------------------------------------------------------------------
+    IS: Sharpe=+0.534  CAGR=+9.0%  DD=4.3%  PF=1.48  Trades=71
+   OOS: Sharpe=+0.962  CAGR=+12.6%  DD=5.3%  PF=1.71  Trades=96
+  FULL: Sharpe=+0.983  CAGR=+13.3%  DD=5.5%  PF=1.68  Trades=299
+  Degradation: {'cagr_pct': 40.65, 'sharpe': 80.0, 'profit_factor': 15.3, 'win_rate_pct': -6.31}
+
+----------------------------------------------------------------------
+TEST 2: Parameter Perturbation
+----------------------------------------------------------------------
+  Sharpe: mean=-0.185  std=0.191  range=[-0.494, 0.128]
+  CAGR%:  mean=2.4  std=2.0  range=[-0.6, 5.8]
+  Collapses (CAGR<0): 2/10  → ROBUST
+
+----------------------------------------------------------------------
+TEST 3: Walk-Forward Consistency
+----------------------------------------------------------------------
+  Windows: 16/21 profitable (76%)
+  Mean return: 1.17%  Std: 1.56%
+
+======================================================================
+VALIDATION SUMMARY
+======================================================================
+  Test 1 (IS/OOS split):     PASS
+  Test 2 (Perturbation):     PASS
+  Test 3 (WF consistency):   PASS - majority profitable
+  ──────────────────────────
+  OVERALL:                   PASS
+  Runtime: 453s (7.5min) — 6.0× speedup over sequential
+  Saved: /root/atlas/research/experiments/sp500_v2.2_oos_validation.json

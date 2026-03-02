@@ -59,6 +59,12 @@ class LivePortfolio:
         self.cash: float = 0.0
         self._broker_equity: float = 0.0
 
+        # True when broker returned meaningful data; False when broker
+        # returned zeroed/empty data (e.g. OpenD up but Futu backend
+        # unreachable).  State-mutating methods (record_equity, save_state)
+        # refuse to write when this is False to prevent corruption.
+        self.broker_data_valid: bool = False
+
         # Persistent local state (closed trades, equity history)
         self.closed_trades: list[dict] = []
         self.equity_history: list[dict] = []
@@ -93,7 +99,18 @@ class LivePortfolio:
                 logger.warning("Failed to load live state: %s", e)
 
     def save_state(self):
-        """Persist closed-trade history and equity curve."""
+        """Persist closed-trade history and equity curve.
+
+        Refuses to write if broker_data_valid is False to prevent
+        corrupting state with zeroed broker data.
+        """
+        if not self.broker_data_valid:
+            logger.warning(
+                "save_state() skipped — broker_data_valid is False "
+                "(would corrupt %s)", self._state_path().name
+            )
+            return
+
         path = self._state_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         state = {
@@ -128,17 +145,47 @@ class LivePortfolio:
         self._connected = False
 
     def _refresh_from_broker(self):
-        """Pull positions and account info from broker."""
+        """Pull positions and account info from broker.
+
+        Sets self.broker_data_valid to indicate whether the data is
+        trustworthy.  When the broker returns zeroed data (OpenD connected
+        but Futu backend unreachable), positions/cash are left at their
+        previous values and broker_data_valid is set to False.
+        """
         if not self._broker:
             return
 
         # Account info
         acct = self._broker.get_account_info()
+        raw_positions = self._broker.get_positions()
+
+        # ── Detect broker returning garbage ─────────────────────
+        # OpenD can connect fine but Futu backend returns "Network
+        # interruption" — yielding $0 equity, $0 cash, [] positions.
+        # If we previously had positions (in equity history or in the
+        # current session), this is clearly a data failure, not a
+        # genuine empty account.
+        if acct.equity == 0 and acct.cash == 0 and not raw_positions:
+            prev_had_positions = any(
+                pt.get("num_positions", 0) > 0
+                for pt in self.equity_history
+            )
+            if prev_had_positions or self.positions:
+                logger.warning(
+                    "LivePortfolio: broker returned $0 equity / 0 positions "
+                    "but history shows prior positions — treating as OFFLINE. "
+                    "State will NOT be updated."
+                )
+                self.broker_data_valid = False
+                return
+            # Genuinely empty account (no prior positions either)
+            logger.info("LivePortfolio: broker returned empty — appears genuine (no prior positions)")
+
+        self.broker_data_valid = True
         self.cash = acct.cash
         self._broker_equity = acct.equity
 
         # Convert broker PositionInfo → engine Position objects
-        raw_positions = self._broker.get_positions()
         self.positions = []
         for pi in raw_positions:
             # Filter to this market's tickers
@@ -280,7 +327,17 @@ class LivePortfolio:
         }
 
     def record_equity(self, trade_date: str, prices: dict[str, float] = None):
-        """Record daily equity snapshot with per-position breakdown."""
+        """Record daily equity snapshot with per-position breakdown.
+
+        Refuses to record if broker_data_valid is False.
+        """
+        if not self.broker_data_valid:
+            logger.warning(
+                "record_equity() skipped for %s — broker_data_valid is False",
+                trade_date,
+            )
+            return
+
         eq = self.equity(prices)
         # Per-position snapshot for future attribution analysis
         position_details = []

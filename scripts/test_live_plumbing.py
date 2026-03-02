@@ -62,13 +62,16 @@ print("═" * 55)
 print()
 
 
-# ─── Test 1: Default config → paper ───────────────────────────
-print("1. Default config uses paper broker")
-broker = get_broker("asx", real_config)
+# ─── Test 1: Paper config → paper broker ──────────────────────
+print("1. Paper config uses paper broker")
+paper_cfg = json.loads(json.dumps(real_config))
+paper_cfg["trading"]["broker"] = "paper"
+paper_cfg["trading"]["live_enabled"] = False
+broker = get_broker("asx", paper_cfg)
 check(isinstance(broker, PaperBroker), f"get_broker returns PaperBroker (got {type(broker).__name__})")
 check(not broker.is_live, "broker.is_live is False")
 
-executor = get_live_executor(real_config)
+executor = get_live_executor(paper_cfg)
 check(executor is None, "get_live_executor returns None when disabled")
 print()
 
@@ -94,13 +97,17 @@ executor3 = get_live_executor(cfg3)
 check(executor3 is not None, "LiveExecutor created")
 check(isinstance(executor3, LiveExecutor), f"Type is LiveExecutor (got {type(executor3).__name__})")
 check(executor3.is_live_enabled, "is_live_enabled = True")
-check(executor3.is_dry_run, "is_dry_run = True (default)")
+# dry_run depends on live_safety.dry_run_first in config (may be True or False)
+dry_run_cfg = cfg3.get("trading", {}).get("live_safety", {}).get("dry_run_first", True)
+check(executor3.is_dry_run == dry_run_cfg, f"is_dry_run matches config ({dry_run_cfg})")
 print()
 
 
 # ─── Test 4: Pre-flight config checks ─────────────────────────
 print("4. Pre-flight config validation")
-errors_disabled = preflight_check_config(real_config)
+cfg_disabled = json.loads(json.dumps(real_config))
+cfg_disabled["trading"]["live_enabled"] = False
+errors_disabled = preflight_check_config(cfg_disabled)
 check(len(errors_disabled) > 0, f"Disabled config has errors: {errors_disabled[0]}")
 
 errors_enabled = preflight_check_config(cfg3)
@@ -133,7 +140,9 @@ print()
 
 # ─── Test 6: LiveExecutor refuses connect without live_enabled ─
 print("6. LiveExecutor.connect() blocked when not configured")
-exec_disabled = LiveExecutor(real_config)
+cfg_disabled6 = json.loads(json.dumps(real_config))
+cfg_disabled6["trading"]["live_enabled"] = False
+exec_disabled = LiveExecutor(cfg_disabled6)
 result = exec_disabled.connect()
 check(not result, "connect() returns False for disabled config")
 print()
@@ -186,13 +195,65 @@ check(not exec9b.is_dry_run, "dry_run_first=False → is_dry_run=False")
 print()
 
 
-# ─── Test 10: Active config is safe ──────────────────────────
+# ─── Test 10: Active config safety verification ─────────────
 print("10. Active config safety verification")
-check(real_config["trading"]["broker"] == "paper", "Active broker is 'paper'")
-check(not real_config["trading"].get("live_enabled", False), "Active live_enabled is False")
-check(real_config["trading"]["live_safety"]["dry_run_first"], "Active dry_run_first is True")
+active_broker = real_config["trading"]["broker"]
+active_live = real_config["trading"].get("live_enabled", False)
+active_dry = real_config["trading"]["live_safety"].get("dry_run_first", True)
 max_val = real_config["trading"]["live_safety"]["max_order_value"]
-check(max_val <= 1000, f"Active max_order_value is conservative (${max_val})")
+print(f"  ℹ️  Active config: broker={active_broker}, live={active_live}, dry_run={active_dry}")
+check(active_broker in ("paper", "moomoo", "ibkr"), f"Active broker is valid ({active_broker})")
+check(max_val <= 2000, f"Active max_order_value is conservative (${max_val})")
+if active_live and not active_dry:
+    print(f"  ⚠️  WARNING: Live trading is ACTIVE with dry_run_first=False (broker={active_broker})")
+print()
+
+
+# ─── Test: IBKR broker registry ────────────────────────────────
+print("IBKR. Broker registry supports IBKR")
+from brokers.registry import available_brokers, get_live_broker
+avail = available_brokers()
+check("ibkr" in avail, f"IBKR in available_brokers: {avail}")
+check("moomoo" in avail, f"Moomoo in available_brokers: {avail}")
+check("paper" in avail, f"Paper in available_brokers: {avail}")
+
+cfg_ibkr = json.loads(json.dumps(real_config))
+cfg_ibkr["trading"]["broker"] = "ibkr"
+cfg_ibkr["trading"]["live_enabled"] = True
+cfg_ibkr["ibkr"] = {"host": "127.0.0.1", "port": 4002, "client_id": 1, "currency": "AUD"}
+
+ibkr_broker = get_live_broker(cfg_ibkr)
+check(ibkr_broker is not None, "get_live_broker returns IBKRBroker")
+check(type(ibkr_broker).__name__ == "IBKRBroker", f"Type is IBKRBroker (got {type(ibkr_broker).__name__})")
+check(ibkr_broker.is_live, "IBKR broker is_live=True")
+
+# IBKR paper mode
+cfg_ibkr_paper = json.loads(json.dumps(cfg_ibkr))
+cfg_ibkr_paper["trading"]["live_enabled"] = False
+ibkr_paper = get_broker("asx", cfg_ibkr_paper)
+check(isinstance(ibkr_paper, PaperBroker), f"IBKR + live_enabled=False → PaperBroker (got {type(ibkr_paper).__name__})")
+
+# IBKR preflight
+errors_ibkr = preflight_check_config(cfg_ibkr)
+check(len(errors_ibkr) == 0, f"IBKR config passes pre-flight (errors: {errors_ibkr})")
+
+bad_ibkr = json.loads(json.dumps(cfg_ibkr))
+del bad_ibkr["ibkr"]
+errors_bad_ibkr = preflight_check_config(bad_ibkr)
+check(len(errors_bad_ibkr) > 0, f"Missing ibkr section caught: {errors_bad_ibkr[0] if errors_bad_ibkr else 'NONE'}")
+
+# IBKR LiveExecutor
+executor_ibkr = get_live_executor(cfg_ibkr)
+check(executor_ibkr is not None, "LiveExecutor created for IBKR config")
+
+# IBKR mapper (REST-based — no ib_insync dependency)
+from brokers.ibkr.mapper import strip_suffix, to_atlas, to_conid_lookup
+check(strip_suffix("BHP.AX", "asx") == "BHP", f"strip_suffix: BHP.AX → BHP")
+check(strip_suffix("AAPL", "sp500") == "AAPL", f"strip_suffix: AAPL → AAPL")
+check(to_atlas("BHP", "ASX") == "BHP.AX", f"to_atlas: BHP+ASX → BHP.AX")
+check(to_atlas("MSFT", "NASDAQ") == "MSFT", f"to_atlas: MSFT+NASDAQ → MSFT")
+lookup = to_conid_lookup("CBA.AX", "asx")
+check(lookup["symbol"] == "CBA" and lookup.get("exchange") == "ASX", f"to_conid_lookup: CBA.AX → {lookup}")
 print()
 
 

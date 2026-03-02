@@ -1,0 +1,33 @@
+{
+  "experiment_id": "wave1_mtf_mo_solo",
+  "strategy": "mtf_momentum",
+  "market": "sp500",
+  "mode": "solo",
+  "params_override": null,
+  "n_tickers": 284,
+  "config_version": "v2.0",
+  "timestamp": "2026-03-01T00:18:41.051452+00:00",
+  "solo": {
+    "total_trades": 0,
+    "cagr_pct": 0.0,
+    "sharpe": 0.0,
+    "sortino": 0.0,
+    "max_drawdown_pct": 0.0,
+    "win_rate_pct": 0.0,
+    "profit_factor": 0.0,
+    "total_pnl": 0,
+    "avg_trade": 0.0,
+    "final_equity": 4000.0,
+    "expectancy_r": 0.0,
+    "avg_r": 0.0,
+    "r_count": 0,
+    "edge_p_value": 1.0,
+    "edge_significant": false,
+    "var_95_pct": -0.0,
+    "cvar_95_pct": -0.0,
+    "calmar": 0.0,
+    "mc_p95_drawdown_pct": 0.0,
+    "mc_fragile": false
+  },
+  "runtime_s": 684.5
+}

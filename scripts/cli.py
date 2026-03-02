@@ -420,6 +420,11 @@ def cmd_broker_status(args):
         print("    OpenD:      %s:%s" % (moomoo_cfg.get("opend_host"), moomoo_cfg.get("opend_port")))
         print("    Firm:       %s" % moomoo_cfg.get("security_firm"))
         print("    TrdEnv:     %s" % moomoo_cfg.get("trd_env"))
+    elif broker_name == "ibkr":
+        ibkr_cfg = config.get("ibkr", {})
+        print("    Host:       %s:%s" % (ibkr_cfg.get("host", "127.0.0.1"), ibkr_cfg.get("port", "4001/4002")))
+        print("    Account:    %s" % ibkr_cfg.get("account_id", "auto"))
+        print("    Gateway:    %s" % ibkr_cfg.get("gateway_type", "gateway"))
 
     try:
         broker = _get_broker(market_id)
@@ -459,7 +464,7 @@ def cmd_live_run(args):
     broker_name = config.get("trading", {}).get("broker", "paper")
 
     if broker_name == "paper":
-        print("ERROR: trading.broker is 'paper'. Set to 'moomoo' for live execution.")
+        print("ERROR: trading.broker is 'paper'. Set to 'moomoo' or 'ibkr' for live execution.")
         return
     if mode not in ("live", "paper"):
         print("ERROR: trading.mode must be 'live' or 'paper'")
@@ -657,10 +662,10 @@ def cmd_history(args):
     config_override.setdefault("trading", {})["live_enabled"] = True
     executor_ro = LiveExecutor(config_override)
 
-    from brokers.moomoo.broker import MomooBroker
-    broker = MomooBroker(config, live=True)
-    if not broker.connect():
-        print("ERROR: Failed to connect to Moomoo broker")
+    from brokers.registry import get_live_broker
+    broker = get_live_broker(config_override)
+    if not broker or not broker.connect():
+        print("ERROR: Failed to connect to broker")
         return
 
     executor_ro._broker = broker
@@ -703,16 +708,17 @@ def cmd_fees(args):
     config = get_active_config(market_id)
     days = getattr(args, "days", 90)
 
-    from brokers.moomoo.broker import MomooBroker
+    from brokers.registry import get_live_broker
     from brokers.live_executor import LiveExecutor
-
-    broker = MomooBroker(config, live=True)
-    if not broker.connect():
-        print("ERROR: Failed to connect to Moomoo broker")
-        return
 
     config_override = dict(config)
     config_override.setdefault("trading", {})["live_enabled"] = True
+
+    broker = get_live_broker(config_override)
+    if not broker or not broker.connect():
+        print("ERROR: Failed to connect to broker")
+        return
+
     executor = LiveExecutor(config_override)
     executor._broker = broker
     executor._connected = True
@@ -796,11 +802,13 @@ def cmd_market_check(args):
     market_id = getattr(args, "market", DEFAULT_MARKET)
     config = get_active_config(market_id)
 
-    from brokers.moomoo.broker import MomooBroker
+    from brokers.registry import get_live_broker
 
-    broker = MomooBroker(config, live=True)
-    if not broker.connect():
-        print("ERROR: Failed to connect to Moomoo broker")
+    config_override = dict(config)
+    config_override.setdefault("trading", {})["live_enabled"] = True
+    broker = get_live_broker(config_override)
+    if not broker or not broker.connect():
+        print("ERROR: Failed to connect to broker")
         return
 
     try:
@@ -834,17 +842,18 @@ def cmd_market_check(args):
                 else:
                     print("    ❌ %s market is NOT a trading day today" % mkt)
 
-        # User info / quote rights
+        # User info / quote rights (Moomoo-specific)
         try:
-            import moomoo as ft
-            ret, data = broker._quote_ctx.get_user_info()
-            if ret == ft.RET_OK:
-                print("\n  API quota:")
-                if isinstance(data, dict):
-                    for key in ["sub_quota", "history_kl_quota", "us_qot_right",
-                                "hk_qot_right", "api_level"]:
-                        if key in data:
-                            print("    %-25s %s" % (key, data[key]))
+            if hasattr(broker, "_quote_ctx") and broker._quote_ctx:
+                import moomoo as ft
+                ret, data = broker._quote_ctx.get_user_info()
+                if ret == ft.RET_OK:
+                    print("\n  API quota:")
+                    if isinstance(data, dict):
+                        for key in ["sub_quota", "history_kl_quota", "us_qot_right",
+                                    "hk_qot_right", "api_level"]:
+                            if key in data:
+                                print("    %-25s %s" % (key, data[key]))
         except Exception:
             pass
 

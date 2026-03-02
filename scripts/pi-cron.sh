@@ -5,7 +5,7 @@
 #
 # Cron schedule (AEST via TZ=Australia/Brisbane in crontab):
 #   30 8  * * 1-5  /root/atlas/scripts/pi-cron.sh premarket
-#   30 17 * * 1-5  /root/atlas/scripts/pi-cron.sh postclose
+#   00 08 * * 2-6  /root/atlas/scripts/pi-cron.sh postclose
 #
 # Setup:
 #   1. Ensure pi is logged in: pi (interactive) — OAuth login persists in ~/.pi/agent/auth.json
@@ -33,8 +33,9 @@ MARKET="${2:-${ATLAS_MARKET:-sp500}}"
 TIMESTAMP="$(date '+%Y%m%d_%H%M%S')"
 
 # --- Helper: send Telegram alert (best-effort, never blocks cron exit) ---
+# 60s timeout prevents hangs (e.g. Moomoo socket stuck in send_postclose_summary)
 notify() {
-    python3 "$NOTIFY" "$@" 2>>"$LOG_DIR/telegram.log" || true
+    timeout 60 python3 "$NOTIFY" "$@" 2>>"$LOG_DIR/telegram.log" || true
 }
 
 AGENT_ID="${3:-atlas-research}"
@@ -192,13 +193,21 @@ echo "$(date -Iseconds) pi-cron $MODE finished (exit=$EXIT_CODE)" >> "$LOG_DIR/p
 # --- Post-check: detect code errors in logs even if agent exited 0 ---
 # The pi agent may exit 0 even when research_runner had code errors,
 # because the agent "successfully" ran the command (it just reported errors).
-# Check the actual research log for code-level errors.
+# Check the actual research log for code-level errors — but ONLY today's log.
+# Stale logs (from previous days) contain errors already handled by that session.
 if [ $EXIT_CODE -eq 0 ] && [ "$MODE" = "research" ]; then
+    TODAY=$(date '+%Y-%m-%d')
     RESEARCH_LOG=$(ls -t "$LOG_DIR"/research_run_*.log 2>/dev/null | head -1)
-    if [ -n "$RESEARCH_LOG" ] && grep -qE "CODE ERRORS in [0-9]+ experiment|takes [0-9]+ positional argument|has no attribute|is not defined|unexpected keyword|TypeError:|AttributeError:|NameError:|SyntaxError:" "$RESEARCH_LOG" 2>/dev/null; then
-        echo "$(date -Iseconds) Code errors detected in research log despite agent exit 0" >> "$LOG_DIR/pi-cron.log"
-        EXIT_CODE=2
-        LOGFILE="$RESEARCH_LOG"  # Point auto-recovery at the actual error log
+    # Only check if the log was created/modified today
+    if [ -n "$RESEARCH_LOG" ]; then
+        LOG_DATE=$(date -r "$RESEARCH_LOG" '+%Y-%m-%d' 2>/dev/null || echo "")
+        if [ "$LOG_DATE" = "$TODAY" ] && grep -qE "CODE ERRORS in [0-9]+ experiment|takes [0-9]+ positional argument|has no attribute|is not defined|unexpected keyword|TypeError:|AttributeError:|NameError:|SyntaxError:" "$RESEARCH_LOG" 2>/dev/null; then
+            echo "$(date -Iseconds) Code errors detected in today's research log despite agent exit 0" >> "$LOG_DIR/pi-cron.log"
+            EXIT_CODE=2
+            LOGFILE="$RESEARCH_LOG"  # Point auto-recovery at the actual error log
+        elif [ "$LOG_DATE" != "$TODAY" ]; then
+            echo "$(date -Iseconds) Research log is from $LOG_DATE (stale) — skipping error check" >> "$LOG_DIR/pi-cron.log"
+        fi
     fi
 fi
 

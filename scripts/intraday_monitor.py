@@ -367,6 +367,10 @@ def main():
         log.error("Broker connection failed — cannot monitor positions")
         return
 
+    if not portfolio.broker_data_valid:
+        log.warning("Broker returned zeroed data (likely offline) — skipping monitor cycle")
+        return
+
     if not portfolio.positions:
         log.info("No open positions — nothing to monitor.")
         return

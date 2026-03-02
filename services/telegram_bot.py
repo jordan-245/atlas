@@ -222,12 +222,17 @@ def _execute_live(plan: dict, trade_date: str, config: dict, market_id: str) -> 
     executor = LiveExecutor(config)
 
     if not executor.connect():
-        return "❌ Failed to connect to Moomoo broker"
+        broker_name = config.get("trading", {}).get("broker", "unknown")
+        return f"❌ Failed to connect to {broker_name} broker"
 
     live_pf = LivePortfolio(config, market_id=market_id)
     live_pf._broker = executor._broker
     live_pf._connected = True
     live_pf._refresh_from_broker()
+
+    if not live_pf.broker_data_valid:
+        executor.disconnect()
+        return "❌ Broker returned zeroed data (likely offline). Execution aborted to protect state."
 
     try:
         report = executor.execute_plan(plan, trade_date)

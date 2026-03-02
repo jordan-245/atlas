@@ -18,50 +18,50 @@ export HOME="${HOME:-/root}"
 
 mkdir -p "$LOG_DIR"
 
-# Run health check (JSON mode for parsing + human mode for log)
-JSON=$(cd "$PROJECT" && python3 "$HEALTHZ" --market sp500 --json 2>/dev/null)
-HUMAN=$(cd "$PROJECT" && python3 "$HEALTHZ" --market sp500 2>/dev/null)
+# Run health check — human report for log, JSON for Telegram parsing
+cd "$PROJECT"
+python3 "$HEALTHZ" --market sp500 2>/dev/null > "$LOG_FILE"
 EXIT_CODE=$?
 
-# Save full report to log
-echo "$HUMAN" > "$LOG_FILE"
-
-# Parse summary from JSON
-OVERALL=$(echo "$JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['summary']['overall'])" 2>/dev/null)
-OK_COUNT=$(echo "$JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['summary']['ok'])" 2>/dev/null)
-WARN_COUNT=$(echo "$JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['summary']['warn'])" 2>/dev/null)
-FAIL_COUNT=$(echo "$JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['summary']['fail'])" 2>/dev/null)
-
-# Send Telegram alert if not fully healthy
+# Send Telegram alert if not fully healthy (exit 1=warn, 2=fail)
 if [ "$EXIT_CODE" -ne 0 ]; then
-    # Build alert message from non-ok checks
-    ISSUES=$(echo "$JSON" | python3 -c "
+    # Run JSON mode and build+send Telegram message entirely in Python
+    # (avoids fragile shell variable interpolation that breaks on
+    #  special characters or SDK stdout noise)
+    python3 "$HEALTHZ" --market sp500 --json 2>/dev/null | python3 -c "
 import sys, json
-d = json.load(sys.stdin)
-lines = []
-for sec in d['sections'].values():
+
+try:
+    report = json.load(sys.stdin)
+except Exception as e:
+    print(f'Failed to parse healthz JSON: {e}', file=sys.stderr)
+    sys.exit(1)
+
+sys.path.insert(0, '$PROJECT')
+from utils.telegram import send_message
+
+s = report['summary']
+overall = s['overall'].upper()
+icon = '❌' if s['fail'] > 0 else '⚠️'
+
+# Collect non-ok issues
+issues = []
+for sec in report['sections'].values():
     for c in sec['checks']:
         if c['verdict'] != 'ok':
-            icon = '⚠️' if c['verdict'] == 'warn' else '❌'
-            lines.append(f\"{icon} {c['check']}: {c['message']}\")
-print('\n'.join(lines[:15]))
-" 2>/dev/null)
+            v_icon = '⚠️' if c['verdict'] == 'warn' else '❌'
+            issues.append(f'{v_icon} {c[\"check\"]}: {c[\"message\"]}')
 
-    if [ "$OVERALL" = "unhealthy" ]; then
-        ICON="❌"
-    else
-        ICON="⚠️"
-    fi
+lines = [
+    f'{icon} <b>Atlas Health Check — {overall}</b>',
+    f'✅ {s[\"ok\"]} ok  ⚠️ {s[\"warn\"]} warn  ❌ {s[\"fail\"]} fail',
+    '',
+]
+lines.extend(issues[:15])
+lines.append('')
+lines.append('<i>Premarket runs in 30 min. Fix issues now.</i>')
 
-    cd "$PROJECT" && python3 -c "
-from utils.telegram import send_message
-msg = '''${ICON} <b>Atlas Health Check — ${OVERALL^^}</b>
-✅ ${OK_COUNT} ok  ⚠️ ${WARN_COUNT} warn  ❌ ${FAIL_COUNT} fail
-
-${ISSUES}
-
-<i>Premarket runs in 30 min. Fix issues now.</i>'''
-send_message(msg)
+send_message('\n'.join(lines))
 " 2>>"$LOG_DIR/telegram.log"
 fi
 

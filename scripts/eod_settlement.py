@@ -300,6 +300,18 @@ def main():
         print("ERROR: Broker connection failed. Settlement aborted.")
         return
 
+    # Guard: LivePortfolio detects zeroed broker data (OpenD up but Futu
+    # backend unreachable) and sets broker_data_valid = False.
+    # Abort settlement to prevent recording corrupted equity points.
+    if not portfolio.broker_data_valid:
+        log.error(
+            "Broker returned zeroed data (likely offline). "
+            "Aborting settlement to prevent state corruption."
+        )
+        print("ERROR: Broker returned zeroed data (likely offline). "
+              "Settlement aborted to protect state.")
+        return
+
     if not portfolio.positions:
         log.info("No open positions. Recording equity and updating dashboard.")
         portfolio.record_equity(trade_date, {})
@@ -417,5 +429,18 @@ def main():
     log.info(f"EOD summary saved: {summary_path}")
 
 
+def run_position_monitor():
+    """Evaluate manual position conditions after EOD settlement."""
+    try:
+        from monitor.evaluator import evaluate_all
+        result = evaluate_all(send_telegram=True)
+        log.info(f"Position monitor: evaluated {result['evaluated']} positions, "
+                 f"{result['alerts']} alerts fired")
+    except Exception as e:
+        log.error(f"Position monitor evaluation failed: {e}")
+
+
 if __name__ == "__main__":
     main()
+    # Run position monitor after EOD settlement
+    run_position_monitor()

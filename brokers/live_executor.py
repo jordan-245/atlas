@@ -1,7 +1,8 @@
-"""Live Trade Executor — bridges paper plan → Moomoo order execution.
+"""Live Trade Executor — bridges trade plan → broker order execution.
 
-Reads an approved paper trade plan and executes it through the Moomoo broker.
-Maintains a shadow paper portfolio to keep paper and live state in sync.
+Reads an approved trade plan and executes it through the configured
+broker (Moomoo, IBKR, or any future BrokerAdapter implementation).
+Broker selection is driven by config and handled by the registry.
 
 Safety architecture:
     1. live_enabled must be True in config (default: False)
@@ -12,8 +13,8 @@ Safety architecture:
     6. Kill switch: set config trading.live_enabled=False or call emergency_halt()
 
 This module is the ONLY code path that sends real orders. Nothing else
-in Atlas can place live trades — this is enforced by keeping MomooBroker
-instantiation gated behind live_enabled checks.
+in Atlas can place live trades — broker instantiation is gated behind
+live_enabled checks in the registry.
 
 Usage:
     executor = LiveExecutor(config)
@@ -68,8 +69,12 @@ def preflight_check_config(config: dict) -> list[str]:
         if safety.get("max_daily_orders", 0) <= 0:
             errors.append("live_safety.max_daily_orders must be > 0")
 
-    if not config.get("moomoo", {}).get("opend_host"):
+    # Check broker-specific config exists
+    broker_name = config.get("trading", {}).get("broker", "paper").lower()
+    if broker_name == "moomoo" and not config.get("moomoo", {}).get("opend_host"):
         errors.append("moomoo.opend_host not configured")
+    elif broker_name == "ibkr" and not config.get("ibkr", {}):
+        errors.append("ibkr config section missing")
 
     return errors
 
@@ -128,7 +133,7 @@ def _journal_entry(event: str, data: dict):
 # ═══════════════════════════════════════════════════════════════
 
 class LiveExecutor:
-    """Executes approved trade plans through MomooBroker.
+    """Executes approved trade plans through the configured broker.
 
     Instantiation alone does NOT connect to the broker or enable trading.
     You must call connect() explicitly, and config must have
@@ -163,7 +168,7 @@ class LiveExecutor:
     # ── Lifecycle ──────────────────────────────────────────────
 
     def connect(self) -> bool:
-        """Connect to Moomoo broker. Fails fast if config isn't ready."""
+        """Connect to the configured broker. Fails fast if config isn't ready."""
         # Check halt file
         if HALT_FILE.exists():
             reason = HALT_FILE.read_text().strip() or "Manual halt"
@@ -180,8 +185,15 @@ class LiveExecutor:
             _journal_entry("connect_blocked", {"errors": errors})
             return False
 
-        from brokers.moomoo.broker import MomooBroker
-        self._broker = MomooBroker(self.config, live=True)
+        # Use registry to get the right broker — no hardcoded imports
+        from brokers.registry import get_live_broker
+        self._broker = get_live_broker(self.config)
+        if not self._broker:
+            broker_name = self.config.get("trading", {}).get("broker", "paper")
+            _journal_entry("connect_failed", {"reason": f"No live broker for {broker_name}"})
+            logger.error("LiveExecutor: no live broker available for '%s'", broker_name)
+            return False
+
         success = self._broker.connect()
 
         if success:
@@ -191,11 +203,13 @@ class LiveExecutor:
                 "dry_run": self.is_dry_run,
             })
             logger.info(
-                "LiveExecutor connected (dry_run=%s)", self.is_dry_run
+                "LiveExecutor connected via %s (dry_run=%s)",
+                self._broker.name, self.is_dry_run,
             )
         else:
-            _journal_entry("connect_failed", {})
-            logger.error("LiveExecutor failed to connect to Moomoo")
+            broker_name = self._broker.name
+            _journal_entry("connect_failed", {"broker": broker_name})
+            logger.error("LiveExecutor failed to connect via %s", broker_name)
 
         return success
 
@@ -1040,7 +1054,15 @@ class LiveExecutor:
             return {"error": "Not connected"}
 
         live_positions = self._broker.get_positions()
-        live_map = {p.ticker: p for p in live_positions if p.ticker.endswith(".AX")}
+        # Filter to the market's tickers (e.g. .AX for ASX, bare for US)
+        market_id = self.config.get("market", "asx")
+        from markets.registry import get_market
+        mkt = get_market(market_id)
+        suffix = mkt.yfinance_suffix if mkt else ".AX"
+        if suffix:
+            live_map = {p.ticker: p for p in live_positions if p.ticker.endswith(suffix)}
+        else:
+            live_map = {p.ticker: p for p in live_positions}
         paper_map = {p["ticker"]: p for p in paper_positions}
 
         discrepancies = []

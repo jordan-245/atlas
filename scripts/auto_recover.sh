@@ -33,12 +33,12 @@ TIMESTAMP="$(date '+%Y%m%d_%H%M%S')"
 RECOVER_LOG="$LOG_DIR/recover_${MODE}_${TIMESTAMP}.log"
 
 notify() {
-    python3 "$NOTIFY" "$@" 2>>"$LOG_DIR/telegram.log" || true
+    timeout 60 python3 "$NOTIFY" "$@" 2>>"$LOG_DIR/telegram.log" || true
 }
 
 tg() {
-    # Quick inline telegram message
-    python3 -c "
+    # Quick inline telegram message (30s timeout to prevent hangs)
+    timeout 30 python3 -c "
 from utils.telegram import send_message
 send_message('''$1''')
 " 2>>"$LOG_DIR/telegram.log" || true
@@ -62,7 +62,7 @@ tg "🔧 <b>Atlas Auto-Recovery</b> [attempt $ATTEMPT/$MAX_ATTEMPTS]
 DIAGNOSIS=""
 FIXES_APPLIED=""
 
-# Check 1: OpenD / Moomoo gateway
+# Check 1a: OpenD / Moomoo gateway (for SP500)
 OPEND_OK=true
 if ! python3 -c "
 import socket
@@ -114,6 +114,30 @@ import socket; s = socket.socket(); s.settimeout(3); s.connect(('127.0.0.1', 111
     fi
 fi
 
+# Check 1b: IB Gateway / IBKR (for ASX)
+IBGW_OK=true
+if ! nc -z localhost 4001 2>/dev/null; then
+    IBGW_OK=false
+    DIAGNOSIS="${DIAGNOSIS}🔌 IB Gateway unreachable on port 4001\n"
+    log "IB Gateway DOWN — attempting restart"
+
+    if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "atlas-ibgateway"; then
+        docker restart atlas-ibgateway >> "$RECOVER_LOG" 2>&1
+        sleep 90  # IB Gateway needs time to authenticate (may need 2FA approval)
+        if nc -z localhost 4001 2>/dev/null; then
+            FIXES_APPLIED="${FIXES_APPLIED}✅ Restarted IB Gateway container\n"
+            IBGW_OK=true
+            log "IB Gateway restarted OK"
+        else
+            FIXES_APPLIED="${FIXES_APPLIED}❌ IB Gateway restart failed (may need 2FA approval on IBKR Mobile)\n"
+            log "IB Gateway restart FAILED"
+        fi
+    else
+        FIXES_APPLIED="${FIXES_APPLIED}⚠️ IB Gateway container not found — run: cd /root/atlas/docker && docker compose -f docker-compose-ibgw.yml up -d\n"
+        log "No IB Gateway container to restart"
+    fi
+fi
+
 # Check 2: Network connectivity
 NETWORK_OK=true
 if ! python3 -c "
@@ -160,7 +184,6 @@ if [ -n "$FAILED_LOG" ] && [ -f "$FAILED_LOG" ]; then
     fi
     # Check for code errors that need an agent to fix
     if grep -qiE "TypeError|AttributeError|NameError|SyntaxError|KeyError|IndexError|ValueError|takes [0-9]+ positional argument|has no attribute|is not defined" "$FAILED_LOG"; then
-        CODE_ERROR=true
         # Extract the traceback + error
         CODE_ERROR_DETAIL=$(python3 -c "
 import re, sys
@@ -170,13 +193,27 @@ tbs = list(re.finditer(r'Traceback \(most recent call last\):.*?(?=\n[^\s]|\Z)',
 if tbs:
     print(tbs[-1].group()[:2000])
 else:
-    # Fallback: grep ERROR lines
+    # Fallback: grep ERROR/FAIL lines with error type keywords
+    error_kws = ['TypeError','AttributeError','NameError','SyntaxError',
+                 'KeyError','IndexError','ValueError','takes','positional',
+                 'has no attribute','is not defined','failed:','ERROR']
+    seen = set()
     for line in text.split('\n'):
-        if any(e in line for e in ['TypeError','AttributeError','NameError','SyntaxError','KeyError','IndexError','ValueError']):
+        if any(e in line for e in error_kws) and line.strip() not in seen:
+            seen.add(line.strip())
             print(line)
+            if len(seen) >= 20:
+                break
 " 2>/dev/null)
-        DIAGNOSIS="${DIAGNOSIS}🐛 Code error detected — will spawn agent to fix\n"
-        log "Code error detected: $(echo "$CODE_ERROR_DETAIL" | head -3)"
+        # Only set CODE_ERROR if we actually extracted something useful
+        if [ -n "$CODE_ERROR_DETAIL" ] && [ "$(echo "$CODE_ERROR_DETAIL" | wc -w)" -gt 2 ]; then
+            CODE_ERROR=true
+            DIAGNOSIS="${DIAGNOSIS}🐛 Code error detected — will spawn agent to fix\n"
+            log "Code error detected: $(echo "$CODE_ERROR_DETAIL" | head -3)"
+        else
+            DIAGNOSIS="${DIAGNOSIS}⚠️ Error pattern matched in log but no actionable traceback found\n"
+            log "Error pattern matched but no extractable detail — skipping agent"
+        fi
     fi
 fi
 
@@ -184,6 +221,7 @@ fi
 if [ -z "$DIAGNOSIS" ]; then
     DIAGNOSIS="No infrastructure issues detected — likely a transient error\n"
 fi
+
 
 # ── Notify diagnosis ──
 DIAG_MSG="🔧 <b>Atlas Auto-Recovery</b> [attempt $ATTEMPT/$MAX_ATTEMPTS]
@@ -234,7 +272,7 @@ INSTRUCTIONS:
 4. After fixing, verify the fix by running the relevant command:
    - premarket: python3 scripts/cli.py ingest --market $MARKET && python3 scripts/cli.py plan --market $MARKET
    - postclose: python3 scripts/eod_settlement.py --market $MARKET && python3 dashboard/generate_data.py
-   - research: python3 scripts/research_runner.py --run-next --market $MARKET
+   - research: python3 scripts/research_runner.py --run-all --max-experiments 1 --market $MARKET
 5. If the operation succeeds, output EXACTLY: FIX_SUCCESS
 6. If you cannot fix it, output EXACTLY: FIX_FAILED followed by a brief explanation.
 
@@ -301,8 +339,8 @@ if ! $RERUN_OK; then
             ;;
 
         research)
-            log "Re-running research: research_runner --run-next"
-            python3 scripts/research_runner.py --run-next --market "$MARKET" >> "$RECOVER_LOG" 2>&1
+            log "Re-running research: research_runner --run-all --max-experiments 1"
+            python3 scripts/research_runner.py --run-all --max-experiments 1 --market "$MARKET" >> "$RECOVER_LOG" 2>&1
             RR_RC=$?
             log "Research runner exit: $RR_RC"
             [ $RR_RC -eq 0 ] && RERUN_OK=true

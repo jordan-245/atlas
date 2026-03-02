@@ -1,0 +1,123 @@
+[
+  {
+    "id": "7d94c11d41e2",
+    "ticker": "XOP",
+    "asset_type": "ETF",
+    "entry_price": 142.49,
+    "entry_date": "2026-02-26",
+    "quantity": 10,
+    "direction": "long",
+    "thesis": "E&P valuations cheap, oil has asymmetric geopolitical upside from Iran/Hormuz tensions, contrarian play against bearish consensus. Catastrophic stop at $120 (thesis fully dead), structural invalidation at $130 (below 50-day MA breakdown).",
+    "timeframe": "6-12 months",
+    "invalidation_price": 130.0,
+    "target_price": 180.0,
+    "tags": [
+      "energy",
+      "oil",
+      "geopolitical"
+    ],
+    "status": "open",
+    "conditions": [
+      {
+        "id": "fc23cef2",
+        "label": "WTI above 50-day MA",
+        "type": "ma_position",
+        "source": "CL=F",
+        "threshold": 50,
+        "warning_threshold": null,
+        "direction": "above",
+        "weight": 3,
+        "status": "passing",
+        "current_value": 72.53,
+        "last_checked": "2026-03-02T18:51:43",
+        "notes": ""
+      },
+      {
+        "id": "6bed4d5f",
+        "label": "WTI crude above $60",
+        "type": "price_above",
+        "source": "CL=F",
+        "threshold": 60,
+        "warning_threshold": 65,
+        "direction": "above",
+        "weight": 2,
+        "status": "passing",
+        "current_value": 72.53,
+        "last_checked": "2026-03-02T18:51:43",
+        "notes": ""
+      },
+      {
+        "id": "a809543a",
+        "label": "XOP above 50-day MA",
+        "type": "ma_position",
+        "source": "XOP",
+        "threshold": 50,
+        "warning_threshold": null,
+        "direction": "above",
+        "weight": 2,
+        "status": "passing",
+        "current_value": 153.72,
+        "last_checked": "2026-03-02T18:51:43",
+        "notes": ""
+      },
+      {
+        "id": "e7368145",
+        "label": "XOP above 200-day MA",
+        "type": "ma_position",
+        "source": "XOP",
+        "threshold": 200,
+        "warning_threshold": null,
+        "direction": "above",
+        "weight": 1,
+        "status": "passing",
+        "current_value": 153.72,
+        "last_checked": "2026-03-02T18:51:43",
+        "notes": ""
+      },
+      {
+        "id": "f2a2a5f6",
+        "label": "WTI curve in backwardation",
+        "type": "manual_toggle",
+        "source": "",
+        "threshold": 0.0,
+        "warning_threshold": null,
+        "direction": "above",
+        "weight": 2,
+        "status": "passing",
+        "current_value": null,
+        "last_checked": "2026-03-02T18:51:43",
+        "notes": ""
+      },
+      {
+        "id": "4f9d53f7",
+        "label": "OIH (oil services) above 50-day MA",
+        "type": "ma_position",
+        "source": "OIH",
+        "threshold": 50,
+        "warning_threshold": null,
+        "direction": "above",
+        "weight": 1,
+        "status": "passing",
+        "current_value": 396.97,
+        "last_checked": "2026-03-02T18:51:43",
+        "notes": ""
+      }
+    ],
+    "health_score": 10.0,
+    "current_price": 153.72,
+    "unrealized_pnl": 112.3,
+    "unrealized_pnl_pct": 7.88,
+    "notes": [
+      {
+        "timestamp": "2026-03-02T18:43:34",
+        "text": "Initial position entered. WTI holding at $73, thesis intact."
+      }
+    ],
+    "created_at": "2026-03-02T18:39:39",
+    "updated_at": "2026-03-02T18:51:45",
+    "closed_at": null,
+    "close_price": null,
+    "close_reason": null,
+    "template_id": null
+  }
+]
