@@ -35,7 +35,7 @@ parser.add_argument("--port", type=int, default=5000,
                     help="Gateway port (default: 5000)")
 parser.add_argument("--base-url", default=None,
                     help="Full base URL override")
-parser.add_argument("--market", default="asx", choices=["asx", "sp500"])
+parser.add_argument("--market", default="asx", choices=["asx", "sp500", "hk"])
 args = parser.parse_args()
 
 base = args.base_url or f"https://{args.host}:{args.port}/v1/api"

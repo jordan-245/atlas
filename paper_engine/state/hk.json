@@ -1,0 +1,10 @@
+{
+  "market_id": "hk",
+  "cash": 30000,
+  "positions": [],
+  "closed_trades": [],
+  "equity_history": [],
+  "halted": false,
+  "halt_reason": "",
+  "starting_equity": 30000
+}
