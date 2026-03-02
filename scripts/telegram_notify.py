@@ -36,14 +36,14 @@ def main():
 
     if cmd == "premarket-ok":
         plan_path = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] else None
-        market_id = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else "asx"
+        market_id = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else "sp500"
         ok = send_premarket_summary(plan_path=plan_path, market_id=market_id)
 
     elif cmd == "premarket-approve":
         # Send plan with Approve/Reject inline buttons (requires bot to be running)
         from services.telegram_bot import send_plan_for_approval
         plan_path = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] else None
-        market_id = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else "asx"
+        market_id = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else "sp500"
         ok = send_plan_for_approval(plan_path=plan_path, market_id=market_id)
 
     elif cmd == "postclose-ok":

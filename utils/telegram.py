@@ -299,7 +299,7 @@ def send_premarket_summary(plan_path: Optional[str] = None, market_id: str = "sp
 
     if plan_path is None:
         today = datetime.now().strftime("%Y-%m-%d")
-        plan_path = str(PROJECT_ROOT / f"plans/plan_{today}.json")
+        plan_path = str(PROJECT_ROOT / f"plans/plan_{market_id}_{today}.json")
 
     # Portfolio snapshot from dashboard data
     snapshot = _build_portfolio_snapshot(market_id)

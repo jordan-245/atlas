@@ -42,11 +42,11 @@ AGENT_ID="${3:-atlas-research}"
 
 case "$MODE" in
     premarket)
-        PROMPT="Run the atlas-daily pre-market workflow for today: check data freshness and run cli_ingest if stale, then run cli_plan. Summarize the plan and stop — do NOT approve or execute. Write results to logs/pi-cron-premarket-${TIMESTAMP}.md"
+        PROMPT="Run the atlas-daily pre-market workflow for the ${MARKET} market ONLY: check data freshness and run cli_ingest if stale (pass -m ${MARKET}), then run cli_plan (pass -m ${MARKET}). Summarize the plan and stop — do NOT approve or execute. Write results to logs/pi-cron-premarket-${TIMESTAMP}.md"
         LOGFILE="$LOG_DIR/pi-cron-premarket-${TIMESTAMP}.log"
         ;;
     postclose)
-        PROMPT="Run the atlas-daily post-close workflow: run cli_eod_settlement, then dashboard_generate_data. Summarize any exits triggered and the final equity snapshot. Write results to logs/pi-cron-postclose-${TIMESTAMP}.md"
+        PROMPT="Run the atlas-daily post-close workflow for the ${MARKET} market: run cli_eod_settlement (pass -m ${MARKET}), then dashboard_generate_data. Summarize any exits triggered and the final equity snapshot. Write results to logs/pi-cron-postclose-${TIMESTAMP}.md"
         LOGFILE="$LOG_DIR/pi-cron-postclose-${TIMESTAMP}.log"
         ;;
     research)
