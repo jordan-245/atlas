@@ -64,7 +64,7 @@ def fetch_closing_prices(tickers):
         cache_key = ticker.replace(".", "_")
         # Search market subdirs (asx/ sp500/) — no root-level parquets
         cache_path = None
-        for subdir in ["asx", "sp500"]:
+        for subdir in ["asx", "sp500", "hk"]:
             candidate = PROJECT / "data" / "cache" / subdir / f"{cache_key}.parquet"
             if candidate.exists():
                 cache_path = candidate

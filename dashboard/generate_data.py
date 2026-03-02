@@ -335,7 +335,7 @@ def get_live_prices(tickers):
 def get_cache_prices(tickers):
     """Load prices from parquet cache (daily close data)."""
     prices = {}
-    for subdir in ["asx", "sp500"]:
+    for subdir in ["asx", "sp500", "hk"]:
         cache = PROJECT_ROOT / "data" / "cache" / subdir
         if not cache.exists():
             continue
@@ -459,7 +459,7 @@ def _get_benchmark_curve(ticker: str, eq_curve: list, starting_equity: float) ->
     start_date = eq_curve[0]["date"]
 
     # Load benchmark from cache
-    for subdir in ["sp500", "asx", ""]:
+    for subdir in ["sp500", "asx", "hk", ""]:
         cache = PROJECT_ROOT / "data" / "cache" / subdir if subdir else PROJECT_ROOT / "data" / "cache"
         fp = cache / (ticker.replace(".", "_") + ".parquet")
         if fp.exists():
