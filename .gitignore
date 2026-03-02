@@ -57,3 +57,5 @@ Thumbs.db
 audit/
 config/active/*.bak*
 .pi-swarm/
+pi-package/atlas-ops/package-lock.json
+pi-package/atlas-ops/package-lock.json
