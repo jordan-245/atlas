@@ -443,18 +443,28 @@ class LiveExecutor:
             self._daily_order_count += 1
             return result
 
-        # Live execution — LIMIT order to control exit price
+        # Audit H9: stop-triggered exits use MARKET to guarantee fill;
+        # other exits use LIMIT with 1% buffer below market price.
+        _stop_reasons = {"stop_loss", "broker_stop_fill"}
+        if reason in _stop_reasons:
+            _exit_order_type = OrderType.MARKET
+            _exit_price = round(price, 2)  # price ignored for MARKET but required by API
+        else:
+            _exit_order_type = OrderType.LIMIT
+            _exit_price = round(price * 0.99, 2)  # 1% buffer to improve fill odds
+
         order_result = self._broker.place_order(
             ticker=ticker,
             side=OrderSide.SELL,
             qty=qty,
-            price=round(price, 2),
-            order_type=OrderType.LIMIT,
+            price=_exit_price,
+            order_type=_exit_order_type,
             remark=f"atlas_exit_{reason}_{trade_date}",
         )
 
         result = {
-            "ticker": ticker, "side": "SELL", "qty": qty, "price": price,
+            "ticker": ticker, "side": "SELL", "qty": qty, "price": _exit_price,
+            "order_type": _exit_order_type.value,
             "success": order_result.success,
             "order_id": order_result.order_id,
             "status": order_result.status.value,

@@ -214,6 +214,16 @@ class LivePortfolio:
 
     # ── Interface matching PaperPortfolio ──────────────────────
 
+    def update_positions(self, prices: dict[str, float]):
+        """Update MAE/MFE excursions for all positions with current prices.
+
+        # Audit C3: mirrors PaperPortfolio.update_positions() interface so
+        # eod_settlement.py can call it without caring about live vs paper.
+        """
+        for pos in self.positions:
+            if pos.ticker in prices:
+                pos.update_excursions(prices[pos.ticker])
+
     def equity(self, prices: dict[str, float] = None) -> float:
         """Total equity from broker (prices arg ignored — broker has live prices)."""
         if self._broker_equity > 0:
