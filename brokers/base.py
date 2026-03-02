@@ -259,6 +259,14 @@ class BrokerAdapter(ABC):
         """Get historical deal fills for the past N days."""
         return []
 
+    def get_today_deals(self) -> list[DealInfo]:
+        """Get today's executed fills. Override in broker implementations.
+
+        # Audit C4: base default returns empty list so callers that wrap
+        # in try/except AttributeError degrade gracefully without crashing.
+        """
+        return []
+
     def get_order_fees(self, order_ids: list[str]) -> list[OrderFeeInfo]:
         """Get fee breakdown for specific orders."""
         return []

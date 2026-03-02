@@ -189,8 +189,16 @@ class MomooBroker(BrokerAdapter):
                 if pwd:
                     ret, data = self._trd_ctx.unlock_trade(password=pwd)
                     if ret != ft.RET_OK:
-                        # AU market may return "not supported" — non-fatal
-                        logger.warning("Trade unlock result: %s", data)
+                        if self._live:
+                            # Audit H10: trade unlock failure is fatal for live accounts.
+                            # Without unlock, orders will be silently rejected by the broker.
+                            logger.error(
+                                "Trade unlock FAILED for live account — cannot place orders safely. "
+                                "Check MOOMOO_TRADE_PWD secret. Error: %s", data
+                            )
+                            return False
+                        # For simulated accounts, unlock failure is non-fatal
+                        logger.warning("Trade unlock result (non-fatal for simulate): %s", data)
                     else:
                         logger.info("Trade unlocked via secure credential")
                 else:

@@ -68,6 +68,7 @@ class IBKRBroker(BrokerAdapter):
         self._account_id: str = ibkr_cfg.get("account_id", "")
         self._currency: str = ibkr_cfg.get("currency", "AUD")
         self._client_id: int = ibkr_cfg.get("client_id", 10)
+        self._contract_cache: dict = {}  # Audit H6: cache qualified contracts to avoid repeated API calls
 
     @property
     def name(self) -> str:
@@ -239,10 +240,17 @@ class IBKRBroker(BrokerAdapter):
         return Stock(symbol, "SMART", currency, primaryExchange=exchange)
 
     def _qualify_contract(self, ticker: str):
-        """Resolve and qualify a contract with IBKR."""
+        """Resolve and qualify a contract with IBKR.
+
+        # Audit H6: check cache first to avoid repeated qualifyContracts() API calls.
+        """
+        if ticker in self._contract_cache:
+            return self._contract_cache[ticker]
+
         contract = self._make_contract(ticker)
         qualified = self._ib.qualifyContracts(contract)
         if qualified:
+            self._contract_cache[ticker] = qualified[0]
             return qualified[0]
         logger.warning("Could not qualify contract for %s", ticker)
         return contract
@@ -251,7 +259,7 @@ class IBKRBroker(BrokerAdapter):
         """Get last/close price for a contract."""
         # Request a snapshot
         ticker_data = self._ib.reqMktData(contract, "", True, False)
-        self._ib.sleep(2)  # wait for data
+        self._ib.sleep(0.5)  # Audit H6: reduced from 2s to 0.5s for snapshot requests
         self._ib.cancelMktData(contract)
 
         price = ticker_data.last
@@ -487,8 +495,45 @@ class IBKRBroker(BrokerAdapter):
         return results
 
     def get_history_deals(self, days: int = 30) -> list[DealInfo]:
-        """Get recent fills."""
-        return []
+        """Get recent fills via ib_insync fills().
+
+        # Audit H5: ib_insync fills() returns all execution fills from the
+        # current IB Gateway session. Convert each Fill to a DealInfo.
+        """
+        if not self._connected or not self._ib:
+            return []
+        try:
+            fills = self._ib.fills()
+            deals = []
+            for fill in fills:
+                contract = fill.contract
+                execution = fill.execution
+                symbol = contract.symbol
+                exchange = contract.exchange or contract.primaryExchange or ""
+                ticker = mapper.to_atlas(symbol, exchange)
+                # IB side: "BOT" = bought, "SLD" = sold
+                side = OrderSide.BUY if execution.side.upper() == "BOT" else OrderSide.SELL
+                deals.append(DealInfo(
+                    order_id=str(execution.orderId),
+                    ticker=ticker,
+                    side=side,
+                    qty=int(execution.shares),
+                    price=float(execution.price),
+                    deal_time=str(execution.time),
+                    raw={"execId": execution.execId},
+                ))
+            return deals
+        except Exception as e:
+            logger.warning("get_history_deals failed: %s", e)
+            return []
+
+    def get_today_deals(self) -> list[DealInfo]:
+        """Get today's executed fills (session fills from IB Gateway).
+
+        # Audit C4: ib_insync fills() is session-based so this returns
+        # fills since the gateway last connected — close enough to "today".
+        """
+        return self.get_history_deals()
 
     # ── Internal ───────────────────────────────────────────────
 
