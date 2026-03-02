@@ -594,7 +594,7 @@ async def handle_research_promotion_callback(update: Update, ctx: ContextTypes.D
 
 def send_plan_for_approval(
     plan_path: Optional[str] = None,
-    market_id: str = "asx",
+    market_id: str = "sp500",
 ) -> bool:
     """Send a plan summary with Approve/Reject buttons.
 
@@ -613,7 +613,7 @@ def send_plan_for_approval(
     # Load plan
     if plan_path is None:
         today = datetime.now().strftime("%Y-%m-%d")
-        plan_path = str(PROJECT_ROOT / f"plans/plan_{today}.json")
+        plan_path = str(PROJECT_ROOT / f"plans/plan_{market_id}_{today}.json")
 
     plan_file = Path(plan_path)
     if not plan_file.exists():
