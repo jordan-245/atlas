@@ -90,6 +90,57 @@ class IBKRBroker(BrokerAdapter):
     def connect(self) -> bool:
         """Connect to IB Gateway via socket."""
         try:
+            # ── Pre-flight checks (fast-fail before slow ib_insync connect) ──
+
+            # 1. TCP probe — is the gateway port even accepting connections?
+            import socket as _sock
+            try:
+                probe = _sock.create_connection(
+                    (self._host, self._port), timeout=3,
+                )
+                probe.close()
+            except (ConnectionRefusedError, TimeoutError, OSError) as e:
+                logger.warning(
+                    "IBKRBroker pre-flight: gateway not reachable at %s:%d (%s)",
+                    self._host, self._port, e,
+                )
+                return False
+
+            # 2. Docker health — skip connect if container is genuinely unhealthy.
+            #    Only trust the check when exit code is 0 (health check itself works).
+            #    Many gateway images have broken health checks (missing nc/curl).
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ["docker", "inspect", "atlas-ibgateway",
+                     "--format={{.State.Health.Status}}"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                health = result.stdout.strip()
+                if health == "unhealthy" and result.returncode == 0:
+                    # Double-check: is the health check itself failing (broken probe)?
+                    # If the last health log shows exec/OCI errors, ignore the status.
+                    log_result = subprocess.run(
+                        ["docker", "inspect", "atlas-ibgateway",
+                         "--format={{(index .State.Health.Log 0).Output}}"],
+                        capture_output=True, text=True, timeout=5,
+                    )
+                    log_out = log_result.stdout.strip()
+                    if "exec failed" in log_out or "not found" in log_out:
+                        logger.debug(
+                            "IBKRBroker pre-flight: ignoring 'unhealthy' — "
+                            "Docker health check is broken (missing probe tool)"
+                        )
+                    else:
+                        logger.warning(
+                            "IBKRBroker pre-flight: gateway container is unhealthy — skipping connect"
+                        )
+                        return False
+            except Exception:
+                pass  # Docker not available or check failed — proceed anyway
+
+            # ── ib_insync connect ──────────────────────────────────
+
             # ib_insync needs an asyncio event loop — create one if
             # running inside a thread pool (e.g. Telegram bot callback)
             import asyncio

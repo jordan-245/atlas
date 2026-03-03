@@ -630,6 +630,9 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     Trading halted — risk limits breached
   </div>
 
+  <!-- Data freshness bar (M3) -->
+  <div id="freshness-bar" style="display:none; padding: 6px 20px; background: var(--surface); border-bottom: 1px solid var(--border-subtle); font-family: var(--mono); font-size: 0.78rem; color: var(--text-secondary); display: flex; gap: 16px; flex-wrap: wrap; align-items: center;"></div>
+
   <!-- Market Selector -->
   <div class="market-selector" id="market-selector"></div>
 
@@ -1634,6 +1637,36 @@ function render(d) {
   // Halt banner
   var haltEl = document.getElementById('halt-banner');
   if (risk.halted) { haltEl.style.display = 'flex'; } else { haltEl.style.display = 'none'; }
+
+  // M3: Data freshness bar
+  var freshBar = document.getElementById('freshness-bar');
+  if (d.markets) {
+    var parts = [];
+    Object.keys(d.markets).sort().forEach(function(mid) {
+      var mkt = d.markets[mid];
+      var f = mkt.data_freshness || {};
+      var src = f.data_source || mkt.data_source || 'offline';
+      var dot, label;
+      if (src === 'broker') {
+        dot = '🟢'; label = 'live';
+      } else if (src === 'cached') {
+        dot = '🟡';
+        var age = f.cache_age_minutes;
+        label = age ? 'cached ' + Math.round(age) + 'm ago' : 'cached';
+      } else {
+        dot = '🔴'; label = 'offline';
+      }
+      var broker = (d.broker && d.broker[mid]) || '';
+      parts.push('<span>' + mid.toUpperCase() + (broker ? ' <span style="color:var(--text-tertiary)">(' + broker + ')</span>' : '') + ' ' + dot + ' ' + label + '</span>');
+    });
+    // FX rate
+    var fx = d.exchange_rates || {};
+    if (fx.AUDUSD) {
+      parts.push('<span style="margin-left:auto">FX: 1 AUD = ' + fx.AUDUSD.toFixed(4) + ' USD</span>');
+    }
+    freshBar.innerHTML = parts.join('<span style="color:var(--border)">│</span>');
+    freshBar.style.display = 'flex';
+  }
 
   // Equity sparkline from curve data
   var eqCurve = d.equity_curve || [];

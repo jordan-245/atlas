@@ -25,6 +25,7 @@ BRISBANE = ZoneInfo("Australia/Brisbane")
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 OUTPUT = PROJECT_ROOT / "dashboard" / "data" / "dashboard-data.json"
+CACHE_DIR = PROJECT_ROOT / "dashboard" / "cache"
 
 
 def safe_json(path, default=None):
@@ -33,6 +34,99 @@ def safe_json(path, default=None):
             return json.load(f)
     except Exception:
         return default if default is not None else {}
+
+
+# ── Broker cache (M1): last-known-good broker data ────────────
+
+def _save_broker_cache(market_id: str, acct, positions, orders):
+    """Persist last-known-good broker snapshot for fallback when broker is down."""
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    data = {
+        "timestamp": datetime.now().isoformat(),
+        "acct": acct,
+        "positions": positions,
+        "orders": orders,
+    }
+    with open(CACHE_DIR / f"broker_{market_id}.json", "w") as f:
+        json.dump(data, f, indent=2, default=str)
+
+
+def _load_broker_cache(market_id: str, max_age_minutes: int = 60):
+    """Load cached broker data if fresh enough. Returns dict or None."""
+    path = CACHE_DIR / f"broker_{market_id}.json"
+    if not path.exists():
+        return None
+    data = safe_json(path, None)
+    if not data or "timestamp" not in data:
+        return None
+    try:
+        ts = datetime.fromisoformat(data["timestamp"])
+        age = (datetime.now() - ts).total_seconds() / 60
+        if age > max_age_minutes:
+            return None
+        data["cache_age_minutes"] = round(age, 1)
+        return data
+    except Exception:
+        return None
+
+
+# ── FX cache (M4): hourly exchange rate caching ───────────────
+
+def _get_exchange_rates() -> dict:
+    """Get AUDUSD exchange rates with hourly file cache.
+
+    Priority: 1) cache if < 1 hour old, 2) fresh yfinance, 3) stale cache any age,
+    4) last dashboard output, 5) hardcoded fallback.
+    """
+    fx_cache_path = CACHE_DIR / "fx_rates.json"
+
+    # Check cache freshness
+    cached = safe_json(fx_cache_path, None)
+    if cached and "timestamp" in cached:
+        try:
+            age_s = (datetime.now() - datetime.fromisoformat(cached["timestamp"])).total_seconds()
+            if age_s < 3600:  # < 1 hour
+                return cached["rates"]
+        except Exception:
+            pass
+
+    # Fetch fresh from yfinance
+    try:
+        import yfinance as yf
+        audusd_data = yf.Ticker("AUDUSD=X").history(period="1d")
+        if not audusd_data.empty:
+            audusd = float(audusd_data["Close"].iloc[-1])
+            rates = {"AUDUSD": round(audusd, 5), "USDAUD": round(1 / audusd, 5)}
+            # Save to cache
+            CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            with open(fx_cache_path, "w") as f:
+                json.dump({"timestamp": datetime.now().isoformat(), "rates": rates}, f)
+            print(f"  Exchange rate: 1 AUD = {audusd:.4f} USD (1 USD = {1/audusd:.4f} AUD)")
+            return rates
+    except Exception as e:
+        print(f"  Exchange rate fetch failed ({e})")
+
+    # Fallback chain: stale cache → previous dashboard output → hardcoded
+    if cached and "rates" in cached:
+        print(f"  Exchange rate: using stale cache ({cached.get('timestamp', '?')})")
+        return cached["rates"]
+    prev_data = safe_json(OUTPUT, {})
+    prev_rates = prev_data.get("exchange_rates")
+    if prev_rates:
+        print(f"  Exchange rate: using last dashboard output")
+        return prev_rates
+    print("  Exchange rate: using hardcoded fallback (0.70)")
+    return {"AUDUSD": 0.70, "USDAUD": 1.43}
+
+
+# ── Freshness helpers (M3) ────────────────────────────────────
+
+def _file_mtime_iso(path) -> str | None:
+    """Return ISO timestamp of file modification time, or None."""
+    try:
+        return datetime.fromtimestamp(Path(path).stat().st_mtime).isoformat()
+    except Exception:
+        return None
 
 
 def get_config(market_id: str = "asx"):
@@ -600,13 +694,17 @@ def generate_market(market_id: str, broker_cache: dict | None = None):
             logger.info("Cross-broker positions for %s: %d from shared broker",
                         market_id, len(cross_broker_positions))
 
+    # Detect cached broker data (M1: last-known-good fallback)
+    is_cached = broker_cache.get("_cached", False) if broker_cache else False
+    cache_age = broker_cache.get("_cache_age_minutes", 0) if broker_cache else 0
+
     if broker_ok and broker_acct:
         # Broker is the sole source of truth
         positions = broker_positions
         atlas_positions = [p for p in positions if p.get("is_atlas", True)]
         manual_positions = [p for p in positions if not p.get("is_atlas", True)]
         all_positions = positions
-        data_source = "broker"
+        data_source = "cached" if is_cached else "broker"
 
         # Atlas P&L: only from Atlas-managed positions
         total_entry_value = sum(p.get("entry_value", 0) for p in atlas_positions)
@@ -855,6 +953,18 @@ def generate_market(market_id: str, broker_cache: dict | None = None):
             "max_portfolio_risk": risk_cfg.get("max_portfolio_risk", 0.05),
         },
         "tasks": tasks,
+        # M3: per-source freshness indicators
+        "data_freshness": {
+            "broker_connected": broker_ok and not is_cached,
+            "broker_timestamp": now.isoformat() if (broker_ok and not is_cached) else None,
+            "data_source": data_source,
+            "cache_age_minutes": round(cache_age, 1) if is_cached else None,
+            "equity_curve_last_date": eq_curve[-1]["date"] if eq_curve else None,
+            "plan_date": plan.get("trade_date") if plan else None,
+            "state_file_mtime": _file_mtime_iso(
+                PROJECT_ROOT / "brokers" / "state" / f"{market_id}.json"
+            ),
+        },
     }
 
     # Add pending orders from broker cache
@@ -1590,10 +1700,27 @@ def generate():
                     broker_caches[mid] = cache
                     if broker_name == "moomoo":
                         moomoo_data = cache
+                    # M1: persist last-known-good broker data
+                    _save_broker_cache(mid, acct, positions, orders)
                     print(f"  {mid}: broker connected ({broker_name}), "
                           f"{len(positions)} positions")
                 else:
-                    print(f"  {mid}: broker connect FAILED ({broker_name})")
+                    # M1: try last-known-good cache
+                    cached = _load_broker_cache(mid)
+                    if cached:
+                        broker_caches[mid] = {
+                            "acct": cached["acct"],
+                            "positions": cached["positions"],
+                            "ok": True,
+                            "orders": cached.get("orders", []),
+                            "_cached": True,
+                            "_cache_age_minutes": cached.get("cache_age_minutes", 0),
+                        }
+                        print(f"  {mid}: broker FAILED — using cached data "
+                              f"({cached['cache_age_minutes']:.0f}m old, "
+                              f"{len(cached['positions'])} positions)")
+                    else:
+                        print(f"  {mid}: broker connect FAILED ({broker_name}), no cache available")
 
     # Share Moomoo positions with markets that don't have their own live broker
     # but DO have positions on Moomoo (e.g. ASX stocks held on Moomoo account).
@@ -1616,19 +1743,8 @@ def generate():
         data = generate_market(mid, broker_cache=cache)
         market_data[mid] = data
 
-    # ── Fetch exchange rates for AUD-normalised combined view ───
-    # Fallback: use last successful rate from previous dashboard output, else hardcoded
-    prev_data = safe_json(OUTPUT, {})
-    exchange_rates = prev_data.get("exchange_rates", {"AUDUSD": 0.70, "USDAUD": 1.43})
-    try:
-        import yfinance as yf
-        audusd_data = yf.Ticker("AUDUSD=X").history(period="1d")
-        if not audusd_data.empty:
-            audusd = float(audusd_data["Close"].iloc[-1])
-            exchange_rates = {"AUDUSD": round(audusd, 5), "USDAUD": round(1 / audusd, 5)}
-            print(f"  Exchange rate: 1 AUD = {audusd:.4f} USD (1 USD = {1/audusd:.4f} AUD)")
-    except Exception as e:
-        print(f"  Exchange rate fetch failed ({e}), using last-known: {exchange_rates}")
+    # ── Fetch exchange rates (M4: hourly cache) ──────────────────
+    exchange_rates = _get_exchange_rates()
 
     def to_aud(amount, currency):
         """Convert any currency amount to AUD."""
