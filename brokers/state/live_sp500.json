@@ -46,10 +46,54 @@
           "holding_days": 1
         }
       ]
+    },
+    {
+      "date": "2026-03-03",
+      "equity": 7634.71,
+      "cash": 4638.35,
+      "positions_value": 2996.36,
+      "num_positions": 3,
+      "total_realized_pnl": 0,
+      "total_closed_trades": 0,
+      "positions": [
+        {
+          "ticker": "XOP",
+          "strategy": "unknown",
+          "shares": 10,
+          "entry_price": 142.486,
+          "current_price": 159.55999755859375,
+          "unrealized_pnl": 170.74,
+          "mae": 0.0,
+          "mfe": 11.98,
+          "holding_days": 0
+        },
+        {
+          "ticker": "ON",
+          "strategy": "trend_following",
+          "shares": 3,
+          "entry_price": 67.04,
+          "current_price": 66.4800033569336,
+          "unrealized_pnl": -1.68,
+          "mae": -0.84,
+          "mfe": 0.0,
+          "holding_days": 0
+        },
+        {
+          "ticker": "CHTR",
+          "strategy": "trend_following",
+          "shares": 1,
+          "entry_price": 228.38,
+          "current_price": 232.8000030517578,
+          "unrealized_pnl": 4.42,
+          "mae": 0.0,
+          "mfe": 1.94,
+          "holding_days": 0
+        }
+      ]
     }
   ],
-  "daily_high_water": 4004.57,
+  "daily_high_water": 7634.71,
   "halted": false,
   "halt_reason": "",
-  "last_saved": "2026-03-02T09:41:46.883175"
+  "last_saved": "2026-03-03T17:28:06.676438"
 }
