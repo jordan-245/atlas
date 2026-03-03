@@ -1662,7 +1662,7 @@ function render(d) {
     // FX rate
     var fx = d.exchange_rates || {};
     if (fx.AUDUSD) {
-      parts.push('<span style="margin-left:auto">FX: 1 AUD = ' + fx.AUDUSD.toFixed(4) + ' USD</span>');
+      parts.push('<span data-fx style="margin-left:auto">FX: 1 AUD = ' + fx.AUDUSD.toFixed(4) + ' USD</span>');
     }
     freshBar.innerHTML = parts.join('<span style="color:var(--border)">│</span>');
     freshBar.style.display = 'flex';
@@ -1789,12 +1789,12 @@ function render(d) {
     pos.forEach(function(p) {
       var c = cls(p.pnl);
       var pnlStr = $(p.pnl) + ' <span style="font-size:10px;opacity:0.7">' + pct(p.pnl_pct) + '</span>';
-      h += '<tr>';
+      h += '<tr data-ticker="' + esc(p.ticker) + '" data-entry="' + p.entry_price + '" data-shares="' + (p.shares || 0) + '">';
       h += '<td style="font-family:var(--mono);font-weight:600;font-size:12px" data-v="' + esc(p.ticker) + '">' + (_currentMarket === 'all' ? marketTag(p.market) + ' ' : '') + esc(p.ticker) + '</td>';
       h += '<td>' + strat(p.strategy) + '</td>';
       h += '<td class="mono" data-v="' + p.entry_price + '">' + $(p.entry_price) + '</td>';
-      h += '<td class="mono" data-v="' + p.current_price + '">' + $(p.current_price) + '</td>';
-      h += '<td class="mono ' + c + '" data-v="' + p.pnl + '">' + pnlStr + '</td>';
+      h += '<td class="mono live-price" data-v="' + p.current_price + '">' + $(p.current_price) + '</td>';
+      h += '<td class="mono live-pnl ' + c + '" data-v="' + p.pnl + '">' + pnlStr + '</td>';
       h += '<td class="mono" style="color:var(--text-tertiary);font-size:11px" data-v="' + p.stop_price + '">' + (p.stop_price > 0 ? $(p.stop_price) : '—') + '</td>';
       h += '<td class="mono" style="color:var(--text-secondary)" data-v="' + p.days_held + '">' + p.days_held + 'd</td>';
       h += '</tr>';
@@ -3424,5 +3424,200 @@ switchTab = function(tab) {
   requestAnimationFrame(frame);
 })();
 </script>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- LIVE PRICE UPDATER                                             -->
+<!-- Polls /api/prices every 15s during market hours, updates       -->
+<!-- position prices + P&L in-place without a full page reload.     -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<script>
+(function() {
+  'use strict';
+
+  var POLL_INTERVAL = 15000;     // 15 seconds
+  var POLL_INTERVAL_SLOW = 60000; // 60s when markets closed
+  var _liveTimer = null;
+  var _lastLiveUpdate = null;
+  var _liveQuotes = {};
+
+  // ── Market hours check (approximate, AEST-based) ──────────
+  function isAnyMarketOpen() {
+    var now = new Date();
+    var h = now.getUTCHours();
+    // ASX: 00:00-06:00 UTC (10:00-16:00 AEST)
+    // US:  14:30-21:00 UTC (00:30-07:00 AEST next day)
+    // HK:  01:30-08:00 UTC (11:30-18:00 AEST)
+    // Generous window: any market could be open 00:00-21:00 UTC Mon-Fri
+    var day = now.getUTCDay();
+    if (day === 0 || day === 6) return false; // weekend
+    return (h >= 0 && h < 21);
+  }
+
+  // ── Formatting helpers (reuse from main scope) ─────────────
+  function fmt(v) {
+    if (v == null) return '—';
+    return v.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  }
+  function fmtPct(v) { return (v >= 0 ? '+' : '') + v.toFixed(2) + '%'; }
+  function pnlCls(v) { return v > 0.005 ? 'green' : v < -0.005 ? 'red' : ''; }
+
+  // ── Flash animation ────────────────────────────────────────
+  function flashCell(el, direction) {
+    el.style.transition = 'background 0.3s';
+    el.style.background = direction > 0
+      ? 'rgba(127,184,88,0.15)'
+      : 'rgba(208,88,88,0.15)';
+    setTimeout(function() { el.style.background = ''; }, 800);
+  }
+
+  // ── Update positions table with live prices ────────────────
+  function updatePositions(quotes) {
+    var rows = document.querySelectorAll('#tbl-pos tbody tr[data-ticker]');
+    var totalMktValue = 0;
+    var totalEntryValue = 0;
+
+    rows.forEach(function(row) {
+      var ticker = row.getAttribute('data-ticker');
+      var entry = parseFloat(row.getAttribute('data-entry')) || 0;
+      var shares = parseFloat(row.getAttribute('data-shares')) || 0;
+      var q = quotes[ticker];
+      if (!q || !q.price) return;
+
+      var newPrice = q.price;
+      var cells = row.children;
+      // cells: [0]=ticker, [1]=strategy, [2]=entry, [3]=current, [4]=pnl, [5]=stop, [6]=days
+      var priceCell = cells[3];
+      var pnlCell = cells[4];
+
+      var oldPrice = parseFloat(priceCell.getAttribute('data-v')) || 0;
+      if (Math.abs(newPrice - oldPrice) < 0.0001) return; // no change
+
+      // Update price cell
+      var direction = newPrice > oldPrice ? 1 : -1;
+      priceCell.setAttribute('data-v', newPrice);
+      priceCell.textContent = fmt(newPrice);
+      flashCell(priceCell, direction);
+
+      // Recalculate P&L
+      if (entry > 0 && shares > 0) {
+        var pnl = (newPrice - entry) * shares;
+        var pnlPct = ((newPrice - entry) / entry) * 100;
+        pnlCell.setAttribute('data-v', pnl);
+        pnlCell.className = 'mono live-pnl ' + pnlCls(pnl);
+        pnlCell.innerHTML = fmt(pnl) + ' <span style="font-size:10px;opacity:0.7">' + fmtPct(pnlPct) + '</span>';
+        flashCell(pnlCell, pnl > 0 ? 1 : -1);
+      }
+
+      totalMktValue += newPrice * shares;
+      totalEntryValue += entry * shares;
+    });
+  }
+
+  // ── Update benchmark indices ───────────────────────────────
+  function updateIndices(quotes) {
+    var indexMap = {'^GSPC': 'S&P 500', '^AXJO': 'ASX 200', '^HSI': 'HSI'};
+    Object.keys(indexMap).forEach(function(sym) {
+      var q = quotes[sym];
+      if (!q) return;
+      // Update any benchmark display elements that exist
+      var els = document.querySelectorAll('[data-benchmark="' + sym + '"]');
+      els.forEach(function(el) {
+        el.textContent = fmt(q.price) + ' (' + fmtPct(q.change_pct) + ')';
+        el.className = pnlCls(q.change_pct);
+      });
+    });
+
+    // Update FX in freshness bar
+    var fxq = quotes['AUDUSD=X'];
+    if (fxq) {
+      var freshBar = document.getElementById('freshness-bar');
+      if (freshBar) {
+        var fxSpan = freshBar.querySelector('[data-fx]');
+        if (fxSpan) {
+          fxSpan.textContent = 'FX: 1 AUD = ' + fxq.price.toFixed(4) + ' USD';
+        }
+      }
+    }
+  }
+
+  // ── Update live indicator ──────────────────────────────────
+  function updateLiveIndicator(data) {
+    var el = document.getElementById('live-indicator');
+    if (!el) {
+      // Create live indicator next to updated timestamp
+      var updEl = document.getElementById('updated');
+      if (updEl && updEl.parentNode) {
+        el = document.createElement('div');
+        el.id = 'live-indicator';
+        el.className = 'status-pill';
+        el.style.cssText = 'font-size:11px; gap:4px;';
+        el.innerHTML = '<span class="pulse-live" style="width:6px;height:6px"></span><span></span>';
+        updEl.parentNode.insertBefore(el, updEl.nextSibling);
+      }
+    }
+    if (el) {
+      var label = el.querySelector('span:last-child');
+      var n = data.ticker_count || 0;
+      var ago = Math.round((Date.now() - _lastLiveUpdate) / 1000);
+      label.textContent = 'Live · ' + n + ' quotes · ' + ago + 's ago';
+    }
+  }
+
+  // ── Poll /api/prices ──────────────────────────────────────
+  function fetchLivePrices() {
+    fetch('/api/prices?t=' + Date.now(), {credentials: 'same-origin'})
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function(data) {
+        if (!data.ok || !data.quotes) return;
+        _liveQuotes = data.quotes;
+        _lastLiveUpdate = Date.now();
+        updatePositions(data.quotes);
+        updateIndices(data.quotes);
+        updateLiveIndicator(data);
+      })
+      .catch(function(e) {
+        console.warn('Live price fetch failed:', e.message);
+      });
+  }
+
+  // ── Adaptive polling: faster during market hours ──────────
+  function startLivePoll() {
+    if (_liveTimer) clearInterval(_liveTimer);
+    var interval = isAnyMarketOpen() ? POLL_INTERVAL : POLL_INTERVAL_SLOW;
+    fetchLivePrices(); // immediate first fetch
+    _liveTimer = setInterval(fetchLivePrices, interval);
+    // Re-check interval every 5 minutes (market open/close transitions)
+    setInterval(function() {
+      var shouldBeFast = isAnyMarketOpen();
+      var currentInterval = shouldBeFast ? POLL_INTERVAL : POLL_INTERVAL_SLOW;
+      clearInterval(_liveTimer);
+      _liveTimer = setInterval(fetchLivePrices, currentInterval);
+    }, 300000);
+  }
+
+  function stopLivePoll() {
+    if (_liveTimer) { clearInterval(_liveTimer); _liveTimer = null; }
+  }
+
+  // ── Sync with page visibility ─────────────────────────────
+  document.addEventListener('visibilitychange', function() {
+    if (document.hidden) { stopLivePoll(); }
+    else { startLivePoll(); }
+  });
+
+  // ── Update "X seconds ago" display every second ───────────
+  setInterval(function() {
+    if (_lastLiveUpdate) updateLiveIndicator({ticker_count: Object.keys(_liveQuotes).length});
+  }, 1000);
+
+  // ── Start after a short delay (let main data load first) ──
+  setTimeout(startLivePoll, 2000);
+
+})();
+</script>
+
 </body>
 </html>

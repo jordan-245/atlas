@@ -20,9 +20,11 @@ import signal
 import sys
 import threading
 import traceback
+from datetime import datetime
 from functools import partial
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
+from urllib.parse import urlparse, parse_qs
 
 signal.signal(signal.SIGHUP, signal.SIG_IGN)
 
@@ -166,6 +168,8 @@ class AuthHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if not self._check_auth():
             return self._send_401()
+        if self.path.startswith("/api/prices"):
+            return self._handle_prices()
         if self.path.startswith("/api/monitor"):
             return self._handle_monitor_get()
         super().do_GET()
@@ -217,6 +221,55 @@ class AuthHandler(SimpleHTTPRequestHandler):
             self._send_json(200 if ok else 404, {"ok": ok})
         else:
             self._send_json(404, {"error": "Not found"})
+
+    def _handle_prices(self):
+        """GET /api/prices — live quotes for held positions + indices.
+
+        Query params:
+          ?tickers=AAPL,REH.AX   — specific tickers (optional)
+
+        If no tickers specified, returns quotes for all positions in the
+        current dashboard data plus benchmark indices and FX.
+        """
+        try:
+            sys.path.insert(0, str(PROJECT_ROOT))
+            from dashboard.live_prices import (
+                fetch_prices,
+                get_all_tickers_from_dashboard,
+                get_cache_stats,
+            )
+
+            parsed = urlparse(self.path)
+            params = parse_qs(parsed.query)
+            tickers_param = params.get("tickers", [""])[0]
+
+            if tickers_param:
+                tickers = [t.strip() for t in tickers_param.split(",") if t.strip()]
+            else:
+                # Auto-discover from dashboard data + add benchmarks/FX
+                dashboard_path = str(SERVE_DIR / "dashboard-data.json")
+                tickers = get_all_tickers_from_dashboard(dashboard_path)
+
+            # Always include benchmarks + FX
+            for idx in ["^GSPC", "^AXJO", "^HSI", "AUDUSD=X"]:
+                if idx not in tickers:
+                    tickers.append(idx)
+
+            quotes = fetch_prices(tickers)
+            stats = get_cache_stats()
+
+            response = {
+                "ok": True,
+                "timestamp": datetime.now().isoformat(),
+                "quotes": quotes,
+                "cache": stats,
+                "ticker_count": len(quotes),
+            }
+            self._send_json(200, response)
+
+        except Exception as e:
+            traceback.print_exc()
+            self._send_json(500, {"error": str(e)})
 
     def _handle_approve(self):
         try:
