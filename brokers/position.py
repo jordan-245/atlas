@@ -44,9 +44,12 @@ class Position:
         return round((price - self.entry_price) / self.entry_price * 100, 2)
 
     def holding_days(self, current_date: str) -> int:
-        entry = pd.Timestamp(self.entry_date)
-        current = pd.Timestamp(current_date)
-        return (current - entry).days
+        try:
+            entry = pd.Timestamp(self.entry_date)
+            current = pd.Timestamp(current_date)
+            return (current - entry).days
+        except (ValueError, TypeError):
+            return 0  # Unparseable entry_date (e.g. "unknown" from broker sync)
 
     def update_excursions(self, price: float):
         pnl_pct = (price - self.entry_price) / self.entry_price

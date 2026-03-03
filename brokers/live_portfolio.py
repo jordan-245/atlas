@@ -22,6 +22,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+import pandas as pd
+
 from brokers.base import PositionInfo
 from brokers.position import Position
 
@@ -197,7 +199,7 @@ class LivePortfolio:
             pos = Position(
                 ticker=pi.ticker,
                 strategy=pi.strategy or "unknown",
-                entry_date=pi.entry_date or "unknown",
+                entry_date=pi.entry_date or pd.Timestamp.now().strftime("%Y-%m-%d"),
                 entry_price=pi.entry_price,
                 shares=pi.shares,
                 stop_price=pi.stop_price,
