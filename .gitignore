@@ -59,3 +59,4 @@ config/active/*.bak*
 .pi-swarm/
 pi-package/atlas-ops/package-lock.json
 pi-package/atlas-ops/package-lock.json
+plans/plan_hk_2026-03-03.json
