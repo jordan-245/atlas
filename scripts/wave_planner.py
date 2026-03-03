@@ -111,9 +111,9 @@ def analyze_journal() -> dict:
     # Identify patterns
     patterns = []
     if strategies_failed:
-        patterns.append(f"Failed strategies: {', '.join(strategies_failed)}")
+        patterns.append(f"Failed strategies: {', '.join(s for s in strategies_failed if s)}")
     if strategies_passed:
-        patterns.append(f"Passed strategies: {', '.join(strategies_passed)}")
+        patterns.append(f"Passed strategies: {', '.join(s for s in strategies_passed if s)}")
 
     # Check for position allocation bottleneck
     fail_reasons = [e.get("key_metrics", {}).get("total_trades", 0)
@@ -209,10 +209,10 @@ def show_status():
     print("=" * 55)
     print(f"\n  Queue: {queue['total']} total, {queue['queued_count']} queued, {queue['completed_count']} completed")
     print(f"  Journal: {journal['total_experiments']} experiments logged")
-    print(f"  Strategies tested: {', '.join(journal['strategies_tested']) or 'none'}")
-    print(f"  Strategies passed: {', '.join(journal['strategies_passed']) or 'none'}")
-    print(f"  Strategies failed: {', '.join(journal['strategies_failed']) or 'none'}")
-    print(f"  Untested: {', '.join(journal['untested_strategies']) or 'none'}")
+    print(f"  Strategies tested: {', '.join(s for s in journal['strategies_tested'] if s) or 'none'}")
+    print(f"  Strategies passed: {', '.join(s for s in journal['strategies_passed'] if s) or 'none'}")
+    print(f"  Strategies failed: {', '.join(s for s in journal['strategies_failed'] if s) or 'none'}")
+    print(f"  Untested: {', '.join(s for s in journal['untested_strategies'] if s) or 'none'}")
 
     if journal["patterns"]:
         print("\n  Patterns:")

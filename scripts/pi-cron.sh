@@ -17,6 +17,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT="$(dirname "$SCRIPT_DIR")"
 LOG_DIR="$PROJECT/logs"
+
+# Global error trap — log + alert on any unhandled crash (prevents silent failures)
+_cron_error_trap() {
+    local exit_code=$?
+    local line_no=$1
+    mkdir -p "$LOG_DIR"
+    echo "$(date -Iseconds) FATAL: pi-cron.sh crashed at line $line_no (exit=$exit_code)" >> "$LOG_DIR/pi-cron.log"
+    python3 "$PROJECT/scripts/telegram_notify.py" error "cron-crash" "" 2>/dev/null || true
+}
+trap '_cron_error_trap $LINENO' ERR
 SKILL_DIR="$PROJECT/pi-package/atlas-ops/skills/atlas-daily"
 RESEARCH_SKILL_DIR="$PROJECT/pi-package/atlas-ops/skills/atlas-research-loop"
 NOTIFY="$SCRIPT_DIR/telegram_notify.py"
@@ -64,8 +74,17 @@ print(sum(1 for e in q if e.get('status') == 'queued'))
             echo "$(date -Iseconds) Research queue empty — planning next wave" >> "$LOG_DIR/pi-cron.log"
 
             # Generate the wave brief (analyzes journal, config, gaps)
+            # Wrapped in set +e to prevent silent death on wave_planner crash
             cd "$PROJECT"
+            set +e
             python3 scripts/wave_planner.py --generate >> "$LOG_DIR/pi-cron.log" 2>&1
+            WAVE_EXIT=$?
+            set -e
+            if [ $WAVE_EXIT -ne 0 ]; then
+                echo "$(date -Iseconds) ERROR: wave_planner.py --generate failed (exit=$WAVE_EXIT)" >> "$LOG_DIR/pi-cron.log"
+                notify error "research" "" 2>/dev/null || true
+                exit 1
+            fi
 
             # Find the brief file
             WAVE_BRIEF=$(ls -t research/waves/wave_*_brief.json 2>/dev/null | head -1)
