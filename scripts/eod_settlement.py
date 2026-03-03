@@ -39,7 +39,7 @@ def load_config(market_id="asx"):
         return json.load(f)
 
 
-def fetch_closing_prices(tickers):
+def fetch_closing_prices(tickers, market_id=None):
     """Fetch latest OHLC prices for held tickers.
 
     Returns three dicts:
@@ -58,31 +58,23 @@ def fetch_closing_prices(tickers):
     prices = {}  # close prices
     lows   = {}  # intraday lows  (stop-loss)
     highs  = {}  # intraday highs (take-profit)
-    download_universe(tickers, use_cache=False)  # Force fresh download
+
+    # Download fresh data and use returned DataFrames directly.
+    # use_cache=True ensures the cache is also updated for other consumers.
+    downloaded = download_universe(tickers, use_cache=True, market_id=market_id)
 
     for ticker in tickers:
-        cache_key = ticker.replace(".", "_")
-        # Search market subdirs (asx/ sp500/) — no root-level parquets
-        cache_path = None
-        for subdir in ["asx", "sp500", "hk"]:
-            candidate = PROJECT / "data" / "cache" / subdir / f"{cache_key}.parquet"
-            if candidate.exists():
-                cache_path = candidate
-                break
-        if cache_path and cache_path.exists():
-            try:
-                df = pd.read_parquet(cache_path)
-                if not df.empty and "close" in df.columns:
-                    # Audit C2: warn about stale price data
-                    data_age = (pd.Timestamp.now() - df.index[-1]).days
-                    if data_age > 2:
-                        log.warning(f"STALE DATA: {ticker} latest data is {data_age} days old ({df.index[-1].date()})")
-                    last = df.iloc[-1]
-                    prices[ticker] = float(last["close"])
-                    lows[ticker]   = float(last["low"])  if "low"  in df.columns else prices[ticker]
-                    highs[ticker]  = float(last["high"]) if "high" in df.columns else prices[ticker]
-            except Exception as e:
-                log.warning(f"Failed to read price for {ticker}: {e}")
+        df = downloaded.get(ticker)
+        if df is not None and not df.empty and "close" in df.columns:
+            data_age = (pd.Timestamp.now() - df.index[-1]).days
+            if data_age > 2:
+                log.warning(f"STALE DATA: {ticker} latest data is {data_age} days old ({df.index[-1].date()})")
+            last = df.iloc[-1]
+            prices[ticker] = float(last["close"])
+            lows[ticker]   = float(last["low"])  if "low"  in df.columns else prices[ticker]
+            highs[ticker]  = float(last["high"]) if "high" in df.columns else prices[ticker]
+        else:
+            log.warning(f"No data returned for {ticker}")
 
     log.info(f"Got OHLC prices for {len(prices)}/{len(tickers)} tickers")
     return prices, lows, highs
@@ -329,7 +321,7 @@ def main():
     log.info(f"Held positions: {held_tickers}")
 
     # Fetch OHLC prices (close for equity/report, low for stops, high for TPs)
-    prices, lows, highs = fetch_closing_prices(held_tickers)
+    prices, lows, highs = fetch_closing_prices(held_tickers, market_id=market_id)
 
     if not prices:
         log.error("Could not fetch any closing prices. Aborting settlement.")

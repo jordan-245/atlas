@@ -29,6 +29,8 @@ from brokers.position import Position
 
 logger = logging.getLogger("atlas.live_portfolio")
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
 PROJECT_ROOT = Path(__file__).parent.parent
 
 
@@ -211,8 +213,64 @@ class LivePortfolio:
             pos.entry_value = pi.cost_basis or (pi.entry_price * pi.shares)
             self.positions.append(pos)
 
+        # Enrich positions with plan metadata (stop prices, strategy, etc.)
+        self._enrich_from_plans()
+
         logger.info("LivePortfolio: %d positions, cash=$%.2f, equity=$%.2f",
                      len(self.positions), self.cash, self._broker_equity)
+
+    def _enrich_from_plans(self):
+        """Fill in stop_price, strategy, entry_date from recent trade plans.
+
+        The broker doesn't provide stop/TP levels or Atlas strategy names.
+        We recover them from the plan files that generated the entries.
+        """
+        plans_dir = PROJECT_ROOT / "plans"
+        if not plans_dir.exists():
+            return
+
+        # Build {ticker: plan_entry} from recent plans for this market
+        meta: dict[str, dict] = {}
+        for plan_file in sorted(plans_dir.glob(f"plan_{self.market_id}_*.json"), reverse=True)[:30]:
+            try:
+                with open(plan_file) as f:
+                    plan = json.load(f)
+            except Exception:
+                continue
+            trade_date = plan.get("trade_date", "")
+            for entry in plan.get("proposed_entries", []):
+                ticker = entry.get("ticker", "")
+                if ticker and ticker not in meta:
+                    meta[ticker] = {
+                        "strategy": entry.get("strategy", ""),
+                        "entry_date": trade_date,
+                        "stop_price": entry.get("stop_price", 0),
+                        "take_profit": entry.get("take_profit"),
+                        "confidence": entry.get("confidence", 0),
+                        "sector": entry.get("sector", "Unknown"),
+                    }
+
+        enriched = 0
+        for pos in self.positions:
+            m = meta.get(pos.ticker)
+            if not m:
+                continue
+            if pos.stop_price == 0 and m.get("stop_price", 0) > 0:
+                pos.stop_price = m["stop_price"]
+            if pos.take_profit in (None, 0) and m.get("take_profit"):
+                pos.take_profit = m["take_profit"]
+            if pos.strategy in ("unknown", ""):
+                pos.strategy = m.get("strategy", pos.strategy)
+            if pos.entry_date in ("unknown", "") and m.get("entry_date"):
+                pos.entry_date = m["entry_date"]
+            if pos.sector in ("Unknown", "") and m.get("sector", "Unknown") != "Unknown":
+                pos.sector = m["sector"]
+            if m.get("confidence", 0) > 0:
+                pos.confidence = m["confidence"]
+            enriched += 1
+
+        if enriched:
+            logger.info("Enriched %d positions with plan metadata (stops, strategy)", enriched)
 
     # ── Portfolio interface ──────────────────────
 

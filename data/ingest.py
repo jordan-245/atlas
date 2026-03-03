@@ -250,7 +250,7 @@ def download_ticker(
             cache_end = cached.index.max()
 
             need_before = start_dt.date() < cache_start.date()
-            need_after = end_dt.date() > cache_end.date() + timedelta(days=1)
+            need_after = end_dt.date() > cache_end.date()
 
             if not need_before and not need_after:
                 mask = (cached.index >= start_str) & (cached.index <= end_str)
@@ -276,10 +276,12 @@ def download_ticker(
 
             if need_after:
                 fetch_from = (cache_end + timedelta(days=1)).strftime("%Y-%m-%d")
+                # yfinance 'end' is exclusive, so add 1 day to include end_dt
+                fetch_end = (end_dt + timedelta(days=1)).strftime("%Y-%m-%d")
                 logger.info(f"{ticker}: fetching newer data {fetch_from} to {end_str}")
                 try:
                     later = yf.download(
-                        ticker, start=fetch_from, end=end_str,
+                        ticker, start=fetch_from, end=fetch_end,
                         progress=False, auto_adjust=False
                     )
                     if not later.empty:
@@ -297,10 +299,11 @@ def download_ticker(
             logger.info(f"{ticker}: incremental update complete ({len(combined[mask])} rows)")
             return combined[mask]
 
-    # Full download
+    # Full download (yfinance 'end' is exclusive, so add 1 day)
+    fetch_end = (end_dt + timedelta(days=1)).strftime("%Y-%m-%d")
     logger.info(f"{ticker}: downloading {start_str} to {end_str}")
     try:
-        df = yf.download(ticker, start=start_str, end=end_str,
+        df = yf.download(ticker, start=start_str, end=fetch_end,
                          progress=False, auto_adjust=False)
     except Exception as e:
         logger.error(f"{ticker}: download failed: {e}")
