@@ -826,8 +826,9 @@ def generate_market(market_id: str, broker_cache: dict | None = None):
     now = datetime.now(BRISBANE)
     open_pos = []
     strategy_stats = {}
-    # W9: Build sector fallback lookup from state file — broker often omits sector
-    state_positions = {sp.get("ticker"): sp for sp in portfolio.get("positions", [])}
+    # W9: Build sector fallback lookup from broker state file on disk
+    _state_file = safe_json(PROJECT_ROOT / "brokers" / "state" / f"{market_id}.json", {})
+    state_positions = {sp.get("ticker"): sp for sp in _state_file.get("positions", [])}
 
     for p in all_positions:
         t = p.get("ticker", "")
@@ -869,7 +870,11 @@ def generate_market(market_id: str, broker_cache: dict | None = None):
             strategy_stats[strat]["value"] += cp * sh
 
         # W9: Use broker sector → state file fallback → "Unknown"
-        sector_val = (p.get("sector") or
+        # Filter out empty strings / "Unknown" from broker before checking fallback
+        _broker_sector = p.get("sector", "")
+        if not _broker_sector or _broker_sector == "Unknown":
+            _broker_sector = ""
+        sector_val = (_broker_sector or
                       state_positions.get(t, {}).get("sector") or
                       "Unknown")
         open_pos.append({
