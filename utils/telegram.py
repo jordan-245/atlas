@@ -546,6 +546,8 @@ def send_error(mode: str, detail: str, logfile: Optional[str] = None) -> bool:
         hints.append("⏱ Timeout — network or API rate limit")
     if "yfinance" in all_text or "download" in all_text and "fail" in all_text:
         hints.append("📊 Data fetch — yfinance may be throttled or market closed")
+    if "delisted" in all_text or "no price data" in all_text:
+        hints.append("📊 Data quality — yfinance download failures (delisted/missing tickers). Check universe list.")
     if "permission" in all_text or "credential" in all_text or "token" in all_text:
         hints.append("🔑 Auth — check ~/.atlas-secrets.json")
     if "no space" in all_text or "disk" in all_text:
