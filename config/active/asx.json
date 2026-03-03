@@ -30,7 +30,7 @@
   "trading": {
     "mode": "live",
     "broker": "ibkr",
-    "live_enabled": true,
+    "live_enabled": false,
     "holding_period_min": 2,
     "holding_period_max": 20,
     "data_frequency": "daily",
