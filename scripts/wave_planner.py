@@ -68,8 +68,8 @@ def analyze_journal() -> dict:
     metrics_by_strategy = {}
 
     for entry in journal:
-        strat = entry.get("strategy", "unknown")
-        verdict = entry.get("verdict", "unknown")
+        strat = entry.get("strategy") or "unknown"
+        verdict = entry.get("verdict") or "unknown"
         km = entry.get("key_metrics", {})
         learnings = entry.get("learnings", [])
 
