@@ -72,7 +72,7 @@ send_message('''YOUR_BRIEFING_TEXT_HERE''')
 
 If the Telegram send fails, that's ok — the briefing is still in the log."
 
-timeout 180 pi -p --no-session --model anthropic/claude-haiku-4-5 "$PROMPT" >> "$LOG_FILE" 2>&1
+timeout 300 pi -p --no-session --model anthropic/claude-opus-4-6 "$PROMPT" >> "$LOG_FILE" 2>&1
 PI_EXIT=$?
 
 # Cleanup
