@@ -179,32 +179,21 @@ def calc_grossed_up_yield(
     return grossed_up_div / share_price
 
 
-def fetch_dividend_calendar(
-    ticker: str,
-    use_cache: bool = True,
-) -> List[Dict[str, Any]]:
-    """Fetch historical and upcoming ex-dividend dates for a ticker.
+_NON_US_SUFFIXES = (".AX", ".HK", ".L", ".T", ".PA", ".DE")
 
-    Uses yfinance .dividends property which returns ex-dividend dates
-    and cash dividend amounts.
 
-    Args:
-        ticker: ASX ticker symbol (e.g., 'BHP.AX').
-        use_cache: Whether to use cached data (default True).
+def _is_us_ticker(ticker: str) -> bool:
+    """Return True if ticker is a US market symbol (no non-US exchange suffix)."""
+    upper = ticker.upper()
+    return not any(upper.endswith(s) for s in _NON_US_SUFFIXES)
 
-    Returns:
-        List of dicts with keys: ex_date, amount, ticker.
-    """
-    if use_cache:
-        cached = _load_cached_dividends(ticker)
-        if cached is not None:
-            return cached.get("dividends", [])
 
+def _fetch_dividends_yfinance(ticker: str) -> List[Dict[str, Any]]:
+    """Fetch dividend history via yfinance.  Returns list of ex_date/amount/ticker dicts."""
     dividends = []
     try:
         stock = yf.Ticker(ticker)
         divs = stock.dividends
-
         if divs is not None and len(divs) > 0:
             for dt, amount in divs.items():
                 ts = pd.Timestamp(dt)
@@ -215,6 +204,79 @@ def fetch_dividend_calendar(
                     "amount": round(float(amount), 6),
                     "ticker": ticker,
                 })
+    except Exception as e:
+        logger.warning("%s: yfinance dividend fetch failed: %s", ticker, e)
+    return dividends
+
+
+def _fetch_dividends_alpaca(ticker: str) -> List[Dict[str, Any]]:
+    """Try to fetch dividend history via Alpaca Corporate Actions API.
+
+    Used for US tickers only; returns [] on any failure so callers can
+    fall back to yfinance.
+    """
+    try:
+        from datetime import date
+        from brokers.alpaca.market_data import get_dividends
+
+        start = date(2000, 1, 1)
+        end = date(date.today().year + 2, 12, 31)
+        series = get_dividends(ticker, start, end)
+
+        if series is None or len(series) == 0:
+            return []
+
+        dividends = []
+        for dt, amount in series.items():
+            ts = pd.Timestamp(dt)
+            if ts.tzinfo:
+                ts = ts.tz_localize(None)
+            dividends.append({
+                "ex_date": ts.strftime("%Y-%m-%d"),
+                "amount": round(float(amount), 6),
+                "ticker": ticker,
+            })
+        return dividends
+    except Exception as e:
+        logger.debug("%s: Alpaca dividend fetch failed: %s", ticker, e)
+        return []
+
+
+def fetch_dividend_calendar(
+    ticker: str,
+    use_cache: bool = True,
+) -> List[Dict[str, Any]]:
+    """Fetch historical and upcoming ex-dividend dates for a ticker.
+
+    For US tickers (no .AX/.HK suffix): tries Alpaca Corporate Actions API
+    first, falls back to yfinance if unavailable or empty.
+    For non-US tickers: uses yfinance directly.
+
+    Args:
+        ticker: Ticker symbol (e.g. 'AAPL', 'BHP.AX').
+        use_cache: Whether to use cached data (default True).
+
+    Returns:
+        List of dicts with keys: ex_date, amount, ticker.
+    """
+    if use_cache:
+        cached = _load_cached_dividends(ticker)
+        if cached is not None:
+            return cached.get("dividends", [])
+
+    dividends: List[Dict[str, Any]] = []
+    try:
+        if _is_us_ticker(ticker):
+            # Try Alpaca first for US tickers; fall back to yfinance if empty
+            dividends = _fetch_dividends_alpaca(ticker)
+            if not dividends:
+                logger.debug(
+                    "%s: Alpaca returned no dividends, falling back to yfinance",
+                    ticker,
+                )
+                dividends = _fetch_dividends_yfinance(ticker)
+        else:
+            dividends = _fetch_dividends_yfinance(ticker)
     except Exception as e:
         logger.warning("%s: failed to fetch dividends: %s", ticker, e)
 

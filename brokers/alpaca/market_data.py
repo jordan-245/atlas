@@ -18,13 +18,17 @@ All tickers use Atlas format (bare US symbols: AAPL, MSFT, etc.).
 from __future__ import annotations
 
 import logging
+from datetime import date as _date_type
 from typing import Optional
+
+import pandas as pd
 
 logger = logging.getLogger("atlas.broker.alpaca.data")
 
 try:
     from alpaca.data.historical import StockHistoricalDataClient
     from alpaca.data.requests import (
+        StockBarsRequest,
         StockLatestBarRequest,
         StockLatestQuoteRequest,
         StockSnapshotRequest,
@@ -351,3 +355,270 @@ def _parse_snapshot(snap) -> dict:
         "daily_bar": daily_bar,
         "prev_daily_bar": prev_daily_bar,
     }
+
+
+# ─────────────────────────────────────────────────────────────────
+# Module-level singleton convenience functions
+# ─────────────────────────────────────────────────────────────────
+
+_singleton: Optional[AlpacaMarketData] = None
+_trade_singleton = None  # Optional[TradingClient] — lazy import
+
+
+def get_alpaca_data_client() -> Optional[AlpacaMarketData]:
+    """Get or create singleton AlpacaMarketData client.
+
+    Reads credentials from ~/.atlas-secrets.json or environment.
+    Returns None if alpaca-py not installed or no credentials.
+    """
+    global _singleton
+    if _singleton is not None:
+        return _singleton if _singleton.is_available else None
+    try:
+        from brokers.secrets import get_secret
+        key = get_secret("ALPACA_API_KEY")
+        secret = get_secret("ALPACA_SECRET_KEY")
+        if not key or not secret:
+            return None
+        _singleton = AlpacaMarketData(api_key=key, api_secret=secret)
+        return _singleton if _singleton.is_available else None
+    except Exception:
+        return None
+
+
+def _get_trade_client():
+    """Get or create singleton TradingClient for corporate actions and trading data.
+
+    Returns None if alpaca-py not installed or no credentials.
+    """
+    global _trade_singleton
+    if _trade_singleton is not None:
+        return _trade_singleton
+    if not ALPACA_AVAILABLE:
+        return None
+    try:
+        from alpaca.trading.client import TradingClient
+        from brokers.secrets import get_secret
+        key = get_secret("ALPACA_API_KEY")
+        secret = get_secret("ALPACA_SECRET_KEY")
+        if not key or not secret:
+            return None
+        # paper=False: corporate announcements live on the non-paper endpoint
+        _trade_singleton = TradingClient(
+            api_key=key,
+            secret_key=secret,
+            paper=False,
+        )
+        return _trade_singleton
+    except Exception:
+        return None
+
+
+def get_historical_bars(
+    symbols,
+    start,
+    end,
+    timeframe: str = "1Day",
+    adjustment: str = "all",
+) -> dict:
+    """Fetch historical OHLCV bars via Alpaca, returning Atlas-format DataFrames.
+
+    Args:
+        symbols: Ticker or list of Atlas-format US tickers.
+        start:   Start date/datetime (inclusive). Accepts str, date, or datetime.
+        end:     End date/datetime (inclusive). Accepts str, date, or datetime.
+        timeframe: Bar timeframe — "1Day" (default), "1Hour", "1Min".
+        adjustment: Price adjustment — "all" (default), "split", "dividend", "raw".
+
+    Returns:
+        {ticker: DataFrame} with columns [open, high, low, close, adj_close, volume, ticker]
+        and DatetimeIndex named 'date'. Empty dict if Alpaca unavailable.
+    """
+    client = get_alpaca_data_client()
+    if not client or not client.is_available:
+        return {}
+    if not ALPACA_AVAILABLE:
+        return {}
+
+    if isinstance(symbols, str):
+        symbols = [symbols]
+
+    try:
+        from alpaca.data.timeframe import TimeFrame
+        from alpaca.data.enums import Adjustment
+        from brokers.alpaca.mapper import to_alpaca_list, to_atlas
+
+        _tf_map = {
+            "1Day":    TimeFrame.Day,
+            "1Hour":   TimeFrame.Hour,
+            "1Min":    TimeFrame.Minute,
+            "1Minute": TimeFrame.Minute,
+        }
+        tf = _tf_map.get(timeframe, TimeFrame.Day)
+
+        _adj_map = {
+            "all":      Adjustment.ALL,
+            "split":    Adjustment.SPLIT,
+            "dividend": Adjustment.DIVIDEND,
+            "raw":      Adjustment.RAW,
+        }
+        adj = _adj_map.get(str(adjustment).lower(), Adjustment.ALL)
+
+        alpaca_symbols = to_alpaca_list(symbols)
+        req = StockBarsRequest(
+            symbol_or_symbols=alpaca_symbols,
+            timeframe=tf,
+            start=start,
+            end=end,
+            adjustment=adj,
+            feed=client._feed,
+        )
+        barset = client._client.get_stock_bars(req)
+    except Exception as e:
+        logger.error("get_historical_bars failed: %s", e, exc_info=True)
+        return {}
+
+    result = {}
+    try:
+        from brokers.alpaca.mapper import to_atlas
+        for symbol, bars in (barset or {}).items():
+            atlas_ticker = to_atlas(symbol)
+            if not bars:
+                continue
+            rows = []
+            for bar in bars:
+                ts = getattr(bar, "timestamp", None)
+                if ts is None:
+                    continue
+                rows.append({
+                    "date": pd.Timestamp(ts).normalize(),
+                    "open":   float(getattr(bar, "open",   0) or 0),
+                    "high":   float(getattr(bar, "high",   0) or 0),
+                    "low":    float(getattr(bar, "low",    0) or 0),
+                    "close":  float(getattr(bar, "close",  0) or 0),
+                    "volume": int(getattr(bar,   "volume", 0) or 0),
+                    "ticker": atlas_ticker,
+                })
+            if not rows:
+                continue
+            df = pd.DataFrame(rows).set_index("date")
+            df.index.name = "date"
+            # adj_close = close (already adjusted per Adjustment enum)
+            df["adj_close"] = df["close"]
+            df = df[["open", "high", "low", "close", "adj_close", "volume", "ticker"]]
+            result[atlas_ticker] = df
+    except Exception as e:
+        logger.warning("get_historical_bars: parse error: %s", e)
+
+    logger.debug(
+        "get_historical_bars: got %d/%d symbols", len(result), len(symbols)
+    )
+    return result
+
+
+def get_snapshot_prices(tickers) -> dict:
+    """Batch fetch current prices via Alpaca snapshots.
+
+    Args:
+        tickers: List of Atlas-format US tickers (or a single string).
+
+    Returns:
+        {ticker: {price, prev_close, change, change_pct, day_high, day_low, volume, source}}
+        Empty dict if Alpaca unavailable or no snapshots returned.
+    """
+    client = get_alpaca_data_client()
+    if not client:
+        return {}
+
+    if isinstance(tickers, str):
+        tickers = [tickers]
+
+    snapshots = client.get_snapshots(list(tickers))
+    result = {}
+    for ticker, snap in snapshots.items():
+        price = float(snap.get("price", 0) or 0)
+        prev_bar = snap.get("prev_daily_bar") or {}
+        prev_close = float(prev_bar.get("close", 0) or 0)
+        day_bar = snap.get("daily_bar") or {}
+        day_high = float(day_bar.get("high", 0) or 0)
+        day_low  = float(day_bar.get("low",  0) or 0)
+        volume   = int(day_bar.get("volume", 0) or 0)
+        change     = round(price - prev_close, 4) if price and prev_close else 0.0
+        change_pct = round(change / prev_close * 100, 4) if prev_close else 0.0
+        result[ticker] = {
+            "price":      price,
+            "prev_close": prev_close,
+            "change":     change,
+            "change_pct": change_pct,
+            "day_high":   day_high,
+            "day_low":    day_low,
+            "volume":     volume,
+            "source":     "alpaca",
+        }
+    return result
+
+
+def get_dividends(symbol: str, start, end) -> pd.Series:
+    """Fetch dividend history via Alpaca Corporate Actions API.
+
+    Uses TradingClient.get_corporate_announcements() to retrieve cash
+    dividend events for a US ticker within the given date range.
+
+    Args:
+        symbol: Atlas-format US ticker (e.g. 'AAPL').
+        start:  Start date (inclusive). Accepts str, date, or datetime.
+        end:    End date (inclusive). Accepts str, date, or datetime.
+
+    Returns:
+        pd.Series indexed by ex-date (DatetimeIndex) with cash dividend amounts.
+        Empty Series if Alpaca unavailable or no dividends found.
+    """
+    if not ALPACA_AVAILABLE:
+        return pd.Series(dtype=float)
+
+    def _to_date(d):
+        if isinstance(d, _date_type):
+            return d
+        return pd.Timestamp(d).date()
+
+    try:
+        from alpaca.trading.requests import GetCorporateAnnouncementsRequest
+        from alpaca.trading.enums import CorporateActionType, CorporateActionDateType
+        from brokers.alpaca.mapper import to_alpaca
+
+        tc = _get_trade_client()
+        if tc is None:
+            return pd.Series(dtype=float)
+
+        alpaca_symbol = to_alpaca(symbol)
+        req = GetCorporateAnnouncementsRequest(
+            ca_types=[CorporateActionType.DIVIDEND],
+            since=_to_date(start),
+            until=_to_date(end),
+            symbol=alpaca_symbol,
+            date_type=CorporateActionDateType.EX_DATE,
+        )
+        announcements = tc.get_corporate_announcements(req)
+
+        if not announcements:
+            return pd.Series(dtype=float)
+
+        data = {}
+        for ann in announcements:
+            ex_date = getattr(ann, "ex_date", None)
+            cash = getattr(ann, "cash", None)
+            if ex_date is None or cash is None:
+                continue
+            ts = pd.Timestamp(str(ex_date))
+            data[ts] = float(cash)
+
+        if not data:
+            return pd.Series(dtype=float)
+
+        series = pd.Series(data, dtype=float).sort_index()
+        series.index.name = "date"
+        return series
+
+    except Exception as e:
+        logger.warning("get_dividends(%s) failed: %s", symbol, e)
+        return pd.Series(dtype=float)
