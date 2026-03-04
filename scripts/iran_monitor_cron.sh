@@ -99,7 +99,7 @@ YOU are responsible for all manual_toggle conditions — assess them from NEWS +
 RED TRIGGERS: WTI <$65 OR XOP <$142 = auto-flag for immediate review.
 
 ### RTX (id: 0053ac1a7b04) — Defence
-- **rtx_ceasefire**: Green=no ceasefire. Amber=ONLY if Reuters/AP/named diplomats confirm Oman/Qatar mediation with BOTH parties at the table. Pundit speculation stays GREEN. Red=formal ceasefire announced. Red → trim to 3 shares.
+- **rtx_ceasefire**: Green=no ceasefire. Amber=ONLY if Reuters/AP report BOTH parties (US/Iran) have agreed to sit at a mediation table. Oman "offering off-ramps" is NOT amber — that's one-sided. Hegseth/Rubio escalatory rhetoric = GREEN (confirms no diplomatic off-ramp). Pundit speculation stays GREEN. Geographic expansion (Indian Ocean, Fujairah) = GREEN (escalation, not de-escalation). Red=formal ceasefire announced. Red → trim to 3 shares.
 - **rtx_defence**: Green=supplemental appropriations/budget increase, Amber=no change, Red=budget cuts proposed. The $50B supplemental strengthens RTX more than backchannel chatter weakens it.
 - **rtx_duration**: Green=<4wk, Amber=4-8wk, Red=>8wk.
 - **rtx_sector**: ITA/XAR momentum. Check derived_metrics.defence_sector_5d. >1%=green, -1% to 1%=amber, <-1%=red.
@@ -107,6 +107,7 @@ FLOOR: Only <$185 = full exit.
 
 ### INSW (id: 0a70124996f3) — Tankers (BINARY — amber must never persist >1 cycle)
 - **insw_hormuz**: CRITICAL (w4). Green=closed (<20%), Amber=partial (20-60%), Red=open (>60%) = IMMEDIATE EXIT.
+  GEOGRAPHIC EXPANSION NOTE: Fujairah port strike + Indian Ocean naval engagement = danger zone extends BEYOND Hormuz. Even if Hormuz partially reopens, Gulf of Oman/Arabian Sea disruption keeps tanker thesis intact. insw_hormuz stays GREEN as long as ANY major shipping zone is disrupted. Only go amber if ALL zones normalise.
 - **insw_vlcc**: VLCC spot rates. Green=>$300k, Amber=$150-300k, Red=<$150k. ALWAYS record the rate: `rate vlcc <value>`. Check rate_history for 3-cycle trend — a 17% single-cycle drop is a warning sign even if still above threshold.
 - **insw_insurance**: War risk insurance. Green=cancelled/suspended, Amber=elevated (>5x), Red=normal.
 - **insw_trail**: 10% trailing stop. Check derived_metrics.insw_trail_status.
@@ -156,6 +157,25 @@ Only escalate if <$200 or capex reversal.
 5. **3+ positions health <6** → portfolio stress → full manual review.
 6. **Any INVALIDATION** → immediate alert.
 
+## CONFLICT GEOGRAPHIC SCOPE
+Check portfolio_checks.conflict_geographic_scope. Report in EVERY briefing.
+The data file auto-detects active zones from escalation history keywords:
+- **persian_gulf** + **hormuz**: always active in Iran conflict (baseline)
+- **gulf_of_oman**: Fujairah strikes, UAE east coast, bunkering disruption
+- **arabian_sea**: Indian Ocean naval engagements, submarine/frigate actions
+- **red_sea**: Houthi corridor, Bab el-Mandeb, Suez disruption
+- **mediterranean**: Lebanon/Cyprus/Crete base attacks
+
+Scope statuses: contained (≤2 zones), expanding (3), regional (4-5), global (6).
+**When news confirms action in a NEW zone, RECORD it as an escalation event** so the auto-detector picks it up:
+```bash
+python3 scripts/iran_monitor_update.py escalation "Fujairah port struck by Iranian drones — Gulf of Oman" "Reuters"
+```
+Geographic expansion is BULLISH for thesis (XOP, INSW, NEM, RTX, CIBR, PSQ) — it means:
+- More shipping lanes disrupted → higher tanker rates, oil premium
+- Less containment likelihood → longer conflict duration → longer position hold
+- Broader insurance repricing → INSW Hormuz stays green even if Hormuz partially reopens
+
 ## KILL SWITCH PROXIMITY
 Check portfolio_checks.kill_switch_proximity. Include in EVERY briefing: "Kill switch: X/4 [details]".
 Statuses: clear (0), monitoring (1), elevated (2), imminent (3+).
@@ -204,8 +224,9 @@ Required briefing format — oil prices FRONT AND CENTRE:
 
 <b>Oil:</b> WTI $XX.XX (Xd%) | Brent $XX.XX (Xd%) | Spread $X.XX
 <b>Escalation:</b> Xh since last confirmed action [source]
+<b>Geographic scope:</b> X zones [zone list] — STATUS
 
-<b>Situation:</b> 1-2 sentences
+<b>Situation:</b> 1-2 sentences — lead with "X new developments" or "No new developments"
 
 <b>Changes:</b>
 • TICKER condition: old → new (reason + SOURCE)

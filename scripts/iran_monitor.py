@@ -370,6 +370,74 @@ def get_portfolio_level_checks(positions: list, prices: dict) -> dict:
         ),
     }
 
+    # ── Conflict geographic scope ──
+    # Tracks whether the conflict has expanded beyond the Persian Gulf.
+    # Geographic expansion = higher shipping disruption, broader insurance
+    # repricing, longer duration. Bullish for XOP/INSW/NEM/CIBR, bearish for
+    # de-escalation (extends RTX/PSQ thesis).
+    #
+    # Zones: Persian Gulf only → Strait of Hormuz → Gulf of Oman/Arabian Sea
+    #        → Indian Ocean → Red Sea/Suez → Mediterranean
+    # Each zone adds disruption surface area and reduces containment odds.
+    GEOGRAPHIC_ZONES = {
+        "persian_gulf":  "Persian Gulf (Iran, Kuwait, Bahrain, Qatar, UAE bases)",
+        "hormuz":        "Strait of Hormuz (shipping chokepoint)",
+        "gulf_of_oman":  "Gulf of Oman / Fujairah (UAE east coast, bunkering hub)",
+        "arabian_sea":   "Arabian Sea / Indian Ocean (naval engagements)",
+        "red_sea":       "Red Sea / Bab el-Mandeb / Suez (Houthi corridor)",
+        "mediterranean": "Eastern Mediterranean (Lebanon, Cyprus, Crete bases)",
+    }
+
+    # Auto-detect active zones from escalation history
+    rate_hist = get_rate_history()
+    escalation_events = []
+    last_esc = rate_hist.get("last_escalation_event")
+    if last_esc and last_esc.get("description"):
+        escalation_events.append(last_esc["description"].lower())
+
+    # Keyword detection for zone activation
+    active_zones = ["persian_gulf", "hormuz"]  # baseline — always active in an Iran war
+    zone_keywords = {
+        "gulf_of_oman":  ["fujairah", "gulf of oman", "uae east", "bunkering"],
+        "arabian_sea":   ["indian ocean", "arabian sea", "naval", "frigate", "submarine", "torpedo"],
+        "red_sea":       ["red sea", "houthi", "bab el-mandeb", "suez", "aden"],
+        "mediterranean": ["mediterranean", "cyprus", "crete", "lebanon coast"],
+    }
+    esc_text = " ".join(escalation_events)
+    for zone, keywords in zone_keywords.items():
+        if any(kw in esc_text for kw in keywords):
+            if zone not in active_zones:
+                active_zones.append(zone)
+
+    # Scope assessment
+    n_zones = len(active_zones)
+    scope_status = (
+        "contained" if n_zones <= 2 else       # Gulf + Hormuz only
+        "expanding" if n_zones <= 3 else        # +1 new zone
+        "regional" if n_zones <= 5 else         # multiple new zones
+        "global"                                 # all zones active
+    )
+
+    checks["conflict_geographic_scope"] = {
+        "active_zones": active_zones,
+        "zone_count": n_zones,
+        "zone_labels": {z: GEOGRAPHIC_ZONES[z] for z in active_zones},
+        "scope_status": scope_status,
+        "implications": (
+            "Contained to Persian Gulf — standard Iran conflict playbook" if scope_status == "contained" else
+            "EXPANDING beyond Gulf — higher shipping disruption surface, insurance repricing accelerates, containment less likely" if scope_status == "expanding" else
+            "REGIONAL conflict — multiple chokepoints affected, broad energy supply risk, extended duration likely" if scope_status == "regional" else
+            "GLOBAL disruption — all major shipping lanes affected"
+        ),
+    }
+
+    # Add to kill switch triggers if expanding
+    if scope_status in ("expanding", "regional", "global"):
+        checks["kill_switch_triggers"].append(
+            f"Conflict geographic expansion: {n_zones} zones active ({', '.join(active_zones)}) — "
+            f"{scope_status.upper()}"
+        )
+
     return checks
 
 
