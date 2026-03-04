@@ -175,7 +175,7 @@ class ConnorsRSI2(BaseStrategy):
                     continue
 
                 risk_per_share = entry_price - stop_price
-                position_size = calc_position_size(
+                pos_result = calc_position_size(
                     equity=equity,
                     risk_pct=risk_pct,
                     entry_price=entry_price,
@@ -183,6 +183,7 @@ class ConnorsRSI2(BaseStrategy):
                     commission_per_trade=commission_per_trade,
                     commission_pct=commission_pct,
                 )
+                position_size = pos_result["shares"] if isinstance(pos_result, dict) else pos_result
                 if position_size <= 0:
                     continue
 

@@ -1,72 +1,53 @@
 {
-  "id": "wave2_vix_roc_05_roc_spike_20pct",
+  "id": "wave2_vol_combined",
   "queue_entry": {
-    "id": "wave2_vix_roc_05_roc_spike_20pct",
-    "title": "VIX regime filter \u2014 max_entry=20 (skip entries VIX > 20)",
+    "id": "wave2_vol_combined",
+    "title": "Volume filter 1.5x on combined portfolio (MR+TF+OG)",
     "category": "filter",
     "market": "sp500",
-    "hypothesis": "Skipping entries when VIX > 20 avoids volatile regime entries. Wave 1 proxy test showed +0.29 Sharpe improvement.",
+    "hypothesis": "Wave 1 proved 1.5x volume filter on MR solo: Sharpe -0.02\u21920.38, PF 1.30\u21921.62. Applying to the full combined portfolio should similarly improve signal quality by filtering out low-conviction entries across all strategies.",
     "method": "filter_test",
     "acceptance_criteria": {
       "sharpe_improvement": 0.03,
-      "max_cagr_drop": 2.0,
-      "min_trades": 200
+      "max_dd_increase_pp": 1.0,
+      "min_trades": 150,
+      "description": "Sharpe improvement >= +0.03 over baseline combined portfolio. Max drawdown increase <= 1pp. Min 150 trades after filtering."
     },
-    "estimated_runtime_min": 30,
-    "priority": "P3",
+    "estimated_runtime_min": 20,
+    "priority": "P2",
     "status": "claimed",
     "strategy_name": null,
     "params_override": {
-      "filter_param": "vix_filter",
+      "filter_param": "volume_min_ratio",
       "variants": [
         {
-          "name": "baseline (disabled)",
-          "value": {
-            "enabled": false
-          }
+          "name": "baseline (0.5x \u2014 current)",
+          "value": 0.5
         },
         {
-          "name": "VIX < 20",
-          "value": {
-            "enabled": true,
-            "max_entry": 20
-          }
+          "name": "1.0x avg",
+          "value": 1.0
         },
         {
-          "name": "VIX < 25",
-          "value": {
-            "enabled": true,
-            "max_entry": 25
-          }
-        },
-        {
-          "name": "VIX < 30",
-          "value": {
-            "enabled": true,
-            "max_entry": 30
-          }
-        },
-        {
-          "name": "VIX < 35",
-          "value": {
-            "enabled": true,
-            "max_entry": 35
-          }
+          "name": "1.5x avg (proven on MR)",
+          "value": 1.5
         }
       ]
     },
     "config_snapshot": null,
-    "claimed_by": "atlas-vix",
-    "claimed_at": "2026-03-03T08:20:13.401853+00:00",
-    "created_at": "2026-03-03T07:50:16.394412+00:00",
-    "updated_at": "2026-03-03T08:20:13.401896+00:00",
+    "claimed_by": "atlas-research",
+    "claimed_at": "2026-03-03T23:59:36.488828+00:00",
+    "created_at": "2026-03-03T01:33:08.718946+00:00",
+    "updated_at": "2026-03-03T23:59:36.488838+00:00",
     "tags": [
       "wave2",
       "filter",
-      "vix"
+      "volume",
+      "combined",
+      "high_impact"
     ],
     "depends_on": [],
-    "notes": ""
+    "notes": "Wave 1 result on MR solo: Sharpe -0.02\u21920.38, PF 1.30\u21921.62, DD 5.24%\u21924.03%, trades 332\u2192235. 1.5x is the sweet spot. 2.0x was too aggressive (115 trades, Sharpe -0.30)."
   },
   "config_snapshot": {
     "version": "v2.2",
@@ -359,79 +340,57 @@
     "market": "sp500",
     "method": "filter_test",
     "params_override": {
-      "filter_param": "vix_filter",
+      "filter_param": "volume_min_ratio",
       "variants": [
         {
-          "name": "baseline (disabled)",
-          "value": {
-            "enabled": false
-          }
+          "name": "baseline (0.5x \u2014 current)",
+          "value": 0.5
         },
         {
-          "name": "VIX < 20",
-          "value": {
-            "enabled": true,
-            "max_entry": 20
-          }
+          "name": "1.0x avg",
+          "value": 1.0
         },
         {
-          "name": "VIX < 25",
-          "value": {
-            "enabled": true,
-            "max_entry": 25
-          }
-        },
-        {
-          "name": "VIX < 30",
-          "value": {
-            "enabled": true,
-            "max_entry": 30
-          }
-        },
-        {
-          "name": "VIX < 35",
-          "value": {
-            "enabled": true,
-            "max_entry": 35
-          }
+          "name": "1.5x avg (proven on MR)",
+          "value": 1.5
         }
       ]
     }
   },
   "outputs": {
-    "filter_param": "vix_filter",
+    "filter_param": "volume_min_ratio",
     "mode": "multi_variant",
     "baseline": {
-      "total_trades": 95,
-      "cagr_pct": 0.4974,
-      "sharpe": -1.4617,
-      "sortino": -1.868,
+      "total_trades": 100,
+      "cagr_pct": 1.0161,
+      "sharpe": -1.2688,
+      "sortino": -1.6324,
       "max_drawdown_pct": 4.539,
-      "win_rate_pct": 51.58,
-      "profit_factor": 1.1427,
-      "total_pnl": 72.62,
-      "avg_trade": 0.76,
-      "final_equity": 4038.33,
-      "expectancy_r": 0.0658,
-      "avg_r": 0.0658,
-      "r_count": 95,
-      "edge_p_value": 0.475122,
+      "win_rate_pct": 52.0,
+      "profit_factor": 1.1416,
+      "total_pnl": 75.28,
+      "avg_trade": 0.75,
+      "final_equity": 4082.1,
+      "expectancy_r": 0.0625,
+      "avg_r": 0.0625,
+      "r_count": 100,
+      "edge_p_value": 0.475391,
       "edge_significant": false,
       "var_95_pct": 0.314,
-      "cvar_95_pct": 0.484,
-      "calmar": 0.1096,
-      "mc_p95_drawdown_pct": 4.49,
+      "cvar_95_pct": 0.487,
+      "calmar": 0.2239,
+      "mc_p95_drawdown_pct": 4.38,
       "mc_fragile": false,
       "strategy_breakdown": {
         "trend_following": {
-          "trades": 59,
-          "total_pnl": -27.25,
-          "win_rate_pct": 45.8
+          "trades": 63,
+          "total_pnl": -13.63,
+          "win_rate_pct": 46.0
         },
         "mean_reversion": {
-          "trades": 33,
-          "total_pnl": 92.53,
-          "win_rate_pct": 60.6
+          "trades": 34,
+          "total_pnl": 81.57,
+          "win_rate_pct": 61.8
         },
         "opening_gap": {
           "trades": 3,
@@ -442,36 +401,36 @@
     },
     "variants": [
       {
-        "total_trades": 95,
-        "cagr_pct": 0.4974,
-        "sharpe": -1.4617,
-        "sortino": -1.868,
+        "total_trades": 100,
+        "cagr_pct": 1.0161,
+        "sharpe": -1.2688,
+        "sortino": -1.6324,
         "max_drawdown_pct": 4.539,
-        "win_rate_pct": 51.58,
-        "profit_factor": 1.1427,
-        "total_pnl": 72.62,
-        "avg_trade": 0.76,
-        "final_equity": 4038.33,
-        "expectancy_r": 0.0658,
-        "avg_r": 0.0658,
-        "r_count": 95,
-        "edge_p_value": 0.475122,
+        "win_rate_pct": 52.0,
+        "profit_factor": 1.1416,
+        "total_pnl": 75.28,
+        "avg_trade": 0.75,
+        "final_equity": 4082.1,
+        "expectancy_r": 0.0625,
+        "avg_r": 0.0625,
+        "r_count": 100,
+        "edge_p_value": 0.475391,
         "edge_significant": false,
         "var_95_pct": 0.314,
-        "cvar_95_pct": 0.484,
-        "calmar": 0.1096,
-        "mc_p95_drawdown_pct": 4.49,
+        "cvar_95_pct": 0.487,
+        "calmar": 0.2239,
+        "mc_p95_drawdown_pct": 4.38,
         "mc_fragile": false,
         "strategy_breakdown": {
           "trend_following": {
-            "trades": 59,
-            "total_pnl": -27.25,
-            "win_rate_pct": 45.8
+            "trades": 63,
+            "total_pnl": -13.63,
+            "win_rate_pct": 46.0
           },
           "mean_reversion": {
-            "trades": 33,
-            "total_pnl": 92.53,
-            "win_rate_pct": 60.6
+            "trades": 34,
+            "total_pnl": 81.57,
+            "win_rate_pct": 61.8
           },
           "opening_gap": {
             "trades": 3,
@@ -479,174 +438,40 @@
             "win_rate_pct": 66.7
           }
         },
-        "variant_name": "baseline (disabled)",
-        "variant_value": {
-          "enabled": false
-        }
+        "variant_name": "baseline (0.5x \u2014 current)",
+        "variant_value": 0.5
       },
       {
-        "total_trades": 80,
-        "cagr_pct": -1.0969,
-        "sharpe": -2.1511,
-        "sortino": -2.6435,
-        "max_drawdown_pct": 5.6659,
-        "win_rate_pct": 50.0,
-        "profit_factor": 0.8462,
-        "total_pnl": -76.43,
-        "avg_trade": -0.96,
-        "final_equity": 3916.1,
-        "expectancy_r": -0.0292,
-        "avg_r": -0.0292,
-        "r_count": 80,
-        "edge_p_value": 0.771418,
-        "edge_significant": false,
-        "var_95_pct": 0.32,
-        "cvar_95_pct": 0.468,
-        "calmar": -0.1936,
-        "mc_p95_drawdown_pct": 5.72,
-        "mc_fragile": false,
-        "strategy_breakdown": {
-          "trend_following": {
-            "trades": 58,
-            "total_pnl": -80.16,
-            "win_rate_pct": 46.6
-          },
-          "mean_reversion": {
-            "trades": 19,
-            "total_pnl": -3.61,
-            "win_rate_pct": 57.9
-          },
-          "opening_gap": {
-            "trades": 3,
-            "total_pnl": 7.34,
-            "win_rate_pct": 66.7
-          }
-        },
-        "variant_name": "VIX < 20",
-        "variant_value": {
-          "enabled": true,
-          "max_entry": 20
-        }
-      },
-      {
-        "total_trades": 92,
-        "cagr_pct": 0.2022,
-        "sharpe": -1.603,
-        "sortino": -2.0484,
-        "max_drawdown_pct": 4.299,
-        "win_rate_pct": 50.0,
-        "profit_factor": 1.1022,
-        "total_pnl": 49.85,
-        "avg_trade": 0.54,
-        "final_equity": 4015.56,
-        "expectancy_r": 0.0495,
-        "avg_r": 0.0495,
-        "r_count": 92,
-        "edge_p_value": 0.589891,
-        "edge_significant": false,
-        "var_95_pct": 0.313,
-        "cvar_95_pct": 0.473,
-        "calmar": 0.047,
-        "mc_p95_drawdown_pct": 4.49,
-        "mc_fragile": false,
-        "strategy_breakdown": {
-          "trend_following": {
-            "trades": 58,
-            "total_pnl": -55.15,
-            "win_rate_pct": 46.6
-          },
-          "mean_reversion": {
-            "trades": 31,
-            "total_pnl": 97.66,
-            "win_rate_pct": 54.8
-          },
-          "opening_gap": {
-            "trades": 3,
-            "total_pnl": 7.34,
-            "win_rate_pct": 66.7
-          }
-        },
-        "variant_name": "VIX < 25",
-        "variant_value": {
-          "enabled": true,
-          "max_entry": 25
-        }
-      },
-      {
-        "total_trades": 92,
-        "cagr_pct": 0.6795,
-        "sharpe": -1.4226,
-        "sortino": -1.8364,
-        "max_drawdown_pct": 4.1954,
-        "win_rate_pct": 51.09,
-        "profit_factor": 1.1768,
-        "total_pnl": 86.68,
-        "avg_trade": 0.94,
-        "final_equity": 4052.4,
-        "expectancy_r": 0.0749,
-        "avg_r": 0.0749,
-        "r_count": 92,
-        "edge_p_value": 0.426544,
-        "edge_significant": false,
-        "var_95_pct": 0.312,
-        "cvar_95_pct": 0.472,
-        "calmar": 0.162,
-        "mc_p95_drawdown_pct": 4.35,
-        "mc_fragile": false,
-        "strategy_breakdown": {
-          "trend_following": {
-            "trades": 59,
-            "total_pnl": -27.25,
-            "win_rate_pct": 45.8
-          },
-          "mean_reversion": {
-            "trades": 30,
-            "total_pnl": 106.59,
-            "win_rate_pct": 60.0
-          },
-          "opening_gap": {
-            "trades": 3,
-            "total_pnl": 7.34,
-            "win_rate_pct": 66.7
-          }
-        },
-        "variant_name": "VIX < 30",
-        "variant_value": {
-          "enabled": true,
-          "max_entry": 30
-        }
-      },
-      {
-        "total_trades": 93,
-        "cagr_pct": 0.4372,
-        "sharpe": -1.4871,
-        "sortino": -1.8987,
-        "max_drawdown_pct": 4.6528,
-        "win_rate_pct": 50.54,
-        "profit_factor": 1.1335,
-        "total_pnl": 67.96,
-        "avg_trade": 0.73,
-        "final_equity": 4033.68,
-        "expectancy_r": 0.0624,
-        "avg_r": 0.0624,
-        "r_count": 93,
-        "edge_p_value": 0.506884,
+        "total_trades": 100,
+        "cagr_pct": 1.0161,
+        "sharpe": -1.2688,
+        "sortino": -1.6324,
+        "max_drawdown_pct": 4.539,
+        "win_rate_pct": 52.0,
+        "profit_factor": 1.1416,
+        "total_pnl": 75.28,
+        "avg_trade": 0.75,
+        "final_equity": 4082.1,
+        "expectancy_r": 0.0625,
+        "avg_r": 0.0625,
+        "r_count": 100,
+        "edge_p_value": 0.475391,
         "edge_significant": false,
         "var_95_pct": 0.314,
-        "cvar_95_pct": 0.484,
-        "calmar": 0.094,
-        "mc_p95_drawdown_pct": 4.46,
+        "cvar_95_pct": 0.487,
+        "calmar": 0.2239,
+        "mc_p95_drawdown_pct": 4.38,
         "mc_fragile": false,
         "strategy_breakdown": {
           "trend_following": {
-            "trades": 59,
-            "total_pnl": -27.25,
-            "win_rate_pct": 45.8
+            "trades": 63,
+            "total_pnl": -13.63,
+            "win_rate_pct": 46.0
           },
           "mean_reversion": {
-            "trades": 31,
-            "total_pnl": 87.87,
-            "win_rate_pct": 58.1
+            "trades": 34,
+            "total_pnl": 81.57,
+            "win_rate_pct": 61.8
           },
           "opening_gap": {
             "trades": 3,
@@ -654,45 +479,83 @@
             "win_rate_pct": 66.7
           }
         },
-        "variant_name": "VIX < 35",
-        "variant_value": {
-          "enabled": true,
-          "max_entry": 35
-        }
+        "variant_name": "1.0x avg",
+        "variant_value": 1.0
+      },
+      {
+        "total_trades": 100,
+        "cagr_pct": 1.0161,
+        "sharpe": -1.2688,
+        "sortino": -1.6324,
+        "max_drawdown_pct": 4.539,
+        "win_rate_pct": 52.0,
+        "profit_factor": 1.1416,
+        "total_pnl": 75.28,
+        "avg_trade": 0.75,
+        "final_equity": 4082.1,
+        "expectancy_r": 0.0625,
+        "avg_r": 0.0625,
+        "r_count": 100,
+        "edge_p_value": 0.475391,
+        "edge_significant": false,
+        "var_95_pct": 0.314,
+        "cvar_95_pct": 0.487,
+        "calmar": 0.2239,
+        "mc_p95_drawdown_pct": 4.38,
+        "mc_fragile": false,
+        "strategy_breakdown": {
+          "trend_following": {
+            "trades": 63,
+            "total_pnl": -13.63,
+            "win_rate_pct": 46.0
+          },
+          "mean_reversion": {
+            "trades": 34,
+            "total_pnl": 81.57,
+            "win_rate_pct": 61.8
+          },
+          "opening_gap": {
+            "trades": 3,
+            "total_pnl": 7.34,
+            "win_rate_pct": 66.7
+          }
+        },
+        "variant_name": "1.5x avg (proven on MR)",
+        "variant_value": 1.5
       }
     ],
-    "best_variant": "VIX < 30",
+    "best_variant": "baseline (0.5x \u2014 current)",
     "best_metrics": {
-      "total_trades": 92,
-      "cagr_pct": 0.6795,
-      "sharpe": -1.4226,
-      "sortino": -1.8364,
-      "max_drawdown_pct": 4.1954,
-      "win_rate_pct": 51.09,
-      "profit_factor": 1.1768,
-      "total_pnl": 86.68,
-      "avg_trade": 0.94,
-      "final_equity": 4052.4,
-      "expectancy_r": 0.0749,
-      "avg_r": 0.0749,
-      "r_count": 92,
-      "edge_p_value": 0.426544,
+      "total_trades": 100,
+      "cagr_pct": 1.0161,
+      "sharpe": -1.2688,
+      "sortino": -1.6324,
+      "max_drawdown_pct": 4.539,
+      "win_rate_pct": 52.0,
+      "profit_factor": 1.1416,
+      "total_pnl": 75.28,
+      "avg_trade": 0.75,
+      "final_equity": 4082.1,
+      "expectancy_r": 0.0625,
+      "avg_r": 0.0625,
+      "r_count": 100,
+      "edge_p_value": 0.475391,
       "edge_significant": false,
-      "var_95_pct": 0.312,
-      "cvar_95_pct": 0.472,
-      "calmar": 0.162,
-      "mc_p95_drawdown_pct": 4.35,
+      "var_95_pct": 0.314,
+      "cvar_95_pct": 0.487,
+      "calmar": 0.2239,
+      "mc_p95_drawdown_pct": 4.38,
       "mc_fragile": false,
       "strategy_breakdown": {
         "trend_following": {
-          "trades": 59,
-          "total_pnl": -27.25,
-          "win_rate_pct": 45.8
+          "trades": 63,
+          "total_pnl": -13.63,
+          "win_rate_pct": 46.0
         },
         "mean_reversion": {
-          "trades": 30,
-          "total_pnl": 106.59,
-          "win_rate_pct": 60.0
+          "trades": 34,
+          "total_pnl": 81.57,
+          "win_rate_pct": 61.8
         },
         "opening_gap": {
           "trades": 3,
@@ -700,24 +563,20 @@
           "win_rate_pct": 66.7
         }
       },
-      "variant_name": "VIX < 30",
-      "variant_value": {
-        "enabled": true,
-        "max_entry": 30
-      }
+      "variant_name": "baseline (0.5x \u2014 current)",
+      "variant_value": 0.5
     },
     "strategy": null,
     "market": "sp500"
   },
   "metadata": {
-    "agent_id": "atlas-vix",
-    "started_at": "2026-03-03T08:20:13.405894+00:00",
-    "finished_at": "2026-03-03T08:45:22.257806+00:00",
-    "runtime_s": 0,
-    "error": "Expecting value: line 955 column 18 (char 32632)"
+    "agent_id": "atlas-research",
+    "started_at": "2026-03-03T23:59:36.490797+00:00",
+    "finished_at": "2026-03-04T00:18:22.130750+00:00",
+    "runtime_s": 0
   },
   "verdict": "fail",
-  "verdict_rationale": "Expecting value: line 955 column 18 (char 32632)",
+  "verdict_rationale": "All 4 criteria failed: sharpe_improvement: metric not found; max_dd_increase_pp: metric not found; min_trades: 100.0000 < 150; edge_p_value: 0.4754 >= 0.05 (edge not statistically significant)",
   "learnings": [],
   "promoted": false,
   "candidate_config_path": null

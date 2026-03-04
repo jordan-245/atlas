@@ -14,7 +14,7 @@
     },
     "estimated_runtime_min": 20,
     "priority": "P2",
-    "status": "queued",
+    "status": "failed",
     "strategy_name": null,
     "params_override": {
       "filter_param": "volume_min_ratio",
@@ -34,10 +34,10 @@
       ]
     },
     "config_snapshot": null,
-    "claimed_by": null,
-    "claimed_at": null,
+    "claimed_by": "atlas-research",
+    "claimed_at": "2026-03-03T23:59:36.488828+00:00",
     "created_at": "2026-03-03T01:33:08.718946+00:00",
-    "updated_at": "2026-03-03T01:33:08.718960+00:00",
+    "updated_at": "2026-03-04T00:18:22.131687+00:00",
     "tags": [
       "wave2",
       "filter",
@@ -64,7 +64,7 @@
     },
     "estimated_runtime_min": 15,
     "priority": "P2",
-    "status": "queued",
+    "status": "failed",
     "strategy_name": "connors_rsi2",
     "params_override": {
       "connors_rsi2": {
@@ -81,10 +81,10 @@
       }
     },
     "config_snapshot": null,
-    "claimed_by": null,
-    "claimed_at": null,
+    "claimed_by": "atlas-research",
+    "claimed_at": "2026-03-04T01:31:26.300450+00:00",
     "created_at": "2026-03-03T01:33:08.718967+00:00",
-    "updated_at": "2026-03-03T01:33:08.718969+00:00",
+    "updated_at": "2026-03-04T01:35:07.878164+00:00",
     "tags": [
       "wave2",
       "new_strategy",
@@ -109,7 +109,7 @@
     },
     "estimated_runtime_min": 60,
     "priority": "P3",
-    "status": "queued",
+    "status": "deferred",
     "strategy_name": "connors_rsi2",
     "params_override": {
       "optimize_params": {
@@ -147,7 +147,7 @@
     "claimed_by": null,
     "claimed_at": null,
     "created_at": "2026-03-03T01:33:08.718974+00:00",
-    "updated_at": "2026-03-03T01:33:08.718976+00:00",
+    "updated_at": "2026-03-04T01:35:07.899130+00:00",
     "tags": [
       "wave2",
       "new_strategy",
@@ -157,7 +157,7 @@
     "depends_on": [
       "wave2_rsi2_solo"
     ],
-    "notes": "Optimization grid: 4\u00d74\u00d74\u00d74\u00d72 = 512 combinations. Use coordinate descent."
+    "notes": "[auto-deferred] rsi2_solo failed: ConnorsRSI2 unprofitable solo. Need tighter stops or higher equity before optimization."
   },
   {
     "id": "wave2_rsi2_combined",
@@ -174,7 +174,7 @@
     },
     "estimated_runtime_min": 30,
     "priority": "P2",
-    "status": "queued",
+    "status": "deferred",
     "strategy_name": "connors_rsi2",
     "params_override": {
       "connors_rsi2": {
@@ -187,7 +187,7 @@
     "claimed_by": null,
     "claimed_at": null,
     "created_at": "2026-03-03T01:33:08.718980+00:00",
-    "updated_at": "2026-03-03T01:33:08.718981+00:00",
+    "updated_at": "2026-03-04T01:35:07.901186+00:00",
     "tags": [
       "wave2",
       "new_strategy",
@@ -197,7 +197,7 @@
     "depends_on": [
       "wave2_rsi2_opt"
     ],
-    "notes": "CRITICAL: Wave 1 showed ALL dormant strategies fail combined test due to position contention. RSI(2) has shorter holds (3-5d vs 10-20d for others) which should mitigate this. If it still fails, test with allocation pools."
+    "notes": "[auto-deferred] dependency chain: rsi2_solo\u2192rsi2_opt failed"
   },
   {
     "id": "wave2_rsi2_oos",
@@ -213,7 +213,7 @@
     },
     "estimated_runtime_min": 45,
     "priority": "P2",
-    "status": "queued",
+    "status": "deferred",
     "strategy_name": "connors_rsi2",
     "params_override": {
       "_use_combined_config": true,
@@ -223,7 +223,7 @@
     "claimed_by": null,
     "claimed_at": null,
     "created_at": "2026-03-03T01:33:08.718984+00:00",
-    "updated_at": "2026-03-03T01:33:08.718985+00:00",
+    "updated_at": "2026-03-04T01:35:07.903109+00:00",
     "tags": [
       "wave2",
       "new_strategy",
@@ -234,7 +234,7 @@
     "depends_on": [
       "wave2_rsi2_combined"
     ],
-    "notes": "If this passes, generate candidate config for human approval."
+    "notes": "[auto-deferred] dependency chain: rsi2_solo\u2192rsi2_opt\u2192rsi2_combined failed"
   },
   {
     "id": "wave2_vol_promotion",
@@ -250,7 +250,7 @@
     },
     "estimated_runtime_min": 45,
     "priority": "P2",
-    "status": "queued",
+    "status": "deferred",
     "strategy_name": null,
     "params_override": {
       "volume_min_ratio": 1.5,
@@ -260,7 +260,7 @@
     "claimed_by": null,
     "claimed_at": null,
     "created_at": "2026-03-03T01:33:08.718988+00:00",
-    "updated_at": "2026-03-03T01:33:08.718990+00:00",
+    "updated_at": "2026-03-04T00:18:22.139110+00:00",
     "tags": [
       "wave2",
       "filter",
@@ -271,7 +271,7 @@
     "depends_on": [
       "wave2_vol_combined"
     ],
-    "notes": "If wave2_vol_combined passes AND this OOS passes, create candidate config at config/candidates/sp500_wave2_vol.json. Promote to v2.3 after human approval."
+    "notes": "If wave2_vol_combined passes AND this OOS passes, create candidate config at config/candidates/sp500_wave2_vol.json. Promote to v2.3 after human approval.\n[auto-deferred] Dependency failed: ['wave2_vol_combined']"
   },
   {
     "id": "wave2_exit_mr",
@@ -287,39 +287,23 @@
     },
     "estimated_runtime_min": 20,
     "priority": "P3",
-    "status": "queued",
+    "status": "failed",
     "strategy_name": "mean_reversion",
     "params_override": {
-      "sweep_params": {
-        "exit_method": [
-          {
-            "name": "baseline (MA+ATR)",
-            "type": "current"
-          },
-          {
-            "name": "RSI(2)>65 exit",
-            "rsi_exit_threshold": 65
-          },
-          {
-            "name": "RSI(2)>70 exit",
-            "rsi_exit_threshold": 70
-          },
-          {
-            "name": "time_only_5d",
-            "max_hold_days": 5
-          },
-          {
-            "name": "time_only_7d",
-            "max_hold_days": 7
-          }
-        ]
-      }
+      "sweep_param": "max_hold_days",
+      "sweep_values": [
+        3,
+        5,
+        7,
+        10,
+        15
+      ]
     },
     "config_snapshot": null,
-    "claimed_by": null,
-    "claimed_at": null,
+    "claimed_by": "atlas-research",
+    "claimed_at": "2026-03-04T00:38:53.156477+00:00",
     "created_at": "2026-03-03T01:33:08.718993+00:00",
-    "updated_at": "2026-03-03T01:33:08.718994+00:00",
+    "updated_at": "2026-03-04T00:57:46.482504+00:00",
     "tags": [
       "wave2",
       "exit_optimization",
@@ -342,39 +326,23 @@
     },
     "estimated_runtime_min": 15,
     "priority": "P3",
-    "status": "queued",
+    "status": "failed",
     "strategy_name": "opening_gap",
     "params_override": {
-      "sweep_params": {
-        "exit_method": [
-          {
-            "name": "baseline (SMA5+IBS0.8)",
-            "type": "current"
-          },
-          {
-            "name": "IBS>0.85 only",
-            "ibs_exit_threshold": 0.85
-          },
-          {
-            "name": "IBS>0.9 only",
-            "ibs_exit_threshold": 0.9
-          },
-          {
-            "name": "max_hold_3d",
-            "max_hold_days": 3
-          },
-          {
-            "name": "max_hold_5d",
-            "max_hold_days": 5
-          }
-        ]
-      }
+      "sweep_param": "max_hold_days",
+      "sweep_values": [
+        2,
+        3,
+        5,
+        7,
+        10
+      ]
     },
     "config_snapshot": null,
-    "claimed_by": null,
-    "claimed_at": null,
+    "claimed_by": "atlas-research",
+    "claimed_at": "2026-03-04T00:57:46.493081+00:00",
     "created_at": "2026-03-03T01:33:08.718997+00:00",
-    "updated_at": "2026-03-03T01:33:08.718998+00:00",
+    "updated_at": "2026-03-04T01:03:49.438101+00:00",
     "tags": [
       "wave2",
       "exit_optimization",
@@ -396,30 +364,23 @@
     },
     "estimated_runtime_min": 20,
     "priority": "P3",
-    "status": "queued",
+    "status": "failed",
     "strategy_name": "trend_following",
     "params_override": {
-      "sweep_params": {
-        "trailing_stop_atr_mult": [
-          2.0,
-          2.5,
-          3.0,
-          3.5,
-          4.0
-        ],
-        "max_hold_days": [
-          10,
-          15,
-          20,
-          25
-        ]
-      }
+      "sweep_param": "trailing_stop_atr_mult",
+      "sweep_values": [
+        2.0,
+        2.5,
+        3.0,
+        3.5,
+        4.0
+      ]
     },
     "config_snapshot": null,
-    "claimed_by": null,
-    "claimed_at": null,
+    "claimed_by": "atlas-research",
+    "claimed_at": "2026-03-04T01:03:49.449219+00:00",
     "created_at": "2026-03-03T01:33:08.719005+00:00",
-    "updated_at": "2026-03-03T01:33:08.719006+00:00",
+    "updated_at": "2026-03-04T01:12:19.123686+00:00",
     "tags": [
       "wave2",
       "exit_optimization",
@@ -442,7 +403,7 @@
     },
     "estimated_runtime_min": 20,
     "priority": "P4",
-    "status": "queued",
+    "status": "partial",
     "strategy_name": null,
     "params_override": {
       "filter_param": "turn_of_month",
@@ -465,10 +426,10 @@
       ]
     },
     "config_snapshot": null,
-    "claimed_by": null,
-    "claimed_at": null,
+    "claimed_by": "atlas-research",
+    "claimed_at": "2026-03-04T01:12:19.136108+00:00",
     "created_at": "2026-03-03T01:33:08.719010+00:00",
-    "updated_at": "2026-03-03T01:33:08.719011+00:00",
+    "updated_at": "2026-03-04T01:30:16.627435+00:00",
     "tags": [
       "wave2",
       "filter",

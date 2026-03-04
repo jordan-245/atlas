@@ -33,10 +33,10 @@
       }
     },
     "config_snapshot": null,
-    "claimed_by": "atlas-wave2",
-    "claimed_at": "2026-03-03T07:37:05.169900+00:00",
+    "claimed_by": "atlas-research",
+    "claimed_at": "2026-03-04T01:31:26.300450+00:00",
     "created_at": "2026-03-03T01:33:08.718967+00:00",
-    "updated_at": "2026-03-03T07:37:05.169914+00:00",
+    "updated_at": "2026-03-04T01:31:26.300466+00:00",
     "tags": [
       "wave2",
       "new_strategy",
@@ -351,14 +351,69 @@
       }
     }
   },
-  "outputs": null,
-  "metadata": {
-    "agent_id": "atlas-wave2",
-    "started_at": "2026-03-03T07:37:05.172973+00:00",
-    "error": "Unknown strategy: connors_rsi2. Available: ['mean_reversion', 'trend_following', 'bb_squeeze', 'opening_gap', 'momentum_breakout', 'short_term_mr', 'sector_rotation', 'mtf_momentum', 'dividend_capture']"
+  "outputs": {
+    "experiment_id": "wave2_rsi2_solo",
+    "strategy": "connors_rsi2",
+    "market": "sp500",
+    "mode": "solo",
+    "params_override": {
+      "connors_rsi2": {
+        "enabled": true,
+        "rsi_period": 2,
+        "rsi_entry": 10,
+        "sma_trend_period": 200,
+        "sma200_filter": true,
+        "sma_exit_period": 5,
+        "exit_mode": "sma",
+        "max_hold_days": 10,
+        "atr_period": 14,
+        "atr_stop_mult": 3.0
+      }
+    },
+    "n_tickers": 284,
+    "config_version": "v2.2",
+    "timestamp": "2026-03-04T01:31:27.716089+00:00",
+    "solo": {
+      "total_trades": 249,
+      "cagr_pct": -2.0571,
+      "sharpe": -2.6257,
+      "sortino": -3.1036,
+      "max_drawdown_pct": 6.8598,
+      "win_rate_pct": 57.03,
+      "profit_factor": 0.7837,
+      "total_pnl": -166.19,
+      "avg_trade": -0.67,
+      "final_equity": 3836.36,
+      "expectancy_r": -0.0361,
+      "avg_r": -0.0361,
+      "r_count": 249,
+      "edge_p_value": 0.265912,
+      "edge_significant": false,
+      "var_95_pct": 0.244,
+      "cvar_95_pct": 0.429,
+      "calmar": -0.2999,
+      "mc_p95_drawdown_pct": 7.25,
+      "mc_fragile": false,
+      "strategy_breakdown": {
+        "connors_rsi2": {
+          "trades": 249,
+          "total_pnl": -166.19,
+          "win_rate_pct": 57.0
+        }
+      }
+    },
+    "runtime_s": 163.3,
+    "output_path": "/root/atlas/research/experiments/eval-wave2_rsi2_solo.json"
   },
-  "verdict": "fail",
-  "verdict_rationale": "Unknown strategy: connors_rsi2. Available: ['mean_reversion', 'trend_following', 'bb_squeeze', 'opening_gap', 'momentum_breakout', 'short_term_mr', 'sector_rotation', 'mtf_momentum', 'dividend_capture']",
+  "metadata": {
+    "agent_id": "atlas-research",
+    "started_at": "2026-03-04T01:31:26.305983+00:00",
+    "retries": 0,
+    "finished_at": "2026-03-04T01:34:10.252263+00:00",
+    "runtime_s": 163.3
+  },
+  "verdict": "partial",
+  "verdict_rationale": "2 pass, 3 fail: min_sharpe: -2.6257 < 0.0; min_profit_factor: 0.7837 < 1.1; edge_p_value: 0.2659 >= 0.05 (edge not statistically significant)",
   "learnings": [],
   "promoted": false,
   "candidate_config_path": null

@@ -107,3 +107,15 @@ Below 1.0x: minimal improvement. At 1.5x: MR Sharpe -0.02→0.38, PF 1.30→1.62
 
 ### 29. Sector rotation needs rebalance-aware backtest support
 Standard walk-forward engine treats sector rotation as a signal-per-bar strategy. It rebalances every N days, so results with standard engine are unreliable. Don't promote sector rotation results from the current engine until rebalance-aware support is added.
+
+### 30. Solo param sweeps are unreliable at low equity
+With $4K starting equity, ALL strategies show negative Sharpe in solo mode due to fee drag ($10 round-trip on $75-180 stocks). Combined portfolio has Sharpe 0.87. Solo sweeps only give relative rankings (e.g., hold=10 > hold=15), not absolute quality. Use combined-mode sweeps for promotion decisions.
+
+### 31. filter_test doesn't support nested config params
+filter_test sets `s_cfg[filter_param] = value` but many strategy params are nested (e.g., `volume.min_ratio`). Setting `volume_min_ratio` at top level is ignored. Fix: support dot-path params or deep-merge dicts. Same issue for any new filter type (TOM, regime, etc.)
+
+### 32. New strategies accumulate calc_position_size dict bugs
+`calc_position_size()` returns a dict `{shares: N, ...}`, not an int. New strategy code (e.g., connors_rsi2) compared `dict <= 0` which throws TypeError in Python 3.12+ or ambiguous comparison error. Always extract `pos_result["shares"]`.
+
+### 33. Parallel research runner has file locking issues
+`run_wave2_parallel.py` with ProcessPoolExecutor causes concurrent writes to queue.json and journal.json. Updates are lost silently. Sequential `--run-all` works correctly. Fix parallel runner's file locking before using it for production runs.

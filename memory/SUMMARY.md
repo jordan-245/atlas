@@ -60,7 +60,9 @@ scripts/pi-cron.sh recover postclose sp500
 
 - **Wave 1** (Dormant Strategy Activation): 23/24 resolved. **2 promoted** (SMA-200 to SP500 v2.1, ASX reopt to v9.3).
 - **Root finding:** Position contention (max_pos=10) blocked all dormant strategies. Allocation pools built (Task #52) as the unlock mechanism.
-- **Wave 2** (Enhanced Mean Reversion Alpha): 10 experiments queued. Theme: Connors RSI(2) new strategy + volume filter promotion + exit optimization.
-  - **New strategy:** `strategies/connors_rsi2.py` implemented (RSI period=2, SMA-200 filter, SMA(5) exit). Registered in CLI + config.
-  - **Dependency chains:** vol_combined→vol_promotion | rsi2_solo→opt→combined→oos | exit_mr, exit_og, chandelier_tf (independent) | tom_filter (exploratory)
-  - **Expected promotions:** Volume 1.5x filter → v2.3, ConnorsRSI(2) → v2.4
+- **Wave 2** (Enhanced MR Alpha): Batch 1 complete (6/10). **0 promotions.** 4 failed, 2 infra failures, 4 deferred.
+  - **ConnorsRSI2 solo FAILED** — Sharpe -2.63, PF 0.78 (losses > wins). Code bugs fixed (position_size dict, vol_ratio Series).
+  - **Param sweeps FAILED** — All solo strategies show negative Sharpe at $4K equity. Relative rankings useful but absolute values misleading.
+  - **Filter tests BROKEN** — filter_test can't handle nested config params (volume.min_ratio) or unimplemented filters (TOM).
+  - **Blockers:** Task #68 (filter infrastructure), Task #69 (combined-mode param sweep). Parallel runner file locking (Task #33 lesson).
+  - **Next:** Fix infrastructure, then re-run vol_combined + tom_filter + rsi2 chain with proper params.

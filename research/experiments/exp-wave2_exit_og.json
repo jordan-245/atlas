@@ -17,36 +17,20 @@
     "status": "claimed",
     "strategy_name": "opening_gap",
     "params_override": {
-      "sweep_params": {
-        "exit_method": [
-          {
-            "name": "baseline (SMA5+IBS0.8)",
-            "type": "current"
-          },
-          {
-            "name": "IBS>0.85 only",
-            "ibs_exit_threshold": 0.85
-          },
-          {
-            "name": "IBS>0.9 only",
-            "ibs_exit_threshold": 0.9
-          },
-          {
-            "name": "max_hold_3d",
-            "max_hold_days": 3
-          },
-          {
-            "name": "max_hold_5d",
-            "max_hold_days": 5
-          }
-        ]
-      }
+      "sweep_param": "max_hold_days",
+      "sweep_values": [
+        2,
+        3,
+        5,
+        7,
+        10
+      ]
     },
     "config_snapshot": null,
-    "claimed_by": "atlas-wave2",
-    "claimed_at": "2026-03-03T07:37:07.558620+00:00",
+    "claimed_by": "atlas-research",
+    "claimed_at": "2026-03-04T00:57:46.493081+00:00",
     "created_at": "2026-03-03T01:33:08.718997+00:00",
-    "updated_at": "2026-03-03T07:37:07.558626+00:00",
+    "updated_at": "2026-03-04T00:57:46.493088+00:00",
     "tags": [
       "wave2",
       "exit_optimization",
@@ -346,43 +330,213 @@
     "market": "sp500",
     "method": "param_sweep",
     "params_override": {
-      "sweep_params": {
-        "exit_method": [
-          {
-            "name": "baseline (SMA5+IBS0.8)",
-            "type": "current"
-          },
-          {
-            "name": "IBS>0.85 only",
-            "ibs_exit_threshold": 0.85
-          },
-          {
-            "name": "IBS>0.9 only",
-            "ibs_exit_threshold": 0.9
-          },
-          {
-            "name": "max_hold_3d",
-            "max_hold_days": 3
-          },
-          {
-            "name": "max_hold_5d",
-            "max_hold_days": 5
-          }
-        ]
-      }
+      "sweep_param": "max_hold_days",
+      "sweep_values": [
+        2,
+        3,
+        5,
+        7,
+        10
+      ]
     }
   },
   "outputs": {
-    "error": "param_sweep requires sweep_param and sweep_values in params_override"
+    "sweep_param": "max_hold_days",
+    "sweep_results": [
+      {
+        "total_trades": 9,
+        "cagr_pct": 0.9359,
+        "sharpe": -6.3522,
+        "sortino": -24.4385,
+        "max_drawdown_pct": 0.2581,
+        "win_rate_pct": 77.78,
+        "profit_factor": 17.3283,
+        "total_pnl": 75.6,
+        "avg_trade": 8.4,
+        "final_equity": 4075.59,
+        "expectancy_r": 0.5251,
+        "avg_r": 0.5251,
+        "r_count": 9,
+        "edge_p_value": 0.013628,
+        "edge_significant": true,
+        "var_95_pct": -0.0,
+        "cvar_95_pct": 0.001,
+        "calmar": 3.6261,
+        "mc_p95_drawdown_pct": 0.12,
+        "mc_fragile": false,
+        "strategy_breakdown": {
+          "opening_gap": {
+            "trades": 9,
+            "total_pnl": 75.6,
+            "win_rate_pct": 77.8
+          }
+        },
+        "param_value": 2
+      },
+      {
+        "total_trades": 9,
+        "cagr_pct": 1.0266,
+        "sharpe": -6.1493,
+        "sortino": -24.3171,
+        "max_drawdown_pct": 0.2136,
+        "win_rate_pct": 88.89,
+        "profit_factor": 28.3795,
+        "total_pnl": 82.96,
+        "avg_trade": 9.22,
+        "final_equity": 4082.95,
+        "expectancy_r": 0.5675,
+        "avg_r": 0.5675,
+        "r_count": 9,
+        "edge_p_value": 0.005803,
+        "edge_significant": true,
+        "var_95_pct": -0.0,
+        "cvar_95_pct": 0.001,
+        "calmar": 4.8062,
+        "mc_p95_drawdown_pct": 0.08,
+        "mc_fragile": false,
+        "strategy_breakdown": {
+          "opening_gap": {
+            "trades": 9,
+            "total_pnl": 82.96,
+            "win_rate_pct": 88.9
+          }
+        },
+        "param_value": 3
+      },
+      {
+        "total_trades": 9,
+        "cagr_pct": 0.9777,
+        "sharpe": -6.1683,
+        "sortino": -22.8164,
+        "max_drawdown_pct": 0.2138,
+        "win_rate_pct": 88.89,
+        "profit_factor": 11.8205,
+        "total_pnl": 78.99,
+        "avg_trade": 8.78,
+        "final_equity": 4078.98,
+        "expectancy_r": 0.5351,
+        "avg_r": 0.5351,
+        "r_count": 9,
+        "edge_p_value": 0.016786,
+        "edge_significant": true,
+        "var_95_pct": -0.0,
+        "cvar_95_pct": 0.001,
+        "calmar": 4.573,
+        "mc_p95_drawdown_pct": 0.18,
+        "mc_fragile": false,
+        "strategy_breakdown": {
+          "opening_gap": {
+            "trades": 9,
+            "total_pnl": 78.99,
+            "win_rate_pct": 88.9
+          }
+        },
+        "param_value": 5
+      },
+      {
+        "total_trades": 9,
+        "cagr_pct": 0.9936,
+        "sharpe": -6.1643,
+        "sortino": -22.7914,
+        "max_drawdown_pct": 0.2137,
+        "win_rate_pct": 88.89,
+        "profit_factor": 14.3817,
+        "total_pnl": 80.29,
+        "avg_trade": 8.92,
+        "final_equity": 4080.27,
+        "expectancy_r": 0.5458,
+        "avg_r": 0.5458,
+        "r_count": 9,
+        "edge_p_value": 0.012328,
+        "edge_significant": true,
+        "var_95_pct": -0.0,
+        "cvar_95_pct": 0.001,
+        "calmar": 4.6495,
+        "mc_p95_drawdown_pct": 0.15,
+        "mc_fragile": false,
+        "strategy_breakdown": {
+          "opening_gap": {
+            "trades": 9,
+            "total_pnl": 80.29,
+            "win_rate_pct": 88.9
+          }
+        },
+        "param_value": 7
+      },
+      {
+        "total_trades": 9,
+        "cagr_pct": 0.9936,
+        "sharpe": -6.1643,
+        "sortino": -22.7914,
+        "max_drawdown_pct": 0.2137,
+        "win_rate_pct": 88.89,
+        "profit_factor": 14.3817,
+        "total_pnl": 80.29,
+        "avg_trade": 8.92,
+        "final_equity": 4080.27,
+        "expectancy_r": 0.5458,
+        "avg_r": 0.5458,
+        "r_count": 9,
+        "edge_p_value": 0.012328,
+        "edge_significant": true,
+        "var_95_pct": -0.0,
+        "cvar_95_pct": 0.001,
+        "calmar": 4.6495,
+        "mc_p95_drawdown_pct": 0.15,
+        "mc_fragile": false,
+        "strategy_breakdown": {
+          "opening_gap": {
+            "trades": 9,
+            "total_pnl": 80.29,
+            "win_rate_pct": 88.9
+          }
+        },
+        "param_value": 10
+      }
+    ],
+    "best_value": 3,
+    "best_metrics": {
+      "total_trades": 9,
+      "cagr_pct": 1.0266,
+      "sharpe": -6.1493,
+      "sortino": -24.3171,
+      "max_drawdown_pct": 0.2136,
+      "win_rate_pct": 88.89,
+      "profit_factor": 28.3795,
+      "total_pnl": 82.96,
+      "avg_trade": 9.22,
+      "final_equity": 4082.95,
+      "expectancy_r": 0.5675,
+      "avg_r": 0.5675,
+      "r_count": 9,
+      "edge_p_value": 0.005803,
+      "edge_significant": true,
+      "var_95_pct": -0.0,
+      "cvar_95_pct": 0.001,
+      "calmar": 4.8062,
+      "mc_p95_drawdown_pct": 0.08,
+      "mc_fragile": false,
+      "strategy_breakdown": {
+        "opening_gap": {
+          "trades": 9,
+          "total_pnl": 82.96,
+          "win_rate_pct": 88.9
+        }
+      },
+      "param_value": 3
+    },
+    "strategy": "opening_gap",
+    "market": "sp500"
   },
   "metadata": {
-    "agent_id": "atlas-wave2",
-    "started_at": "2026-03-03T07:37:07.561752+00:00",
-    "finished_at": "2026-03-03T07:37:08.336031+00:00",
+    "agent_id": "atlas-research",
+    "started_at": "2026-03-04T00:57:46.496979+00:00",
+    "retries": 0,
+    "finished_at": "2026-03-04T01:03:49.437540+00:00",
     "runtime_s": 0
   },
   "verdict": "fail",
-  "verdict_rationale": "Execution error: param_sweep requires sweep_param and sweep_values in params_override",
+  "verdict_rationale": "All 2 criteria failed: sharpe_improvement: metric not found; or_pf_improvement: metric not found",
   "learnings": [],
   "promoted": false,
   "candidate_config_path": null

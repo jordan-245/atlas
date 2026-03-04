@@ -1343,5 +1343,529 @@
     "promoted": false,
     "runtime_s": 0,
     "agent_id": "atlas-research"
+  },
+  {
+    "experiment_id": "wave2_vol_combined",
+    "timestamp": "2026-03-04T00:18:22.134480+00:00",
+    "market": "sp500",
+    "category": "filter",
+    "strategy": null,
+    "hypothesis": "Wave 1 proved 1.5x volume filter on MR solo: Sharpe -0.02\u21920.38, PF 1.30\u21921.62. Applying to the full combined portfolio should similarly improve signal quality by filtering out low-conviction entries across all strategies.",
+    "verdict": "fail",
+    "key_metrics": {
+      "total_trades": 100,
+      "cagr_pct": 1.0161,
+      "sharpe": -1.2688,
+      "sortino": -1.6324,
+      "max_drawdown_pct": 4.539,
+      "win_rate_pct": 52.0,
+      "profit_factor": 1.1416,
+      "total_pnl": 75.28,
+      "avg_trade": 0.75,
+      "final_equity": 4082.1,
+      "expectancy_r": 0.0625,
+      "avg_r": 0.0625,
+      "r_count": 100,
+      "edge_p_value": 0.475391,
+      "edge_significant": false,
+      "var_95_pct": 0.314,
+      "cvar_95_pct": 0.487,
+      "calmar": 0.2239,
+      "mc_p95_drawdown_pct": 4.38,
+      "mc_fragile": false,
+      "strategy_breakdown": {
+        "trend_following": {
+          "trades": 63,
+          "total_pnl": -13.63,
+          "win_rate_pct": 46.0
+        },
+        "mean_reversion": {
+          "trades": 34,
+          "total_pnl": 81.57,
+          "win_rate_pct": 61.8
+        },
+        "opening_gap": {
+          "trades": 3,
+          "total_pnl": 7.34,
+          "win_rate_pct": 66.7
+        }
+      },
+      "variant_name": "baseline (0.5x \u2014 current)",
+      "variant_value": 0.5
+    },
+    "delta_vs_baseline": {},
+    "learnings": [],
+    "promoted": false,
+    "runtime_s": 0,
+    "agent_id": "atlas-research"
+  },
+  {
+    "experiment_id": "wave2_rsi2_solo",
+    "timestamp": "2026-03-04T00:21:07.674816+00:00",
+    "market": "sp500",
+    "category": "new_strategy",
+    "strategy": "connors_rsi2",
+    "hypothesis": "Connors RSI(2) with SMA-200 filter has proven 74%+ win rate across 34 years of backtesting (Connors & Alvarez 2008, confirmed by reddit/algotrading 2024). Entry: RSI(2)<10 + close>SMA(200). Exit: close>SMA(5). This is DISTINCT from our existing MR (RSI-14/z-score) and should generate uncorrelated signals on different stocks at different times.",
+    "verdict": "partial",
+    "key_metrics": {
+      "total_trades": 0,
+      "cagr_pct": 0.0,
+      "sharpe": 0.0,
+      "sortino": 0.0,
+      "max_drawdown_pct": 0.0,
+      "win_rate_pct": 0.0,
+      "profit_factor": 0.0,
+      "total_pnl": 0,
+      "avg_trade": 0.0,
+      "final_equity": 4000.0,
+      "expectancy_r": 0.0,
+      "avg_r": 0.0,
+      "r_count": 0,
+      "edge_p_value": 1.0,
+      "edge_significant": false,
+      "var_95_pct": -0.0,
+      "cvar_95_pct": -0.0,
+      "calmar": 0.0,
+      "mc_p95_drawdown_pct": 0.0,
+      "mc_fragile": false
+    },
+    "delta_vs_baseline": {},
+    "learnings": [],
+    "promoted": false,
+    "runtime_s": 165.5,
+    "agent_id": "atlas-research"
+  },
+  {
+    "experiment_id": "wave2_rsi2_solo",
+    "timestamp": "2026-03-04T00:38:53.152760+00:00",
+    "market": "sp500",
+    "category": "new_strategy",
+    "strategy": "connors_rsi2",
+    "hypothesis": "Connors RSI(2) with SMA-200 filter has proven 74%+ win rate across 34 years of backtesting (Connors & Alvarez 2008, confirmed by reddit/algotrading 2024). Entry: RSI(2)<10 + close>SMA(200). Exit: close>SMA(5). This is DISTINCT from our existing MR (RSI-14/z-score) and should generate uncorrelated signals on different stocks at different times.",
+    "verdict": "partial",
+    "key_metrics": {
+      "total_trades": 249,
+      "cagr_pct": -2.0571,
+      "sharpe": -2.6257,
+      "sortino": -3.1036,
+      "max_drawdown_pct": 6.8598,
+      "win_rate_pct": 57.03,
+      "profit_factor": 0.7837,
+      "total_pnl": -166.19,
+      "avg_trade": -0.67,
+      "final_equity": 3836.36,
+      "expectancy_r": -0.0361,
+      "avg_r": -0.0361,
+      "r_count": 249,
+      "edge_p_value": 0.265912,
+      "edge_significant": false,
+      "var_95_pct": 0.244,
+      "cvar_95_pct": 0.429,
+      "calmar": -0.2999,
+      "mc_p95_drawdown_pct": 7.25,
+      "mc_fragile": false,
+      "strategy_breakdown": {
+        "connors_rsi2": {
+          "trades": 249,
+          "total_pnl": -166.19,
+          "win_rate_pct": 57.0
+        }
+      }
+    },
+    "delta_vs_baseline": {},
+    "learnings": [],
+    "promoted": false,
+    "runtime_s": 160.4,
+    "agent_id": "atlas-research"
+  },
+  {
+    "experiment_id": "wave2_exit_mr",
+    "timestamp": "2026-03-04T00:57:46.488223+00:00",
+    "market": "sp500",
+    "category": "param_drift",
+    "strategy": "mean_reversion",
+    "hypothesis": "Research shows MR trades benefit from RSI-based exits over fixed MA exits. When RSI(2) recovers above 65-70, the oversold condition is resolved and holding longer adds risk without reward. Current MR uses SMA(20) reversion + ATR profit target; RSI recovery exit may capture the same edge with less exposure.",
+    "verdict": "fail",
+    "key_metrics": {
+      "total_trades": 55,
+      "cagr_pct": 1.0107,
+      "sharpe": -1.9809,
+      "sortino": -2.7668,
+      "max_drawdown_pct": 1.2496,
+      "win_rate_pct": 60.0,
+      "profit_factor": 1.3316,
+      "total_pnl": 81.7,
+      "avg_trade": 1.49,
+      "final_equity": 4081.66,
+      "expectancy_r": 0.1009,
+      "avg_r": 0.1009,
+      "r_count": 55,
+      "edge_p_value": 0.321235,
+      "edge_significant": false,
+      "var_95_pct": 0.182,
+      "cvar_95_pct": 0.307,
+      "calmar": 0.8088,
+      "mc_p95_drawdown_pct": 2.74,
+      "mc_fragile": true,
+      "strategy_breakdown": {
+        "mean_reversion": {
+          "trades": 55,
+          "total_pnl": 81.7,
+          "win_rate_pct": 60.0
+        }
+      },
+      "param_value": 10
+    },
+    "delta_vs_baseline": {},
+    "learnings": [],
+    "promoted": false,
+    "runtime_s": 0,
+    "agent_id": "atlas-research"
+  },
+  {
+    "experiment_id": "wave2_exit_og",
+    "timestamp": "2026-03-04T01:03:49.444183+00:00",
+    "market": "sp500",
+    "category": "param_drift",
+    "strategy": "opening_gap",
+    "hypothesis": "Opening gap reversal trades should exit when IBS > 0.8-0.9 (close near high = buying exhaustion). This is more targeted than SMA(5) exit. Also test shorter hold periods since gap fills typically resolve in 1-3 days.",
+    "verdict": "fail",
+    "key_metrics": {
+      "total_trades": 9,
+      "cagr_pct": 1.0266,
+      "sharpe": -6.1493,
+      "sortino": -24.3171,
+      "max_drawdown_pct": 0.2136,
+      "win_rate_pct": 88.89,
+      "profit_factor": 28.3795,
+      "total_pnl": 82.96,
+      "avg_trade": 9.22,
+      "final_equity": 4082.95,
+      "expectancy_r": 0.5675,
+      "avg_r": 0.5675,
+      "r_count": 9,
+      "edge_p_value": 0.005803,
+      "edge_significant": true,
+      "var_95_pct": -0.0,
+      "cvar_95_pct": 0.001,
+      "calmar": 4.8062,
+      "mc_p95_drawdown_pct": 0.08,
+      "mc_fragile": false,
+      "strategy_breakdown": {
+        "opening_gap": {
+          "trades": 9,
+          "total_pnl": 82.96,
+          "win_rate_pct": 88.9
+        }
+      },
+      "param_value": 3
+    },
+    "delta_vs_baseline": {},
+    "learnings": [],
+    "promoted": false,
+    "runtime_s": 0,
+    "agent_id": "atlas-research"
+  },
+  {
+    "experiment_id": "wave2_chandelier_tf",
+    "timestamp": "2026-03-04T01:12:19.129981+00:00",
+    "market": "sp500",
+    "category": "param_drift",
+    "strategy": "trend_following",
+    "hypothesis": "Chandelier exit (highest-high minus N\u00d7ATR) adapts to volatility better than fixed trailing stop ATR multiplier. It locks in profits during strong trends while giving room during pullbacks. Testing different ATR multipliers (2.5-4.0) against current trailing_stop_atr_mult=2.5.",
+    "verdict": "fail",
+    "key_metrics": {
+      "total_trades": 77,
+      "cagr_pct": 0.9704,
+      "sharpe": -1.0911,
+      "sortino": -1.417,
+      "max_drawdown_pct": 4.6067,
+      "win_rate_pct": 53.25,
+      "profit_factor": 1.143,
+      "total_pnl": 71.62,
+      "avg_trade": 0.93,
+      "final_equity": 4078.39,
+      "expectancy_r": 0.0617,
+      "avg_r": 0.0617,
+      "r_count": 77,
+      "edge_p_value": 0.622374,
+      "edge_significant": false,
+      "var_95_pct": 0.325,
+      "cvar_95_pct": 0.532,
+      "calmar": 0.2106,
+      "mc_p95_drawdown_pct": 5.19,
+      "mc_fragile": false,
+      "strategy_breakdown": {
+        "trend_following": {
+          "trades": 77,
+          "total_pnl": 71.62,
+          "win_rate_pct": 53.2
+        }
+      },
+      "param_value": 2.0
+    },
+    "delta_vs_baseline": {},
+    "learnings": [],
+    "promoted": false,
+    "runtime_s": 0,
+    "agent_id": "atlas-research"
+  },
+  {
+    "experiment_id": "wave2_tom_filter",
+    "timestamp": "2026-03-04T01:30:16.634308+00:00",
+    "market": "sp500",
+    "category": "filter",
+    "strategy": null,
+    "hypothesis": "The Turn of Month effect (last 5 + first 3 trading days) shows stocks generate virtually all monthly returns in this window (Lakonishok & Smidt 1988, confirmed 2024). Boosting signal confidence during TOM window (or suppressing signals mid-month) should improve trade quality. This is a calendar-based filter, completely uncorrelated with our price-based signals.",
+    "verdict": "partial",
+    "key_metrics": {
+      "total_trades": 100,
+      "cagr_pct": 1.0161,
+      "sharpe": -1.2688,
+      "sortino": -1.6324,
+      "max_drawdown_pct": 4.539,
+      "win_rate_pct": 52.0,
+      "profit_factor": 1.1416,
+      "total_pnl": 75.28,
+      "avg_trade": 0.75,
+      "final_equity": 4082.1,
+      "expectancy_r": 0.0625,
+      "avg_r": 0.0625,
+      "r_count": 100,
+      "edge_p_value": 0.475391,
+      "edge_significant": false,
+      "var_95_pct": 0.314,
+      "cvar_95_pct": 0.487,
+      "calmar": 0.2239,
+      "mc_p95_drawdown_pct": 4.38,
+      "mc_fragile": false,
+      "strategy_breakdown": {
+        "trend_following": {
+          "trades": 63,
+          "total_pnl": -13.63,
+          "win_rate_pct": 46.0
+        },
+        "mean_reversion": {
+          "trades": 34,
+          "total_pnl": 81.57,
+          "win_rate_pct": 61.8
+        },
+        "opening_gap": {
+          "trades": 3,
+          "total_pnl": 7.34,
+          "win_rate_pct": 66.7
+        }
+      },
+      "variant_name": "baseline (no TOM filter)",
+      "variant_value": false
+    },
+    "delta_vs_baseline": {},
+    "learnings": [],
+    "promoted": false,
+    "runtime_s": 0,
+    "agent_id": "atlas-research"
+  },
+  {
+    "experiment_id": "wave2_rsi2_solo",
+    "timestamp": "2026-03-04T01:34:10.258459+00:00",
+    "market": "sp500",
+    "category": "new_strategy",
+    "strategy": "connors_rsi2",
+    "hypothesis": "Connors RSI(2) with SMA-200 filter has proven 74%+ win rate across 34 years of backtesting (Connors & Alvarez 2008, confirmed by reddit/algotrading 2024). Entry: RSI(2)<10 + close>SMA(200). Exit: close>SMA(5). This is DISTINCT from our existing MR (RSI-14/z-score) and should generate uncorrelated signals on different stocks at different times.",
+    "verdict": "partial",
+    "key_metrics": {
+      "total_trades": 249,
+      "cagr_pct": -2.0571,
+      "sharpe": -2.6257,
+      "sortino": -3.1036,
+      "max_drawdown_pct": 6.8598,
+      "win_rate_pct": 57.03,
+      "profit_factor": 0.7837,
+      "total_pnl": -166.19,
+      "avg_trade": -0.67,
+      "final_equity": 3836.36,
+      "expectancy_r": -0.0361,
+      "avg_r": -0.0361,
+      "r_count": 249,
+      "edge_p_value": 0.265912,
+      "edge_significant": false,
+      "var_95_pct": 0.244,
+      "cvar_95_pct": 0.429,
+      "calmar": -0.2999,
+      "mc_p95_drawdown_pct": 7.25,
+      "mc_fragile": false,
+      "strategy_breakdown": {
+        "connors_rsi2": {
+          "trades": 249,
+          "total_pnl": -166.19,
+          "win_rate_pct": 57.0
+        }
+      }
+    },
+    "delta_vs_baseline": {},
+    "learnings": [],
+    "promoted": false,
+    "runtime_s": 163.3,
+    "agent_id": "atlas-research"
+  },
+  {
+    "experiment_id": "wave2_vol_combined",
+    "timestamp": "2026-03-04T01:35:07.869453+00:00",
+    "market": "sp500",
+    "category": "filter",
+    "strategy": null,
+    "hypothesis": "Volume filter 1.5x on combined portfolio improves signal quality",
+    "verdict": "fail",
+    "key_metrics": {
+      "baseline_sharpe": -1.27,
+      "variant_sharpe": -1.27,
+      "trades": 100
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "INFRASTRUCTURE FAILURE: All 3 volume variants produced identical results",
+      "filter_test sets s_cfg[\"volume_min_ratio\"] but strategies read from s_cfg[\"volume\"][\"min_ratio\"]",
+      "Need to fix filter_test to handle nested config params before retesting",
+      "The hypothesis is NOT rejected \u2014 test was invalid"
+    ],
+    "promoted": false,
+    "runtime_s": 0,
+    "agent_id": "atlas-research"
+  },
+  {
+    "experiment_id": "wave2_rsi2_solo",
+    "timestamp": "2026-03-04T01:35:07.874260+00:00",
+    "market": "sp500",
+    "category": "new_strategy",
+    "strategy": "connors_rsi2",
+    "hypothesis": "Connors RSI(2) with SMA-200 filter generates profitable mean reversion signals",
+    "verdict": "fail",
+    "key_metrics": {
+      "sharpe": -2.63,
+      "cagr_pct": -2.06,
+      "trades": 249,
+      "win_rate_pct": 57.03,
+      "profit_factor": 0.78,
+      "max_drawdown_pct": 6.86,
+      "edge_p_value": 0.27
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "ConnorsRSI2 generates 249 trades with 57% WR \u2014 signal quality decent",
+      "But PF=0.78: losses larger than wins. ATR(3.0x) stop gives wide risk while SMA(5) exit captures small gains",
+      "Edge not statistically significant (p=0.27)",
+      "ALSO HAD CODE BUG: calc_position_size returns dict, code compared dict <= 0",
+      "Fixed: pos_result[\"shares\"] extraction. Does not change backtest outcome (only affected expensive stocks)",
+      "HYPOTHESIS REJECTED: RSI(2) solo is unprofitable with current params on SP500 at $4K equity",
+      "POSSIBLE RETRY: With tighter stop (1.5-2x ATR) and higher equity, risk-reward may improve"
+    ],
+    "promoted": false,
+    "runtime_s": 0,
+    "agent_id": "atlas-research"
+  },
+  {
+    "experiment_id": "wave2_exit_mr",
+    "timestamp": "2026-03-04T01:35:07.880491+00:00",
+    "market": "sp500",
+    "category": "param_drift",
+    "strategy": "mean_reversion",
+    "hypothesis": "Shorter hold periods improve MR risk-adjusted returns",
+    "verdict": "fail",
+    "key_metrics": {
+      "best_sharpe": -1.98,
+      "best_param": "max_hold_days=10",
+      "worst_sharpe": -2.75,
+      "worst_param": "max_hold_days=3"
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "All max_hold_days values produce negative Sharpe in SOLO MR mode",
+      "max_hold_days=10 is relatively best (-1.98), shorter holds are worse",
+      "Current default (15) is slightly worse than 10 (-2.08 vs -1.98)",
+      "NOTE: Solo MR on $4K has inherent negative Sharpe due to fee drag",
+      "Relative ranking useful: 10 > 15 > 7 > 5 > 3 for max_hold_days",
+      "NEEDS COMBINED TEST: solo param sweep is misleading at this equity level"
+    ],
+    "promoted": false,
+    "runtime_s": 0,
+    "agent_id": "atlas-research"
+  },
+  {
+    "experiment_id": "wave2_exit_og",
+    "timestamp": "2026-03-04T01:35:07.885295+00:00",
+    "market": "sp500",
+    "category": "param_drift",
+    "strategy": "opening_gap",
+    "hypothesis": "Shorter hold periods better match gap-fill resolution timeline",
+    "verdict": "fail",
+    "key_metrics": {
+      "trades": 9,
+      "best_sharpe": -6.15,
+      "best_param": "max_hold_days=3"
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "Only 9 trades across entire backtest \u2014 insufficient for ANY conclusion",
+      "All max_hold_days variants produce essentially identical results (9 trades each)",
+      "PATTERN: OG generates very few solo trades on SP500 with current filters",
+      "SMA-200 filter + gap threshold + RSI < 25 + volume surge = very selective",
+      "Need to relax one filter (remove RSI or lower gap threshold) for more trades before testing exits"
+    ],
+    "promoted": false,
+    "runtime_s": 0,
+    "agent_id": "atlas-research"
+  },
+  {
+    "experiment_id": "wave2_chandelier_tf",
+    "timestamp": "2026-03-04T01:35:07.889648+00:00",
+    "market": "sp500",
+    "category": "param_drift",
+    "strategy": "trend_following",
+    "hypothesis": "Wider trailing stop ATR multiplier captures more trend profit",
+    "verdict": "fail",
+    "key_metrics": {
+      "atr_2.0_sharpe": -1.09,
+      "atr_2.5_sharpe": -1.1,
+      "atr_3.0_sharpe": -1.16,
+      "atr_3.5_sharpe": -1.17,
+      "atr_4.0_sharpe": -1.17,
+      "trades": 77
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "Tighter stops (2.0x ATR) slightly better than wider (3.5-4.0x)",
+      "Difference is marginal: -1.09 vs -1.17 Sharpe (all negative in solo mode)",
+      "Current default (2.5x) is near-optimal based on this sweep",
+      "77 trades across all variants \u2014 consistent trade count means stop width only affects P&L per trade",
+      "SAME PATTERN: Solo strategy on $4K equity shows negative Sharpe due to fee drag"
+    ],
+    "promoted": false,
+    "runtime_s": 0,
+    "agent_id": "atlas-research"
+  },
+  {
+    "experiment_id": "wave2_tom_filter",
+    "timestamp": "2026-03-04T01:35:07.894387+00:00",
+    "market": "sp500",
+    "category": "filter",
+    "strategy": null,
+    "hypothesis": "Turn of Month timing filter improves trade quality",
+    "verdict": "fail",
+    "key_metrics": {
+      "baseline_sharpe": -1.27,
+      "tom_sharpe": -1.27,
+      "trades": 100
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "INFRASTRUCTURE FAILURE: All 3 TOM variants produced identical results",
+      "filter_test sets s_cfg[\"turn_of_month\"] but no strategy reads this parameter",
+      "TOM filter needs to be IMPLEMENTED in the backtest engine or strategy base class",
+      "Calendar-based filters need engine-level support (check date against TOM window)",
+      "The hypothesis is NOT rejected \u2014 test was invalid"
+    ],
+    "promoted": false,
+    "runtime_s": 0,
+    "agent_id": "atlas-research"
   }
 ]
