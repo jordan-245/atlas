@@ -196,6 +196,26 @@ class BacktestEngine:
         self.fred_filter_enabled = _fred_cfg.get("enabled", False)
         self.fred_yield_curve_min = _fred_cfg.get("yield_curve_min", None)  # e.g. -0.5 (skip if T10Y2Y < this)
         self.fred_claims_max = _fred_cfg.get("claims_max", None)  # e.g. 300000 (skip if ICSA > this)
+        # Turn-of-Month (TOM) calendar filter
+        # Supports: false (disabled), true (only trade in TOM window),
+        #           "boost" (confidence boost during TOM window)
+        _tom_cfg = config.get("turn_of_month", False)
+        if isinstance(_tom_cfg, dict):
+            self.tom_mode = _tom_cfg.get("mode", False)  # false/true/"boost"
+            self.tom_days_before_end = _tom_cfg.get("days_before_month_end", 5)
+            self.tom_days_after_start = _tom_cfg.get("days_after_month_start", 3)
+            self.tom_confidence_boost = _tom_cfg.get("confidence_boost", 0.05)
+        elif _tom_cfg in (True, "boost"):
+            self.tom_mode = _tom_cfg
+            self.tom_days_before_end = 5
+            self.tom_days_after_start = 3
+            self.tom_confidence_boost = 0.05
+        else:
+            self.tom_mode = False
+            self.tom_days_before_end = 5
+            self.tom_days_after_start = 3
+            self.tom_confidence_boost = 0.05
+
         # Benchmark — use config value, fall back to market profile
         self.benchmark_ticker = config.get("universe", {}).get("benchmark_ticker")
         if not self.benchmark_ticker:
@@ -515,6 +535,32 @@ class BacktestEngine:
         )
         return regime, regime_scale
 
+    def _is_tom_window(self, date: pd.Timestamp, trading_dates: pd.DatetimeIndex) -> bool:
+        """Check if date falls within the Turn-of-Month window.
+
+        TOM window = last N trading days of month + first M trading days of next month.
+        Uses the actual trading calendar (trading_dates), not calendar days.
+        """
+        month = date.month
+        year = date.year
+
+        # Trading days in the same month as `date`
+        same_month = trading_dates[(trading_dates.month == month) & (trading_dates.year == year)]
+        if len(same_month) == 0:
+            return False
+
+        # Check: is date within the last N trading days of its month?
+        last_n = same_month[-self.tom_days_before_end:]
+        if date in last_n:
+            return True
+
+        # Check: is date within the first M trading days of its month?
+        first_m = same_month[:self.tom_days_after_start]
+        if date in first_m:
+            return True
+
+        return False
+
     def _simulate_day(
         self,
         day_idx: int,
@@ -585,6 +631,12 @@ class BacktestEngine:
                     cl_val = float(fred_claims.loc[cl_mask].iloc[-1])
                     if cl_val > self.fred_claims_max:
                         fred_blocked = True
+            # Turn-of-Month calendar filter
+            tom_in_window = self._is_tom_window(today, trading_dates) if self.tom_mode else False
+            tom_blocked = (self.tom_mode is True and not tom_in_window)
+            if tom_blocked:
+                logger.debug(f"TOM BLOCKED {today.date()}: outside turn-of-month window")
+
             # Build data windows up to yesterday for signal generation
             signal_data = {}
             for ticker, df in data.items():
@@ -595,12 +647,23 @@ class BacktestEngine:
             for strategy in strategies:
                 if len(open_positions) >= self.max_positions:
                     break
-                if vix_blocked or fred_blocked:
+                if vix_blocked or fred_blocked or tom_blocked:
                     break
 
                 signals = strategy.generate_signals(
                     signal_data, equity, open_positions
                 )
+
+                # TOM boost mode: add confidence during TOM window
+                if self.tom_mode == "boost" and tom_in_window:
+                    for _sig in signals:
+                        _orig = _sig.confidence
+                        _sig.confidence = min(1.0, _sig.confidence + self.tom_confidence_boost)
+                        _sig.features["tom_boost"] = round(self.tom_confidence_boost, 4)
+                        _sig.features["tom_confidence_orig"] = round(_orig, 4)
+                # Tag all signals with TOM window info
+                for _sig in signals:
+                    _sig.features["tom_in_window"] = tom_in_window
 
                 # Phase 7C: Inject market breadth features (info-only)
                 if breadth_series is not None and today in breadth_series.index:

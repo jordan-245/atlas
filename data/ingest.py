@@ -27,14 +27,14 @@ from typing import Dict, List, Optional, Union
 import numpy as np
 import pandas as pd
 
+logger = logging.getLogger(__name__)
+
 try:
     import yfinance as yf
     YF_AVAILABLE = True
 except ImportError:
     YF_AVAILABLE = False
     logger.warning("yfinance not installed — yfinance fallback unavailable")
-
-logger = logging.getLogger(__name__)
 
 # Project paths
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
