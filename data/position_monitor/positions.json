@@ -28,8 +28,8 @@
         "direction": "above",
         "weight": 3,
         "status": "passing",
-        "current_value": 73.26,
-        "last_checked": "2026-03-03T17:28:09",
+        "current_value": 76.3,
+        "last_checked": "2026-03-04T18:30:44",
         "notes": ""
       },
       {
@@ -42,8 +42,8 @@
         "direction": "above",
         "weight": 2,
         "status": "passing",
-        "current_value": 73.26,
-        "last_checked": "2026-03-03T17:28:09",
+        "current_value": 76.3,
+        "last_checked": "2026-03-04T18:30:44",
         "notes": ""
       },
       {
@@ -56,8 +56,8 @@
         "direction": "above",
         "weight": 2,
         "status": "passing",
-        "current_value": 159.56,
-        "last_checked": "2026-03-03T17:28:09",
+        "current_value": 158.99,
+        "last_checked": "2026-03-04T18:30:44",
         "notes": ""
       },
       {
@@ -70,8 +70,8 @@
         "direction": "above",
         "weight": 1,
         "status": "passing",
-        "current_value": 159.56,
-        "last_checked": "2026-03-03T17:28:09",
+        "current_value": 158.99,
+        "last_checked": "2026-03-04T18:30:44",
         "notes": ""
       },
       {
@@ -85,7 +85,7 @@
         "weight": 2,
         "status": "passing",
         "current_value": null,
-        "last_checked": "2026-03-03T17:28:09",
+        "last_checked": "2026-03-04T18:30:44",
         "notes": ""
       },
       {
@@ -98,15 +98,15 @@
         "direction": "above",
         "weight": 1,
         "status": "passing",
-        "current_value": 395.43,
-        "last_checked": "2026-03-03T17:28:09",
+        "current_value": 384.56,
+        "last_checked": "2026-03-04T18:30:44",
         "notes": ""
       }
     ],
     "health_score": 10.0,
-    "current_price": 159.56,
-    "unrealized_pnl": 170.7,
-    "unrealized_pnl_pct": 11.98,
+    "current_price": 158.99,
+    "unrealized_pnl": 165.0,
+    "unrealized_pnl_pct": 11.58,
     "notes": [
       {
         "timestamp": "2026-03-02T18:43:34",
@@ -114,7 +114,7 @@
       }
     ],
     "created_at": "2026-03-02T18:39:39",
-    "updated_at": "2026-03-03T17:28:10",
+    "updated_at": "2026-03-04T18:30:46",
     "closed_at": null,
     "close_price": null,
     "close_reason": null,

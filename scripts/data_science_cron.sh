@@ -24,15 +24,19 @@ cd "$PROJECT"
 
 echo "=== Atlas Data Scientist — $TIMESTAMP ===" > "$LOG_FILE"
 
-# ── Step 1: Run all analyses (JSON for pi agent) ──
+# ── Step 1: Run all analyses (JSON for pi agent + markdown report) ──
 echo "Running analyses..." >> "$LOG_FILE"
-ANALYSIS_JSON=$(python3 scripts/data_scientist.py --analysis weekly_digest --json 2>>"$LOG_FILE")
+ANALYSIS_JSON=$(python3 scripts/data_scientist.py --analysis weekly_digest --json --report 2>>"$LOG_FILE")
 ANALYSIS_EXIT=$?
 
 if [ "$ANALYSIS_EXIT" -ne 0 ] || [ -z "$ANALYSIS_JSON" ]; then
     echo "Analysis failed (exit $ANALYSIS_EXIT)" >> "$LOG_FILE"
     exit 1
 fi
+
+# Find the saved report path for the agent
+REPORT_DATE=$(date '+%Y-%m-%d')
+REPORT_PATH="$PROJECT/research/reports/weekly_${REPORT_DATE}.md"
 
 # Also generate the human report for the log
 python3 scripts/data_scientist.py --analysis weekly_digest >> "$LOG_FILE" 2>&1
@@ -48,6 +52,7 @@ echo "$ANALYSIS_JSON" > "$ANALYSIS_FILE"
 PROMPT="You are the Atlas Data Scientist agent (Opus). Your job is to interpret trading system analytics and research results, then produce a concise, actionable weekly briefing.
 
 Read the analysis results from: $ANALYSIS_FILE
+A markdown report has also been saved to: $REPORT_PATH
 
 The file contains a weekly digest with these sections:
 - regime_state: Current market regime (trending/mean-reverting/volatile)
@@ -76,13 +81,20 @@ Rules:
 - Format for Telegram: use <b>bold</b>, bullet points, keep under 4000 chars.
 - The briefing should help a trader decide what to trade AND what to research THIS week.
 
-After writing the briefing text, send it to Telegram by running:
+After writing the briefing text, do TWO things:
+
+1. Append your interpretation to the markdown report at $REPORT_PATH:
+   Add a section '## Opus Interpretation' at the end with your full analysis,
+   including any cross-cutting insights the raw data doesn't surface.
+   Use bash to append: echo '...' >> $REPORT_PATH
+
+2. Send the Telegram briefing:
   cd /root/atlas && python3 -c \"
 import sys; sys.path.insert(0, '.'); from utils.telegram import send_message
 send_message('''YOUR_BRIEFING_TEXT_HERE''')
 \"
 
-If the Telegram send fails, that's ok — the briefing is still in the log."
+If the Telegram send fails, that's ok — the briefing and report are still saved."
 
 timeout 300 pi -p --no-session --model anthropic/claude-opus-4-6 "$PROMPT" >> "$LOG_FILE" 2>&1
 PI_EXIT=$?

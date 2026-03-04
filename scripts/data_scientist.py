@@ -41,6 +41,7 @@ JOURNAL_PATH = PROJECT / "journal" / "decision_journal.json"
 RESEARCH_JOURNAL = PROJECT / "research" / "journal.json"
 RESEARCH_QUEUE = PROJECT / "research" / "queue.json"
 RESEARCH_WAVES = PROJECT / "research" / "waves"
+REPORTS_DIR = PROJECT / "research" / "reports"
 STATE_PATH = PROJECT / "state" / "live_sp500.json"
 CONFIG_PATH = PROJECT / "config" / "active" / "sp500.json"
 
@@ -1095,6 +1096,212 @@ def format_report(result: dict) -> str:
     return "\n".join(lines)
 
 
+# ── Markdown Report Generator ───────────────────────────────────
+
+def generate_markdown_report(digest: dict) -> str:
+    """Generate a structured markdown report from a weekly digest."""
+    now = digest.get("generated_at", datetime.now().isoformat())[:19]
+    lines = []
+
+    lines.append(f"# Atlas Data Science Report — {now[:10]}")
+    lines.append("")
+    lines.append(f"> Generated: {now}  ")
+    lines.append(f"> Report type: Weekly Digest")
+    lines.append("")
+
+    # ── Executive Summary ──
+    regime = digest.get("regime_state", {})
+    accuracy = digest.get("signal_accuracy", {})
+    research = digest.get("research_insights", {})
+    wave_rec = digest.get("wave_recommendations", {})
+
+    regime_name = regime.get("regime", "UNKNOWN")
+    tested = sum(r.get("signals_tested", 0) for r in accuracy.get("results_by_period", {}).values())
+    total_proposed = accuracy.get("total_proposed", 0)
+    total_experiments = research.get("total_experiments", 0)
+    verdicts = research.get("verdict_distribution", {})
+    theme = wave_rec.get("suggested_wave_theme", "N/A")
+
+    lines.append("## Executive Summary")
+    lines.append("")
+    lines.append(f"| Metric | Value |")
+    lines.append(f"|--------|-------|")
+    lines.append(f"| Market Regime | {regime_name} |")
+    lines.append(f"| SPY Price | ${regime.get('spy_price', 0):.2f} |")
+    lines.append(f"| Signals Proposed | {total_proposed} |")
+    lines.append(f"| Signals Forward-Tested | {tested} |")
+    lines.append(f"| Research Experiments | {total_experiments} ({verdicts.get('pass',0)}✓ {verdicts.get('fail',0)}✗ {verdicts.get('promoted',0)}⬆) |")
+    lines.append(f"| Next Wave Theme | {theme} |")
+    lines.append("")
+
+    # ── Market Regime ──
+    lines.append("## Market Regime")
+    lines.append("")
+    lines.append(f"- **Regime**: {regime_name}")
+    lines.append(f"- **SPY**: ${regime.get('spy_price', 0):.2f} (50MA: ${regime.get('ma50', 0):.2f}, 200MA: ${regime.get('ma200', 0):.2f})")
+    lines.append(f"- **Volatility**: ATR {regime.get('atr_pct', 0):.2f}%, Drawdown {regime.get('drawdown_from_52w_high', 0):.1f}% from 52w high")
+    lines.append(f"- **Breadth**: {regime.get('breadth_20d', 0):.0f}% up days (20d), {regime.get('return_20d', 0):+.1f}% return")
+    lines.append(f"- **Recommendation**: {regime.get('strategy_recommendation', '—')}")
+    lines.append("")
+
+    # ── Signal Accuracy ──
+    lines.append("## Signal Accuracy")
+    lines.append("")
+    if tested == 0:
+        lines.append("*No signals have sufficient forward data for testing yet.*")
+    else:
+        lines.append(f"| Period | Win Rate | Avg Return | Tested |")
+        lines.append(f"|--------|----------|------------|--------|")
+        for period, r in accuracy.get("results_by_period", {}).items():
+            lines.append(f"| {period} | {r['win_rate']:.0%} | {r['avg_return_pct']:+.2f}% | {r['signals_tested']} |")
+        lines.append("")
+        lines.append("**By Strategy:**")
+        lines.append("")
+        lines.append(f"| Strategy | Win Rate | Avg Return | Signals |")
+        lines.append(f"|----------|----------|------------|---------|")
+        for strat, s in accuracy.get("strategy_breakdown", {}).items():
+            lines.append(f"| {strat} | {s['win_rate']:.0%} | {s['avg_return_pct']:+.2f}% | {s['signals']} |")
+    lines.append("")
+
+    # ── Confidence Model ──
+    conf = digest.get("confidence_model", {})
+    lines.append("## Confidence Model")
+    lines.append("")
+    lines.append(f"- **Diagnosis**: {conf.get('diagnosis', '—')}")
+    lines.append(f"- **Recommendation**: {conf.get('recommendation', '—')}")
+    lines.append("")
+    if conf.get("bucket_results"):
+        lines.append(f"| Quartile | Win Rate | Avg Return | Tested | Range |")
+        lines.append(f"|----------|----------|------------|--------|-------|")
+        for bucket, r in conf["bucket_results"].items():
+            lines.append(f"| {bucket} | {r['win_rate']:.0%} | {r['avg_return_pct']:+.2f}% | {r['tested']} | {r['confidence_range']} |")
+    lines.append("")
+
+    # ── Strategy Mix ──
+    mix = digest.get("strategy_mix", {})
+    lines.append("## Strategy Mix")
+    lines.append("")
+    lines.append(f"| Strategy | Signals | % of Total |")
+    lines.append(f"|----------|---------|------------|")
+    for strat, info in mix.get("strategies", {}).items():
+        lines.append(f"| {strat} | {info['signal_count']} | {info['pct_of_total']:.1f}% |")
+    lines.append("")
+    for d in mix.get("diagnoses", []):
+        lines.append(f"> ⚠️ {d}")
+    lines.append("")
+
+    # ── Rejection Impact ──
+    rej = digest.get("rejection_impact", {})
+    lines.append("## Rejection Impact")
+    lines.append("")
+    lines.append(f"- **Total rejected**: {rej.get('total_rejected', 0)} / {rej.get('total_proposed', 0)} proposed")
+    lines.append("")
+    if rej.get("rejection_groups"):
+        lines.append(f"| Reason | Rejected | Win Rate | Avg Return |")
+        lines.append(f"|--------|----------|----------|------------|")
+        for reason, r in rej["rejection_groups"].items():
+            lines.append(f"| {reason} | {r['rejected_count']} | {r['win_rate']:.0%} | {r['avg_return_pct']:+.2f}% |")
+    lines.append("")
+
+    # ── Alpha Decay ──
+    decay = digest.get("alpha_decay", {})
+    lines.append("## Alpha Decay")
+    lines.append("")
+    for half in ["first_half", "second_half"]:
+        h = decay.get(half, {})
+        label = "Earlier" if half == "first_half" else "Recent"
+        lines.append(f"- **{label}**: {h.get('win_rate', 0):.0%} WR, {h.get('avg_return_pct', 0):+.2f}% avg ({h.get('tested', 0)} tested)")
+    lines.append(f"- **Decay detected**: {'YES' if decay.get('decay_detected') else 'No'}")
+    lines.append("")
+
+    # ── Research Insights ──
+    lines.append("## Research Insights")
+    lines.append("")
+    lines.append(f"**{total_experiments} experiments** — {verdicts.get('pass',0)} pass, {verdicts.get('fail',0)} fail, {verdicts.get('partial',0)} partial, {verdicts.get('promoted',0)} promoted")
+    lines.append("")
+
+    lines.append("### Strategy Scorecard")
+    lines.append("")
+    lines.append(f"| Grade | Strategy | Pass/Fail/Partial | Best Sharpe | Status |")
+    lines.append(f"|-------|----------|-------------------|-------------|--------|")
+    for strat, sc in sorted(research.get("strategy_scorecard", {}).items(), key=lambda x: x[1].get("grade", "Z")):
+        sharpe_str = f"{sc['best_sharpe']:.2f}" if sc.get("best_sharpe") is not None else "—"
+        lines.append(f"| {sc.get('grade','?')} | {strat} | {sc.get('pass',0)}/{sc.get('fail',0)}/{sc.get('partial',0)} | {sharpe_str} | {sc.get('status','—')} |")
+    lines.append("")
+
+    blockers = research.get("infrastructure_blockers", [])
+    if blockers:
+        lines.append("### Infrastructure Blockers")
+        lines.append("")
+        seen = set()
+        for b in blockers:
+            issue = b["issue"][:150]
+            if issue not in seen:
+                seen.add(issue)
+                lines.append(f"- ❌ `{b.get('experiment', '?')}`: {issue}")
+        lines.append("")
+
+    learnings = research.get("key_learnings", [])
+    if learnings:
+        lines.append("### Key Learnings")
+        lines.append("")
+        for l in learnings[-15:]:  # last 15
+            icon = {"pass": "✅", "fail": "❌", "partial": "⚠️", "promoted": "⬆️"}.get(l.get("verdict", ""), "•")
+            lines.append(f"- {icon} **{l.get('experiment', '?')}** ({l.get('strategy', '?')}): {l.get('learning', '—')}")
+        lines.append("")
+
+    # ── Wave Recommendations ──
+    lines.append("## Wave Recommendations")
+    lines.append("")
+    lines.append(f"**Suggested Theme**: {theme}")
+    lines.append("")
+
+    for rec in wave_rec.get("recommendations", []):
+        prio = rec.get("priority", "?")
+        rtype = rec.get("type", "?")
+        type_labels = {
+            "infrastructure_fix": "🔧 Infrastructure",
+            "regime_aligned": "📈 Regime-Aligned",
+            "rebalancing": "⚖️ Rebalancing",
+            "model_improvement": "🧠 Model Improvement",
+            "queue_cleanup": "🧹 Queue Cleanup",
+            "coverage_gap": "🔍 Coverage Gap",
+        }
+        lines.append(f"### P{prio}: {rec.get('title', '?')}")
+        lines.append(f"*Type: {type_labels.get(rtype, rtype)}*")
+        lines.append("")
+        lines.append(f"{rec.get('rationale', '')}")
+        lines.append("")
+        if rec.get("experiments"):
+            lines.append("**Suggested experiments:**")
+            for exp in rec["experiments"]:
+                lines.append(f"- `{exp}`")
+            lines.append("")
+
+    # ── Footer ──
+    lines.append("---")
+    lines.append(f"*Report generated by `scripts/data_scientist.py` — Atlas Data Scientist*")
+    lines.append("")
+
+    return "\n".join(lines)
+
+
+def save_report(digest: dict) -> Path:
+    """Save a markdown report to research/reports/ and return its path."""
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    report_path = REPORTS_DIR / f"weekly_{date_str}.md"
+
+    md = generate_markdown_report(digest)
+    report_path.write_text(md)
+
+    # Also save raw JSON alongside for programmatic access
+    json_path = REPORTS_DIR / f"weekly_{date_str}.json"
+    json_path.write_text(json.dumps(digest, indent=2, default=str))
+
+    return report_path
+
+
 # ── Main ────────────────────────────────────────────────────────
 
 ANALYSES = {
@@ -1116,6 +1323,7 @@ def main():
                         help="Which analysis to run (default: weekly_digest)")
     parser.add_argument("--json", action="store_true", help="Output raw JSON")
     parser.add_argument("--telegram", action="store_true", help="Send to Telegram")
+    parser.add_argument("--report", action="store_true", help="Save markdown report to research/reports/")
     args = parser.parse_args()
     
     os.chdir(PROJECT)
@@ -1134,6 +1342,21 @@ def main():
             for name, result in results.items():
                 print(format_report(result))
                 print()
+    
+    # Save report (weekly_digest or all)
+    if args.report:
+        if isinstance(results, dict) and results.get("analysis") == "weekly_digest":
+            report_path = save_report(results)
+        elif isinstance(results, dict) and "analysis" not in results:
+            # "all" mode — wrap into digest-like structure
+            report_path = save_report({"analysis": "weekly_digest",
+                                       "generated_at": datetime.now().isoformat(), **results})
+        else:
+            # Single analysis — still save a report
+            digest = {"analysis": "weekly_digest", "generated_at": datetime.now().isoformat(),
+                      results.get("analysis", "result"): results}
+            report_path = save_report(digest)
+        print(f"\n📄 Report saved: {report_path}", file=sys.stderr)
     
     if args.telegram:
         try:
