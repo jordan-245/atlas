@@ -168,8 +168,8 @@ def _load_plan_metadata() -> dict:
         return {}
 
     meta = {}
-    # Scan last 30 plans (covers ~1 month of daily plans)
-    for plan_file in sorted(plans_dir.glob("plan_*.json"), reverse=True)[:30]:
+    # Scan last 90 plans (covers ~3 months — needed for open positions held 30–90 days)
+    for plan_file in sorted(plans_dir.glob("plan_*.json"), reverse=True)[:90]:
         plan = safe_json(plan_file, None)
         if not plan:
             continue
@@ -682,11 +682,14 @@ def _get_benchmark_curve(ticker: str, eq_curve: list, starting_equity: float) ->
     return []
 
 
-def generate_market(market_id: str, broker_cache: dict | None = None):
+def generate_market(market_id: str, broker_cache: dict | None = None,
+                    fx_rates: dict | None = None):
     """Generate dashboard data for a single market.
 
     broker_cache: optional dict to reuse a single broker connection.
       Keys: "acct", "positions", "ok". If None, connects fresh.
+    fx_rates: exchange rates dict (e.g. {"USDAUD": 1.41}) passed from
+      generate() so equity curve points can store the FX rate used.
     """
     config = get_config(market_id)
     portfolio = get_portfolio(config)  # live state fallback
@@ -955,6 +958,11 @@ def generate_market(market_id: str, broker_cache: dict | None = None):
     wins = sum(1 for t in closed if t.get("pnl", 0) > 0)
     win_rate = round(wins / len(closed) * 100, 1) if closed else 0
 
+    # Currency from market profile (needed before equity curve for FX rate tagging)
+    from markets.registry import get_market
+    market_profile = get_market(market_id)
+    currency = getattr(market_profile, "currency", "AUD")
+
     # ── Equity curve (per-market, persistent) ─────────────────
     curve_path = PROJECT_ROOT / "logs" / f"equity_curve_{market_id}.json"
     eq_curve = safe_json(curve_path, [])
@@ -963,21 +971,48 @@ def generate_market(market_id: str, broker_cache: dict | None = None):
 
     today_str = now.strftime("%Y-%m-%d")
 
-    # Only update the equity curve when we have reliable data (broker online).
-    # When broker offline with stale cached prices, the equity
-    # value is approximate — writing it would corrupt the curve with inaccurate
-    # points that can't be corrected later.
-    if data_source == "broker":
-        if not eq_curve or eq_curve[-1].get("date") != today_str:
-            eq_curve.append({"date": today_str, "equity": round(equity, 2)})
-        else:
-            eq_curve[-1]["equity"] = round(equity, 2)
+    # Issue #2: Detect unfunded/offline markets (ASX/HK offline with $0 starting
+    # equity or no positions and no equity history). These should NOT contribute
+    # phantom equity to the combined view.
+    funded = True
+    if data_source == "offline":
+        if seq == 0 or (len(positions) == 0 and not eq_curve):
+            funded = False
+            cash = 0
+            equity = 0
+            seq = 0
+            total_pnl = 0
+            total_pnl_pct = 0
+            logger.info("Market %s treated as UNFUNDED (offline, no positions, no history)",
+                        market_id)
 
-        # Persist
-        with open(curve_path, "w") as f:
+    # Issue #4: Update equity curve for broker AND cached data (cached = broker
+    # offline but last-known-good data used). Mark cached points as estimated.
+    # Only skip update when data_source == "offline" (no broker data at all).
+    # Issue #8: Use atomic write (tmp + rename) to avoid corrupt JSON on crash.
+    if data_source in ("broker", "cached"):
+        # Issue #3: Store the FX rate used so historical combined-curve
+        # conversions can use the rate that was current at that time.
+        # NOTE: Without per-point historical FX rates the combined curve uses
+        # the current rate for all history — accepted limitation documented here.
+        point: dict = {"date": today_str, "equity": round(equity, 2)}
+        if fx_rates is not None:
+            point["fx_rate"] = fx_rates.get("USDAUD", 1.0) if currency != "AUD" else 1.0
+        if data_source == "cached":
+            point["estimated"] = True  # flag so frontend can dim/style these points
+
+        if not eq_curve or eq_curve[-1].get("date") != today_str:
+            eq_curve.append(point)
+        else:
+            eq_curve[-1].update(point)
+
+        # Atomic persist: write to .tmp then rename so readers never see half-written JSON
+        tmp_curve = curve_path.with_suffix(".tmp")
+        with open(tmp_curve, "w") as f:
             json.dump(eq_curve, f, indent=2)
+        tmp_curve.rename(curve_path)
     else:
-        logger.info("Equity curve NOT updated for %s — data_source=%s (stale)",
+        logger.info("Equity curve NOT updated for %s — data_source=%s (offline)",
                      market_id, data_source)
 
     # ── Benchmark (SPY for sp500, IOZ.AX for asx) ──────────
@@ -1008,11 +1043,6 @@ def generate_market(market_id: str, broker_cache: dict | None = None):
     # Manual positions P&L
     manual_pnl = round(sum(p.get("pnl", 0) for p in manual_open), 2)
     manual_value = round(sum(p.get("current_price", 0) * p.get("shares", 0) for p in manual_open), 2)
-
-    # Currency from market profile
-    from markets.registry import get_market
-    market_profile = get_market(market_id)
-    currency = getattr(market_profile, "currency", "AUD")
 
     # Assemble
     result = {
@@ -1072,7 +1102,15 @@ def generate_market(market_id: str, broker_cache: dict | None = None):
                 PROJECT_ROOT / "brokers" / "state" / f"{market_id}.json"
             ),
         },
+        # Issue #2: funded flag — False when market is offline/unfunded (no capital deployed)
+        "funded": funded,
+        # Issue #9: stale data warning (set below if applicable)
+        "stale_warning": None,
     }
+
+    # Issue #9: Populate stale_warning when serving cached broker data older than 15 minutes
+    if is_cached and cache_age > 15:
+        result["stale_warning"] = f"Broker offline — showing data from {round(cache_age)}m ago"
 
     # Add pending orders from broker cache
     if broker_cache and broker_cache.get("orders"):
@@ -1702,6 +1740,13 @@ def _merge_benchmark_curves(market_data: dict, exchange_rates: dict,
     tickers = []
     all_dates = set()
     for mid, md in market_data.items():
+        # Issue #10: skip markets with no meaningful equity history (< 2 points)
+        # to avoid distorting the combined benchmark scale factor.
+        eq_curve_len = len(md.get("equity_curve", []))
+        if eq_curve_len < 2:
+            logger.debug("_merge_benchmark_curves: skipping %s (equity_curve has %d points)",
+                         mid, eq_curve_len)
+            continue
         bench = md.get("benchmark_curve", [])
         if not bench:
             continue
@@ -1841,17 +1886,20 @@ def generate():
                 broker_caches[mid] = moomoo_data
                 print(f"  {mid}: using shared moomoo data (cross-broker positions)")
 
+    # ── Fetch exchange rates before generating market data so we can pass
+    # them into generate_market() for equity curve FX rate tagging (Issue #3)
+    exchange_rates = _get_exchange_rates()
+
     # ── Generate per-market data ────────────────────────────────
     market_data = {}
     for mid in markets:
         print(f"\n  Generating {mid}...")
         # Pass market-specific broker cache (not shared)
         cache = broker_caches.get(mid)
-        data = generate_market(mid, broker_cache=cache)
+        data = generate_market(mid, broker_cache=cache, fx_rates=exchange_rates)
         market_data[mid] = data
 
-    # ── Fetch exchange rates (M4: hourly cache) ──────────────────
-    exchange_rates = _get_exchange_rates()
+    # exchange_rates already fetched above (before generate_market calls) — reuse it.
 
     def to_aud(amount, currency):
         """Convert any currency amount to AUD."""
@@ -1873,10 +1921,15 @@ def generate():
     for mid, md in market_data.items():
         pf = md.get("portfolio", {})
         ccy = md.get("currency", "AUD")
-        combined_equity_aud += to_aud(pf.get("equity", 0), ccy)
-        combined_cash_aud += to_aud(pf.get("cash", 0), ccy)
-        combined_starting_aud += to_aud(pf.get("starting_equity", 0), ccy)
-        # Tag positions with market
+        # Issue #2: skip unfunded/offline markets when computing combined equity totals.
+        # An unfunded market (funded=False) has zero real capital deployed and would
+        # falsely inflate combined equity by ~$5K per offline market.
+        is_funded = md.get("funded", True)
+        if is_funded:
+            combined_equity_aud += to_aud(pf.get("equity", 0), ccy)
+            combined_cash_aud += to_aud(pf.get("cash", 0), ccy)
+            combined_starting_aud += to_aud(pf.get("starting_equity", 0), ccy)
+        # Tag positions with market (include all markets for position display)
         for p in pf.get("open_positions", []):
             p["market"] = mid
             all_positions.append(p)
@@ -1886,15 +1939,16 @@ def generate():
         for t in md.get("closed_trades", []):
             t["market"] = mid
             all_closed.append(t)
-        # Strategy summary merge
-        for s in md.get("strategy_summary", []):
-            key = s["strategy"]
-            if key not in combined_strats:
-                combined_strats[key] = {"strategy": key, "positions": 0, "unrealized_pnl": 0, "market_value": 0}
-            combined_strats[key]["positions"] += s["positions"]
-            # C3: convert to AUD before summing (strategy values are in native market currency)
-            combined_strats[key]["unrealized_pnl"] += round(to_aud(s["unrealized_pnl"], ccy), 2)
-            combined_strats[key]["market_value"] += round(to_aud(s["market_value"], ccy), 2)
+        # Strategy summary merge (only funded markets contribute to combined P&L)
+        if is_funded:
+            for s in md.get("strategy_summary", []):
+                key = s["strategy"]
+                if key not in combined_strats:
+                    combined_strats[key] = {"strategy": key, "positions": 0, "unrealized_pnl": 0, "market_value": 0}
+                combined_strats[key]["positions"] += s["positions"]
+                # C3: convert to AUD before summing (strategy values are in native market currency)
+                combined_strats[key]["unrealized_pnl"] += round(to_aud(s["unrealized_pnl"], ccy), 2)
+                combined_strats[key]["market_value"] += round(to_aud(s["market_value"], ccy), 2)
 
     # ── Combined equity curve (sum across markets) ──────────────
     combined_curve = _merge_equity_curves(market_data, exchange_rates)
@@ -1947,6 +2001,13 @@ def generate():
         "risk_per_trade": "varies",
         "max_portfolio_risk": 0.05,
     }
+
+    # Issue #9: Collect stale warnings from all markets for the top-level result
+    stale_warnings = [
+        md["stale_warning"]
+        for md in market_data.values()
+        if md.get("stale_warning")
+    ]
 
     result = {
         "timestamp": now.isoformat(),
@@ -2002,11 +2063,17 @@ def generate():
         "risk": combined_risk,
         "tasks": primary_data.get("tasks", {}),
         "research": research_data,
+        # Issue #9: stale warnings propagated from per-market results
+        "stale_warnings": stale_warnings,
     }
 
+    # Issue #8: Atomic write — write to .tmp then rename to avoid readers
+    # seeing a half-written JSON file if the process is killed mid-write.
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    with open(OUTPUT, "w") as f:
+    tmp_output = OUTPUT.with_suffix(".tmp")
+    with open(tmp_output, "w") as f:
         json.dump(result, f, indent=2, default=str)
+    tmp_output.rename(OUTPUT)
 
     print(f"\nDashboard data written to {OUTPUT}")
     for mid, md in market_data.items():
