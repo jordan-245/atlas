@@ -213,8 +213,8 @@
       html += '<div style="font-size:11px;color:var(--text-tertiary)">No changes recorded yet.</div>';
     } else {
       logSlice.forEach(function (entry) {
-        var oldOn = entry.old_state;
-        var newOn = entry.new_state;
+        var oldOn = entry.old_active != null ? entry.old_active : entry.old_state;
+        var newOn = entry.new_active != null ? entry.new_active : entry.new_state;
         var oldTxt = oldOn ? '<span class="cf-log-state-on">ON</span>' : '<span class="cf-log-state-off">off</span>';
         var newTxt = newOn ? '<span class="cf-log-state-on">ON</span>' : '<span class="cf-log-state-off">off</span>';
         html += '<div class="cf-log-item">';
