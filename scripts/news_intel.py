@@ -72,7 +72,18 @@ LIVE_BLOG_DISCOVERY = [
 ]
 
 # Search queries for GDELT and Google News
-DEFAULT_QUERIES = [
+# Queries tuned per-source: GDELT needs broader phrases (full-text search),
+# Google News works best with tight keyword combos (headline-weighted).
+DEFAULT_QUERIES_GDELT = [
+    "iran war",
+    "iran strike military",
+    "hormuz shipping",
+    "oil price iran",
+    "hezbollah attack",
+    "houthi ship",
+]
+
+DEFAULT_QUERIES_GNEWS = [
     "iran war strikes military",
     "iran ceasefire negotiations diplomacy",
     "hormuz shipping tanker oil",
@@ -81,7 +92,15 @@ DEFAULT_QUERIES = [
     "iran cyber defence",
 ]
 
-CEASEFIRE_QUERIES = [
+CEASEFIRE_QUERIES_GDELT = [
+    "iran ceasefire",
+    "iran diplomacy negotiations",
+    "iran military depleted",
+    "war powers iran",
+    "hormuz escort",
+]
+
+CEASEFIRE_QUERIES_GNEWS = [
     "iran ceasefire talks negotiations",
     "iran diplomacy mediation Oman Qatar",
     "trump iran deal negotiate",
@@ -190,8 +209,8 @@ def fetch_gdelt(queries: list[str], hours: float) -> list[dict]:
                     source_country=art.get("sourcecountry", ""),
                 ))
 
-            # Rate limit: be polite to free API
-            time.sleep(0.5)
+            # Rate limit: GDELT free tier allows ~5 req/min, need ≥12s between calls
+            time.sleep(12)
 
         except Exception as e:
             print(f"  [gdelt] ERROR on '{q}': {e}", file=sys.stderr)
@@ -640,13 +659,16 @@ def fetch_all(
 
     enabled = sources or ["brave", "gdelt", "google_news", "liveblog"]
 
-    # Select queries based on focus
+    # Select queries per source — GDELT needs broader phrases, Google News uses tighter combos
     if query_focus == "ceasefire":
-        queries = CEASEFIRE_QUERIES
+        gdelt_queries = CEASEFIRE_QUERIES_GDELT
+        gnews_queries = CEASEFIRE_QUERIES_GNEWS
     elif query_focus:
-        queries = [query_focus]
+        gdelt_queries = [query_focus]
+        gnews_queries = [query_focus]
     else:
-        queries = DEFAULT_QUERIES
+        gdelt_queries = DEFAULT_QUERIES_GDELT
+        gnews_queries = DEFAULT_QUERIES_GNEWS
 
     all_articles = []
     source_stats = {}
@@ -658,9 +680,9 @@ def fetch_all(
         if "brave" in enabled:
             futures[pool.submit(fetch_brave, hours)] = "brave"
         if "gdelt" in enabled:
-            futures[pool.submit(fetch_gdelt, queries, hours)] = "gdelt"
+            futures[pool.submit(fetch_gdelt, gdelt_queries, hours)] = "gdelt"
         if "google_news" in enabled:
-            futures[pool.submit(fetch_google_news, queries)] = "google_news"
+            futures[pool.submit(fetch_google_news, gnews_queries)] = "google_news"
         if "liveblog" in enabled:
             futures[pool.submit(fetch_live_blogs, hours)] = "liveblog"
 

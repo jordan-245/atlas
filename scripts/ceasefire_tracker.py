@@ -267,19 +267,20 @@ def cmd_toggle(
     if source is not None:
         factor["source"] = source
 
-    # Append to change log
-    log_entry = {
-        "timestamp": datetime.now().isoformat(timespec="seconds"),
-        "factor_id": factor_id,
-        "old_active": old_active,
-        "new_active": new_active,
-        "confidence": factor["confidence"],
-        "reason": reason or "Toggled via CLI",
-        "source": source or factor.get("source", ""),
-    }
-    change_log = data.get("change_log", [])
-    change_log.append(log_entry)
-    data["change_log"] = change_log[-MAX_CHANGE_LOG:]
+    # Append to change log ONLY if state actually changed (skip same→same)
+    if old_active != new_active:
+        log_entry = {
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "factor_id": factor_id,
+            "old_active": old_active,
+            "new_active": new_active,
+            "confidence": factor["confidence"],
+            "reason": reason or "Toggled via CLI",
+            "source": source or factor.get("source", ""),
+        }
+        change_log = data.get("change_log", [])
+        change_log.append(log_entry)
+        data["change_log"] = change_log[-MAX_CHANGE_LOG:]
 
     # Recalculate
     new_prob = compute_probability(data)

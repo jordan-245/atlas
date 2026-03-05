@@ -1860,11 +1860,11 @@ def generate_ceasefire_data() -> dict:
     factors = data.get("factors", [])
     active_ceasefire = sum(
         1 for f in factors
-        if f.get("type") == "ceasefire" and f.get("state", False)
+        if f.get("direction") == "ceasefire" and f.get("active", False)
     )
     active_escalation = sum(
         1 for f in factors
-        if f.get("type") == "escalation" and f.get("state", False)
+        if f.get("direction") == "escalation" and f.get("active", False)
     )
 
     return {

@@ -1,10 +1,10 @@
 {
   "baseline": 12,
-  "probability": 8,
+  "probability": 2,
   "probability_label": "VERY UNLIKELY",
   "timeline": "4+ weeks",
   "portfolio_action": "Hold all positions. Thesis intact.",
-  "last_updated": "2026-03-05T12:53:39",
+  "last_updated": "2026-03-05T13:20:04",
   "change_log": [
     {
       "timestamp": "2026-03-05T12:52:24",
@@ -77,6 +77,24 @@
       "confidence": "low",
       "reason": "Toggled via CLI",
       "source": "revert"
+    },
+    {
+      "timestamp": "2026-03-05T13:20:04",
+      "factor_id": "gas_prices",
+      "old_active": true,
+      "new_active": false,
+      "confidence": "low",
+      "reason": "Toggled via CLI",
+      "source": "test flip"
+    },
+    {
+      "timestamp": "2026-03-05T13:20:04",
+      "factor_id": "gas_prices",
+      "old_active": false,
+      "new_active": true,
+      "confidence": "medium",
+      "reason": "Toggled via CLI",
+      "source": "GasBuddy: $5/gal, 12c/day increase"
     }
   ],
   "factors": [
@@ -200,8 +218,8 @@
       "direction": "ceasefire",
       "active": true,
       "confidence": "high",
-      "last_checked": "2026-03-05T12:53:04",
-      "source": "revert",
+      "last_checked": "2026-03-05T13:18:19",
+      "source": "CENTCOM Gen. Caine: missiles -86%, drones -73% as of March 4",
       "description": "Missiles down 86%, drones 73%",
       "search_keywords": [
         "iran military capability degraded",
@@ -219,8 +237,8 @@
       "direction": "ceasefire",
       "active": true,
       "confidence": "high",
-      "last_checked": "2026-03-05T12:00:00",
-      "source": "Initial assessment",
+      "last_checked": "2026-03-05T13:18:19",
+      "source": "White House: 20+ ships sunk incl top submarine, zero Iranian warships in Gulf",
       "description": "20+ ships sunk",
       "search_keywords": [
         "iran navy destroyed",
@@ -275,8 +293,8 @@
       "direction": "escalation",
       "active": true,
       "confidence": "high",
-      "last_checked": "2026-03-05T12:00:00",
-      "source": "Initial assessment",
+      "last_checked": "2026-03-05T13:18:20",
+      "source": "Rockets on Haifa, IDF ground troops in Lebanon, 60 Hezbollah sites struck",
       "description": "Hezbollah active offensive ongoing",
       "search_keywords": [
         "hezbollah attack rockets",
@@ -294,8 +312,8 @@
       "direction": "escalation",
       "active": true,
       "confidence": "medium",
-      "last_checked": "2026-03-05T12:00:00",
-      "source": "Initial assessment",
+      "last_checked": "2026-03-05T13:18:21",
+      "source": "Maersk Cape rerouting confirmed, Houthis resumed Red Sea threats",
       "description": "Houthi Red Sea attacks ongoing",
       "search_keywords": [
         "houthi red sea attack",
@@ -343,6 +361,23 @@
       ]
     },
     {
+      "id": "extended_timeline",
+      "category": "military",
+      "label": "US officials publicly state conflict duration exceeds 4 weeks",
+      "weight": -6,
+      "direction": "escalation",
+      "active": true,
+      "confidence": "high",
+      "last_checked": "2026-03-05T13:00:00",
+      "source": "Hegseth March 4 Pentagon briefing: war could last 3, 4, 6, or 8 weeks",
+      "description": "Longer stated timeline = longer supply disruption = lower ceasefire probability in near term",
+      "search_keywords": [
+        "hegseth weeks iran",
+        "trump timeline iran weeks",
+        "iran war duration"
+      ]
+    },
+    {
       "id": "war_powers_dead",
       "category": "political",
       "label": "Senate kills War Powers Resolution \u2014 Congress signals support for operations",
@@ -350,8 +385,8 @@
       "direction": "escalation",
       "active": true,
       "confidence": "high",
-      "last_checked": "2026-03-05T12:00:00",
-      "source": "Senate vote March 4 2026",
+      "last_checked": "2026-03-05T13:18:21",
+      "source": "Senate vote 47-53 March 4, War Powers Resolution defeated",
       "description": "Senate 47-53 March 4",
       "search_keywords": [
         "senate war powers iran vote",
@@ -368,8 +403,8 @@
       "direction": "ceasefire",
       "active": true,
       "confidence": "medium",
-      "last_checked": "2026-03-05T12:00:00",
-      "source": "Initial assessment",
+      "last_checked": "2026-03-05T13:20:04",
+      "source": "GasBuddy: $5/gal, 12c/day increase",
       "description": "$5/gal",
       "search_keywords": [
         "US gas prices $5 gallon",
@@ -443,8 +478,8 @@
       "direction": "escalation",
       "active": true,
       "confidence": "medium",
-      "last_checked": "2026-03-05T12:00:00",
-      "source": "Initial assessment",
+      "last_checked": "2026-03-05T13:18:22",
+      "source": "Hegseth: killing of Trump assassination plot leader, 'Trump got the last laugh'",
       "description": "Assassination retaliation risk active",
       "search_keywords": [
         "assassination US official iran",
@@ -550,22 +585,37 @@
       ]
     },
     {
-      "id": "storage_limits",
+      "id": "storage_crisis",
       "category": "economic",
-      "label": "Global oil storage near capacity \u2014 producers pressure both sides to reopen Hormuz",
+      "label": "Gulf producers hitting storage limits \u2014 forced production shutdowns",
       "weight": -6,
       "direction": "escalation",
       "active": false,
       "confidence": "low",
       "last_checked": null,
       "source": "",
-      "description": "",
+      "description": "Shipping problem becomes supply destruction \u2014 harder to restart, deepens crisis. JPMorgan: 25-day limit from Feb 28 = watch ~March 20-25.",
       "search_keywords": [
-        "oil storage capacity limit",
-        "crude oil storage full",
-        "oil oversupply storage tanks",
-        "global oil storage saturation",
-        "oil inventory maximum capacity"
+        "gulf oil storage full",
+        "saudi storage capacity",
+        "production shutdown storage limit"
+      ]
+    },
+    {
+      "id": "storage_pressure",
+      "category": "economic",
+      "label": "Gulf producers actively pressuring US/Iran to reopen Hormuz due to storage",
+      "weight": 6,
+      "direction": "ceasefire",
+      "active": false,
+      "confidence": "low",
+      "last_checked": null,
+      "source": "",
+      "description": "Economic self-interest of Gulf states creates diplomatic pressure for resolution",
+      "search_keywords": [
+        "saudi pressure ceasefire",
+        "gulf states demand hormuz",
+        "opec emergency meeting hormuz"
       ]
     }
   ]
