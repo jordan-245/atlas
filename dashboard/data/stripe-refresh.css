@@ -160,6 +160,15 @@ html[data-theme="light"] .plan-btn-reject {
   color: var(--red);
 }
 
+/* Plus markers in light mode — slightly bolder */
+html[data-theme="light"] .plus-row .plus {
+  color: #c0c0c0;
+  opacity: 0.7;
+}
+html[data-theme="light"] .section {
+  border-top-color: #d0d0d0;
+}
+
 /* Market button active in light mode */
 html[data-theme="light"] .market-btn.active {
   border-color: var(--text-secondary);

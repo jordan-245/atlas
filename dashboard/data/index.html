@@ -65,6 +65,23 @@ body::after {
   background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.3) 100%);
 }
 
+/* ── Plus grid markers (Stripe-inspired) ── */
+.plus-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0 4px; pointer-events: none; user-select: none;
+  height: 12px; margin: 0 0 2px;
+  opacity: 0; animation: fadeIn 0.6s ease-out forwards;
+}
+.plus-row .plus {
+  color: var(--border-glow); font-size: 10px; line-height: 1;
+  font-family: var(--mono); font-weight: 300; opacity: 0.5;
+}
+/* Dashed separators between section groups */
+.dash-sep {
+  border: none; border-top: 0.5px dashed var(--border-glow);
+  margin: 6px 0; opacity: 0.4;
+}
+
 /* ── Shell ── */
 .shell { max-width: 1280px; margin: 0 auto; padding: 28px 24px 64px; position: relative; z-index: 1; }
 
@@ -175,35 +192,36 @@ body::after {
 
 /* ── Sections ── */
 .section {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); margin-bottom: 12px; overflow: hidden;
+  background: transparent; border: none; border-top: 0.5px dashed var(--border-glow);
+  border-radius: 0; margin-bottom: 4px; overflow: hidden;
   opacity: 0; animation: fadeIn 0.4s ease-out forwards; animation-delay: 0.2s;
 }
 .section-head {
-  padding: 13px 20px; display: flex; align-items: center; justify-content: space-between;
-  cursor: pointer; user-select: none; border-radius: var(--radius) var(--radius) 0 0;
+  padding: 12px 4px; display: flex; align-items: center; justify-content: space-between;
+  cursor: pointer; user-select: none; border-radius: 0;
 }
-.section-head:hover { background: var(--surface-hover); }
+.section-head:hover { background: rgba(255,255,255,0.015); }
 .section-title {
-  font-family: var(--font-display); font-size: 16px; font-weight: 400;
+  font-family: var(--mono); font-size: 11px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-tertiary);
   display: flex; align-items: center; gap: 10px;
 }
 .section-count {
-  font-family: var(--mono); font-size: 11px; font-weight: 500; color: var(--text-tertiary);
-  background: var(--surface-raised); padding: 2px 9px; border-radius: 20px;
+  font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--amber);
+  background: none; padding: 0; border-radius: 0;
 }
 .section-body {
-  padding: 0 20px 16px; max-height: 2000px; overflow: hidden; opacity: 1;
+  padding: 0 4px 16px; max-height: 2000px; overflow: hidden; opacity: 1;
   transition: max-height 0.15s ease-out, opacity 0.1s ease, padding 0.15s ease;
 }
 .section-body.collapsed { max-height: 0; opacity: 0; padding-top: 0; padding-bottom: 0; content-visibility: hidden; }
 .chevron {
-  font-size: 11px; color: var(--text-tertiary); width: 22px; height: 22px;
-  display: flex; align-items: center; justify-content: center; border-radius: 6px;
-  transition: transform 0.25s ease;
+  font-family: var(--mono); font-size: 14px; color: var(--text-tertiary); width: 22px; height: 22px;
+  display: flex; align-items: center; justify-content: center; border-radius: 0;
+  transition: transform 0.2s ease;
 }
-.chevron.down { transform: rotate(0deg); }
-.chevron.right { transform: rotate(-90deg); }
+.chevron.down { transform: rotate(45deg); }
+.chevron.right { transform: rotate(0deg); }
 
 /* ── Tables ── */
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -211,13 +229,13 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th {
   text-align: left; padding: 9px 12px; font-size: 10px; text-transform: uppercase;
   letter-spacing: 0.7px; color: var(--text-tertiary); font-weight: 600;
-  border-bottom: 1px solid var(--border); white-space: nowrap; cursor: pointer;
-  position: sticky; top: 0; z-index: 1; background: var(--surface);
+  border-bottom: 0.5px dashed var(--border-glow); white-space: nowrap; cursor: pointer;
+  position: sticky; top: 0; z-index: 1; background: var(--bg);
 }
 th::after { content: '↕'; margin-left: 3px; opacity: 0; font-size: 8px; }
 th:hover { color: var(--text-secondary); }
 th:hover::after { opacity: 0.4; }
-td { padding: 9px 12px; border-bottom: 1px solid var(--border-subtle); white-space: nowrap; }
+td { padding: 9px 12px; border-bottom: 0.5px solid var(--border-subtle); white-space: nowrap; }
 tr:last-child td { border-bottom: none; }
 tr:hover td { background: rgba(255,255,255,0.015); }
 .mono { font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; }
@@ -325,7 +343,7 @@ tr:hover td { background: rgba(255,255,255,0.015); }
 .pri-p3 { color: var(--blue); } .pri-p4, .pri-p5 { color: var(--text-tertiary); }
 
 /* ── Daily insight ── */
-.insight-section { border-color: var(--border); }
+.insight-section { border-top-color: var(--amber); border-top-style: dashed; }
 .insight-spark { display: inline-block; margin-right: 4px; vertical-align: middle; color: var(--green); opacity: 0.8; }
 .insight-card {
   background: var(--surface); border: 1px solid var(--border-subtle);
@@ -360,7 +378,7 @@ tr:hover td { background: rgba(255,255,255,0.015); }
 .pnl-sub { font-size: 11px; color: var(--text-tertiary); margin-top: 3px; }
 
 /* ── Two-column ── */
-.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 4px; }
 .two-col > .section { margin-bottom: 0; }
 
 /* ── Plan entries ── */
@@ -368,10 +386,10 @@ tr:hover td { background: rgba(255,255,255,0.015); }
 .plan-entry:last-child { border-bottom: none; }
 .plan-ticker { font-family: var(--mono); font-weight: 600; min-width: 70px; font-size: 13px; }
 .plan-detail { color: var(--text-secondary); font-size: 12px; }
-.plan-badge { font-size: 10px; font-weight: 600; padding: 3px 10px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.3px; }
-.plan-badge.approved { background: var(--green-dim); color: var(--green); }
-.plan-badge.pending { background: var(--amber-dim); color: var(--amber); }
-.plan-badge.executed { background: var(--blue-dim); color: var(--blue); }
+.plan-badge { font-family: var(--mono); font-size: 11px; font-weight: 600; padding: 0; text-transform: uppercase; letter-spacing: 0.3px; }
+.plan-badge.approved { color: var(--green); }
+.plan-badge.pending { color: var(--amber); }
+.plan-badge.executed { color: var(--blue); }
 
 /* ── Metrics ── */
 .metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); }
@@ -697,17 +715,21 @@ tr:hover td { background: rgba(255,255,255,0.015); }
   <!-- ═══ TRADING TAB ═══ -->
   <div class="tab-content active" id="tab-trading">
 
+  <div class="plus-row" style="animation-delay:0.02s"><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span></div>
+
   <div class="cards" id="cards">
     <div class="card"><div class="skeleton skeleton-card"></div></div>
     <div class="card"><div class="skeleton skeleton-card"></div></div>
     <div class="card"><div class="skeleton skeleton-card"></div></div>
   </div>
 
+  <div class="plus-row" style="animation-delay:0.25s"><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span></div>
+
   <!-- P&L Breakdown -->
   <div class="section" style="animation-delay:0.30s">
     <div class="section-head" onclick="toggle('pnl')">
       <div class="section-title">/Profit &amp; Loss<span class="section-count" id="pnl-net"></span></div>
-      <span class="chevron down" id="chev-pnl">▾</span>
+      <span class="chevron down" id="chev-pnl">+</span>
     </div>
     <div class="section-body" id="body-pnl"></div>
   </div>
@@ -716,19 +738,21 @@ tr:hover td { background: rgba(255,255,255,0.015); }
   <div class="section" id="sec-equity" style="animation-delay:0.35s">
     <div class="section-head" onclick="toggle('equity')">
       <div class="section-title">/Performance</div>
-      <span class="chevron down" id="chev-equity">▾</span>
+      <span class="chevron down" id="chev-equity">+</span>
     </div>
     <div class="section-body" id="body-equity">
       <div id="equity-chart" style="width:100%"></div>
     </div>
   </div>
 
+  <div class="plus-row" style="animation-delay:0.38s"><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span></div>
+
   <!-- Two-col: Positions + Plan -->
   <div class="two-col">
     <div class="section" style="animation-delay:0.40s">
       <div class="section-head" onclick="toggle('positions')">
         <div class="section-title">/Open Positions <span class="section-count" id="pos-count">0</span></div>
-        <span class="chevron down" id="chev-positions">▾</span>
+        <span class="chevron down" id="chev-positions">+</span>
       </div>
       <div class="section-body" id="body-positions"></div>
     </div>
@@ -736,17 +760,19 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     <div class="section" style="animation-delay:0.45s">
       <div class="section-head" onclick="toggle('plan')">
         <div class="section-title">/Today's Plan <span class="plan-badge" id="plan-status"></span></div>
-        <span class="chevron down" id="chev-plan">▾</span>
+        <span class="chevron down" id="chev-plan">+</span>
       </div>
       <div class="section-body" id="body-plan"></div>
     </div>
   </div>
 
+  <div class="plus-row" style="animation-delay:0.46s"><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span></div>
+
   <!-- Manual Positions (non-Atlas holdings) -->
   <div class="section" id="sec-manual" style="display:none;animation-delay:0.47s">
     <div class="section-head" onclick="toggle('manual')">
       <div class="section-title">/Manual Holdings <span class="section-count" id="manual-count">0</span></div>
-      <span class="chevron down" id="chev-manual">▾</span>
+      <span class="chevron down" id="chev-manual">+</span>
     </div>
     <div class="section-body" id="body-manual"></div>
   </div>
@@ -755,7 +781,7 @@ tr:hover td { background: rgba(255,255,255,0.015); }
   <div class="section" id="sec-orders" style="display:none;animation-delay:0.50s">
     <div class="section-head" onclick="toggle('orders')">
       <div class="section-title">/Today's Orders <span class="section-count" id="orders-count">0</span></div>
-      <span class="chevron down" id="chev-orders">▾</span>
+      <span class="chevron down" id="chev-orders">+</span>
     </div>
     <div class="section-body" id="body-orders"></div>
   </div>
@@ -766,7 +792,7 @@ tr:hover td { background: rgba(255,255,255,0.015); }
   <div class="section" id="sec-closed" style="display:none;animation-delay:0.60s">
     <div class="section-head" onclick="toggle('closed')">
       <div class="section-title">/Trade History <span class="section-count" id="closed-count">0</span></div>
-      <span class="chevron down" id="chev-closed">▾</span>
+      <span class="chevron down" id="chev-closed">+</span>
     </div>
     <div class="section-body" id="body-closed"></div>
   </div>
@@ -786,7 +812,7 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     <div class="section insight-section" style="animation-delay:0.05s">
       <div class="section-head" onclick="toggle('insight')">
         <div class="section-title"><svg class="insight-spark" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.09 6.26L20.18 10l-6.09 1.74L12 18l-2.09-6.26L3.82 10l6.09-1.74z"/></svg> /Daily Insight</div>
-        <span class="chevron down" id="chev-insight">▾</span>
+        <span class="chevron down" id="chev-insight">+</span>
       </div>
       <div class="section-body" id="body-insight">
         <div id="insight-chart-container"></div>
@@ -797,7 +823,7 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     <div class="section" style="animation-delay:0.10s">
       <div class="section-head" onclick="toggle('rresults')">
         <div class="section-title">/Experiment Results <span class="section-count" id="rresults-count">0</span></div>
-        <span class="chevron down" id="chev-rresults">▾</span>
+        <span class="chevron down" id="chev-rresults">+</span>
       </div>
       <div class="section-body" id="body-rresults"></div>
     </div>
@@ -806,7 +832,7 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     <div class="section" style="animation-delay:0.15s">
       <div class="section-head" onclick="toggle('rqueue')">
         <div class="section-title">/Experiment Queue <span class="section-count" id="rqueue-count">0</span></div>
-        <span class="chevron down" id="chev-rqueue">▾</span>
+        <span class="chevron down" id="chev-rqueue">+</span>
       </div>
       <div class="section-body" id="body-rqueue"></div>
     </div>
@@ -815,7 +841,7 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     <div class="section" id="sec-coverage" style="animation-delay:0.20s">
       <div class="section-head" onclick="toggle('rcoverage')">
         <div class="section-title">/Strategy Coverage</div>
-        <span class="chevron down" id="chev-rcoverage">▾</span>
+        <span class="chevron down" id="chev-rcoverage">+</span>
       </div>
       <div class="section-body" id="body-rcoverage"></div>
     </div>
@@ -851,7 +877,7 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     <div class="section" style="animation-delay:0.3s">
       <div class="section-head" onclick="toggle('malerts')">
         <div class="section-title">/Alert Feed <span class="section-count" id="malerts-count">0</span></div>
-        <span class="chevron down" id="chev-malerts">▾</span>
+        <span class="chevron down" id="chev-malerts">+</span>
       </div>
       <div class="section-body" id="body-malerts"></div>
     </div>
@@ -860,7 +886,7 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     <div class="section" style="animation-delay:0.35s">
       <div class="section-head" onclick="toggle('mtemplates')">
         <div class="section-title">/Templates <span class="section-count" id="mtemplates-count">0</span></div>
-        <span class="chevron down" id="chev-mtemplates">▾</span>
+        <span class="chevron down" id="chev-mtemplates">+</span>
       </div>
       <div class="section-body" id="body-mtemplates"></div>
     </div>
@@ -874,6 +900,10 @@ tr:hover td { background: rgba(255,255,255,0.015); }
       </div>
     </div>
   </div>
+
+  <!-- Footer plus grid (Stripe-inspired) -->
+  <div class="plus-row" style="margin-top:24px"><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span></div>
+  <div class="plus-row" style="margin-top:16px"><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span></div>
 
 </div>
 
