@@ -68,18 +68,30 @@ body::after {
 /* ── Plus grid markers (Stripe-inspired) ── */
 .plus-row {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 0 4px; pointer-events: none; user-select: none;
-  height: 12px; margin: 0 0 2px;
+  padding: 0 2px; pointer-events: none; user-select: none;
+  height: 14px; margin: 2px 0 4px;
   opacity: 0; animation: fadeIn 0.6s ease-out forwards;
 }
 .plus-row .plus {
-  color: var(--border-glow); font-size: 10px; line-height: 1;
-  font-family: var(--mono); font-weight: 300; opacity: 0.5;
+  color: var(--text-tertiary); font-size: 11px; line-height: 1;
+  font-family: var(--mono); font-weight: 400; opacity: 0.7;
 }
 /* Dashed separators between section groups */
 .dash-sep {
   border: none; border-top: 0.5px dashed var(--border-glow);
   margin: 6px 0; opacity: 0.4;
+}
+/* ── Micro-accent canvases (Stripe Art-inspired) ── */
+.accent-canvas {
+  pointer-events: none; user-select: none; opacity: 0.6;
+  border-radius: 2px;
+}
+.accent-wrap {
+  display: flex; align-items: center; gap: 4px; pointer-events: none;
+}
+.accent-label {
+  font-family: var(--mono); font-size: 8px; color: var(--text-tertiary);
+  text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.5;
 }
 
 /* ── Shell ── */
@@ -715,7 +727,11 @@ tr:hover td { background: rgba(255,255,255,0.015); }
   <!-- ═══ TRADING TAB ═══ -->
   <div class="tab-content active" id="tab-trading">
 
-  <div class="plus-row" style="animation-delay:0.02s"><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span></div>
+  <div class="plus-row" style="animation-delay:0.02s">
+    <span class="plus">+</span><span class="plus">+</span><span class="plus">+</span>
+    <span class="accent-wrap"><canvas class="accent-canvas" id="accent-dotgrid" width="48" height="10"></canvas></span>
+    <span class="plus">+</span><span class="plus">+</span><span class="plus">+</span>
+  </div>
 
   <div class="cards" id="cards">
     <div class="card"><div class="skeleton skeleton-card"></div></div>
@@ -723,7 +739,13 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     <div class="card"><div class="skeleton skeleton-card"></div></div>
   </div>
 
-  <div class="plus-row" style="animation-delay:0.25s"><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span></div>
+  <div class="plus-row" style="animation-delay:0.25s">
+    <span class="plus">+</span><span class="plus">+</span>
+    <span class="accent-wrap"><canvas class="accent-canvas" id="accent-pulse" width="32" height="10"></canvas><span class="accent-label">sig</span></span>
+    <span class="plus">+</span><span class="plus">+</span>
+    <span class="accent-wrap"><span class="accent-label">vol</span><canvas class="accent-canvas" id="accent-wave" width="40" height="10"></canvas></span>
+    <span class="plus">+</span><span class="plus">+</span>
+  </div>
 
   <!-- P&L Breakdown -->
   <div class="section" style="animation-delay:0.30s">
@@ -745,7 +767,11 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     </div>
   </div>
 
-  <div class="plus-row" style="animation-delay:0.38s"><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span></div>
+  <div class="plus-row" style="animation-delay:0.38s">
+    <span class="plus">+</span><span class="plus">+</span><span class="plus">+</span>
+    <span class="accent-wrap"><canvas class="accent-canvas" id="accent-orbit" width="14" height="14"></canvas></span>
+    <span class="plus">+</span><span class="plus">+</span><span class="plus">+</span>
+  </div>
 
   <!-- Two-col: Positions + Plan -->
   <div class="two-col">
@@ -766,7 +792,11 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     </div>
   </div>
 
-  <div class="plus-row" style="animation-delay:0.46s"><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span></div>
+  <div class="plus-row" style="animation-delay:0.46s">
+    <span class="plus">+</span><span class="plus">+</span>
+    <span class="accent-wrap"><canvas class="accent-canvas" id="accent-bars" width="36" height="10"></canvas></span>
+    <span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span>
+  </div>
 
   <!-- Manual Positions (non-Atlas holdings) -->
   <div class="section" id="sec-manual" style="display:none;animation-delay:0.47s">
@@ -902,8 +932,14 @@ tr:hover td { background: rgba(255,255,255,0.015); }
   </div>
 
   <!-- Footer plus grid (Stripe-inspired) -->
-  <div class="plus-row" style="margin-top:24px"><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span></div>
-  <div class="plus-row" style="margin-top:16px"><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span></div>
+  <div class="plus-row" style="margin-top:24px">
+    <span class="plus">+</span><span class="plus">+</span><span class="plus">+</span>
+    <span class="accent-wrap"><canvas class="accent-canvas" id="accent-spiral" width="20" height="20"></canvas></span>
+    <span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span>
+  </div>
+  <div class="plus-row" style="margin-top:16px">
+    <span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span>
+  </div>
 
 </div>
 
@@ -3982,8 +4018,166 @@ switchTab = function(tab) {
     ctx.beginPath(); ctx.arc(cx, cy, 1.5, 0, Math.PI * 2); ctx.fill();
   }
 
+  // ── Accent micro-animations (Stripe Art-inspired) ─────────
+  function initAccents() {
+    var hidden = false;
+    document.addEventListener('visibilitychange', function() { hidden = document.hidden; });
+
+    function setup(id, w, h) {
+      var c = document.getElementById(id);
+      if (!c) return null;
+      var ctx = c.getContext('2d');
+      c.width = w * dpr; c.height = h * dpr;
+      c.style.width = w + 'px'; c.style.height = h + 'px';
+      ctx.scale(dpr, dpr);
+      return { ctx: ctx, w: w, h: h };
+    }
+
+    // 1. Dot grid — pulsing dots like Stripe's Art_background SVG circles
+    var dg = setup('accent-dotgrid', 48, 10);
+    if (dg) {
+      var cols = 8, rows = 2, dx = 6, dy = 5;
+      (function loopDG(t) {
+        if (hidden) return requestAnimationFrame(loopDG);
+        dg.ctx.clearRect(0, 0, dg.w, dg.h);
+        for (var r = 0; r < rows; r++) {
+          for (var c2 = 0; c2 < cols; c2++) {
+            var x = c2 * dx + 3, y = r * dy + 2.5;
+            var phase = (c2 + r * cols) * 0.4 + t * 0.001;
+            var a = 0.25 + Math.sin(phase) * 0.2;
+            dg.ctx.fillStyle = 'rgba(138,126,112,' + a.toFixed(2) + ')';
+            dg.ctx.beginPath(); dg.ctx.arc(x, y, 0.8, 0, Math.PI * 2); dg.ctx.fill();
+          }
+        }
+        requestAnimationFrame(loopDG);
+      })(0);
+    }
+
+    // 2. Pulse — horizontal heartbeat/signal line
+    var pl = setup('accent-pulse', 32, 10);
+    if (pl) {
+      (function loopPL(t) {
+        if (hidden) return requestAnimationFrame(loopPL);
+        pl.ctx.clearRect(0, 0, pl.w, pl.h);
+        pl.ctx.strokeStyle = 'rgba(127,184,88,0.6)';
+        pl.ctx.lineWidth = 0.8;
+        pl.ctx.beginPath();
+        for (var x = 0; x < pl.w; x++) {
+          var phase = (x * 0.3) - t * 0.003;
+          var y = pl.h / 2;
+          // Spike at center
+          var spike = Math.exp(-Math.pow((x - pl.w / 2 + (t * 0.02 % pl.w)) % pl.w - pl.w / 2, 2) / 8);
+          y -= spike * 3.5;
+          x === 0 ? pl.ctx.moveTo(x, y) : pl.ctx.lineTo(x, y);
+        }
+        pl.ctx.stroke();
+        requestAnimationFrame(loopPL);
+      })(0);
+    }
+
+    // 3. Wave — dual sine (like benchmark comparison)
+    var wv = setup('accent-wave', 40, 10);
+    if (wv) {
+      (function loopWV(t) {
+        if (hidden) return requestAnimationFrame(loopWV);
+        wv.ctx.clearRect(0, 0, wv.w, wv.h);
+        var mid = wv.h / 2;
+        // Line 1 — amber
+        wv.ctx.strokeStyle = 'rgba(212,168,74,0.5)';
+        wv.ctx.lineWidth = 0.7;
+        wv.ctx.beginPath();
+        for (var x = 0; x < wv.w; x++) {
+          var y = mid + Math.sin(x * 0.18 + t * 0.0015) * 3;
+          x === 0 ? wv.ctx.moveTo(x, y) : wv.ctx.lineTo(x, y);
+        }
+        wv.ctx.stroke();
+        // Line 2 — blue
+        wv.ctx.strokeStyle = 'rgba(90,147,192,0.4)';
+        wv.ctx.beginPath();
+        for (var x2 = 0; x2 < wv.w; x2++) {
+          var y2 = mid + Math.sin(x2 * 0.15 + t * 0.001 + 1.5) * 2;
+          x2 === 0 ? wv.ctx.moveTo(x2, y2) : wv.ctx.lineTo(x2, y2);
+        }
+        wv.ctx.stroke();
+        requestAnimationFrame(loopWV);
+      })(0);
+    }
+
+    // 4. Orbit — tiny dot orbiting a center point
+    var ob = setup('accent-orbit', 14, 14);
+    if (ob) {
+      (function loopOB(t) {
+        if (hidden) return requestAnimationFrame(loopOB);
+        ob.ctx.clearRect(0, 0, ob.w, ob.h);
+        var cx = ob.w / 2, cy = ob.h / 2;
+        // Ring
+        ob.ctx.strokeStyle = 'rgba(138,126,112,0.3)';
+        ob.ctx.lineWidth = 0.5;
+        ob.ctx.beginPath(); ob.ctx.arc(cx, cy, 5, 0, Math.PI * 2); ob.ctx.stroke();
+        // Center dot
+        ob.ctx.fillStyle = 'rgba(212,168,74,0.5)';
+        ob.ctx.beginPath(); ob.ctx.arc(cx, cy, 1, 0, Math.PI * 2); ob.ctx.fill();
+        // Orbiting dot
+        var a = t * 0.0015;
+        var ox = cx + Math.cos(a) * 5, oy = cy + Math.sin(a) * 5;
+        ob.ctx.fillStyle = 'rgba(127,184,88,0.7)';
+        ob.ctx.beginPath(); ob.ctx.arc(ox, oy, 1.2, 0, Math.PI * 2); ob.ctx.fill();
+        requestAnimationFrame(loopOB);
+      })(0);
+    }
+
+    // 5. Bars — animated mini bar chart
+    var br = setup('accent-bars', 36, 10);
+    if (br) {
+      (function loopBR(t) {
+        if (hidden) return requestAnimationFrame(loopBR);
+        br.ctx.clearRect(0, 0, br.w, br.h);
+        var barW = 2.5, gap = 1.5, n = 8;
+        for (var i = 0; i < n; i++) {
+          var x = i * (barW + gap) + 2;
+          var h2 = 2 + Math.abs(Math.sin(i * 0.7 + t * 0.002)) * 6;
+          var green = i < 5 ? true : false;
+          br.ctx.fillStyle = green ? 'rgba(127,184,88,0.5)' : 'rgba(208,88,88,0.5)';
+          br.ctx.fillRect(x, br.h - h2, barW, h2);
+        }
+        requestAnimationFrame(loopBR);
+      })(0);
+    }
+
+    // 6. Spiral — tiny rotating Stripe Art-style spirograph
+    var sp = setup('accent-spiral', 20, 20);
+    if (sp) {
+      (function loopSP(t) {
+        if (hidden) return requestAnimationFrame(loopSP);
+        sp.ctx.clearRect(0, 0, sp.w, sp.h);
+        var cx = sp.w / 2, cy = sp.h / 2;
+        var rot = t * 0.0003;
+        sp.ctx.strokeStyle = 'rgba(138,126,112,0.35)';
+        sp.ctx.lineWidth = 0.4;
+        // Draw spirograph arms
+        for (var arm = 0; arm < 6; arm++) {
+          var a = rot + arm * Math.PI / 3;
+          sp.ctx.beginPath();
+          for (var p = 0; p < 30; p++) {
+            var r1 = 3, r2 = 5 + Math.sin(t * 0.001 + arm) * 1;
+            var angle = a + p * 0.22;
+            var x = cx + Math.cos(angle) * (r1 + (r2 - r1) * p / 30);
+            var y = cy + Math.sin(angle) * (r1 + (r2 - r1) * p / 30);
+            p === 0 ? sp.ctx.moveTo(x, y) : sp.ctx.lineTo(x, y);
+          }
+          sp.ctx.stroke();
+        }
+        // Center dot
+        sp.ctx.fillStyle = 'rgba(212,168,74,0.4)';
+        sp.ctx.beginPath(); sp.ctx.arc(cx, cy, 1, 0, Math.PI * 2); sp.ctx.fill();
+        requestAnimationFrame(loopSP);
+      })(0);
+    }
+  }
+
   // Boot
   initGlobe();
+  initAccents();
 })();
 </script>
 </body>

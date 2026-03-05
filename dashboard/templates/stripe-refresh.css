@@ -162,8 +162,11 @@ html[data-theme="light"] .plan-btn-reject {
 
 /* Plus markers in light mode — slightly bolder */
 html[data-theme="light"] .plus-row .plus {
-  color: #c0c0c0;
-  opacity: 0.7;
+  color: #999;
+  opacity: 0.8;
+}
+html[data-theme="light"] .accent-label {
+  color: #999;
 }
 html[data-theme="light"] .section {
   border-top-color: #d0d0d0;
