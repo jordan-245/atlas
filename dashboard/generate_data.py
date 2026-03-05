@@ -1031,7 +1031,15 @@ def generate_market(market_id: str, broker_cache: dict | None = None,
         if data_source in ("broker", "cached") and broker_ok:
             chart_equity = broker_equity if broker_equity else equity
 
+        # Compute total P&L across ALL positions (Atlas + manual) for
+        # deposit-adjusted return calculation.  invested = equity - pnl
+        # so deposits cancel out (both sides increase equally).
+        all_unrealized = sum(p.get("unrealized_pnl", 0) for p in all_positions)
+        all_realized = realized_pnl  # already computed above from closed_trades
+        total_investment_pnl = round(all_unrealized + all_realized, 2)
+
         point: dict = {"date": today_str, "equity": round(chart_equity, 2)}
+        point["pnl"] = total_investment_pnl
         if fx_rates is not None:
             point["fx_rate"] = fx_rates.get("USDAUD", 1.0) if currency != "AUD" else 1.0
         if data_source == "cached":
@@ -1721,6 +1729,7 @@ def _merge_equity_curves(market_data: dict, exchange_rates: dict) -> list:
         return amount
 
     per_market = {}   # {mid: {date: equity_in_native}}
+    pnl_markets = {}  # {mid: {date: pnl_in_native}}
     currencies = {}   # {mid: currency}
     start_vals = {}   # {mid: starting equity in AUD}
     all_dates = set()
@@ -1732,14 +1741,17 @@ def _merge_equity_curves(market_data: dict, exchange_rates: dict) -> list:
         ccy = md.get("currency", "AUD")
         currencies[mid] = ccy
         series = {}
+        pnl_series = {}
         for pt in md.get("equity_curve", []):
             date = pt.get("date", "")
             eq = pt.get("equity", 0)
             if date and eq:
                 series[date] = eq
+                pnl_series[date] = pt.get("pnl", 0)
                 all_dates.add(date)
         if series:
             per_market[mid] = series
+            pnl_markets[mid] = pnl_series
             seq = md.get("portfolio", {}).get("starting_equity", 0)
             start_vals[mid] = _to_aud(
                 seq if seq > 0 else min(series.values()), ccy
@@ -1752,13 +1764,17 @@ def _merge_equity_curves(market_data: dict, exchange_rates: dict) -> list:
     combined = []
     for d in sorted_dates:
         total = 0
+        total_pnl = 0
         for mid, series in per_market.items():
             ccy = currencies[mid]
             if d in series:
                 series["_last"] = _to_aud(series[d], ccy)
+                pnl_markets[mid]["_last"] = _to_aud(pnl_markets[mid].get(d, 0), ccy)
             # Before first data point → use starting equity in AUD
             total += series.get("_last", start_vals.get(mid, 0))
-        combined.append({"date": d, "equity": round(total, 2)})
+            total_pnl += pnl_markets.get(mid, {}).get("_last", 0)
+        pt = {"date": d, "equity": round(total, 2), "pnl": round(total_pnl, 2)}
+        combined.append(pt)
 
     return combined
 

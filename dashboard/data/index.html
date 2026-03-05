@@ -1374,23 +1374,34 @@ function paintChart() {
 
   // Map each series to the unified date axis
   var portByDate = {};
-  portData.forEach(function(d) { portByDate[d.date] = d.equity; });
+  var pnlByDate = {};
+  portData.forEach(function(d) {
+    portByDate[d.date] = d.equity;
+    if (d.pnl !== undefined) pnlByDate[d.date] = d.pnl;
+  });
   var benchByDate = {};
   benchData.forEach(function(d) { benchByDate[d.date] = d.equity; });
 
   // Build arrays — forward-fill gaps
   var portEquities = [];
+  var portPnls = [];
   var benchEquities = [];
-  var lastP = null, lastB = null;
+  var lastP = null, lastB = null, lastPnl = null;
   for (var i = 0; i < n; i++) {
     var d = dates[i];
     if (portByDate[d] !== undefined) lastP = portByDate[d];
+    if (pnlByDate[d] !== undefined) lastPnl = pnlByDate[d];
     if (benchByDate[d] !== undefined) lastB = benchByDate[d];
     portEquities.push(lastP);
+    portPnls.push(lastPnl);
     benchEquities.push(lastB);
   }
 
-  // ── Convert to % return from first value ──
+  // ── Convert to % return ──
+  // Deposit-adjusted: if pnl data available, return = pnl / invested_capital
+  // where invested_capital = equity - pnl. This ignores deposits/withdrawals.
+  // Fallback for old points without pnl: use ratio to first equity value.
+  var hasPnl = portPnls.some(function(v) { return v !== null; });
   var portBase = portEquities[0] || chartState.startEq;
   var benchBase = null;
   for (var i = 0; i < n; i++) { if (benchEquities[i] !== null) { benchBase = benchEquities[i]; break; } }
@@ -1398,7 +1409,18 @@ function paintChart() {
   var portReturns = [];
   var benchReturns = [];
   for (var i = 0; i < n; i++) {
-    portReturns.push(portEquities[i] !== null ? ((portEquities[i] / portBase) - 1) * 100 : null);
+    if (portEquities[i] !== null) {
+      if (hasPnl && portPnls[i] !== null) {
+        // Deposit-adjusted: pnl / (equity - pnl) × 100
+        var invested = portEquities[i] - portPnls[i];
+        portReturns.push(invested > 0 ? (portPnls[i] / invested) * 100 : 0);
+      } else {
+        // Fallback: ratio to first point (old behavior)
+        portReturns.push(((portEquities[i] / portBase) - 1) * 100);
+      }
+    } else {
+      portReturns.push(null);
+    }
     benchReturns.push(benchEquities[i] !== null && benchBase ? ((benchEquities[i] / benchBase) - 1) * 100 : null);
   }
 
@@ -1429,13 +1451,16 @@ function paintChart() {
   maxRet += retR * 0.12;
 
   // ── Drawdown (portfolio only) ──
+  // Drawdown from return series (not raw equity) so deposits don't
+  // create phantom drawdowns when new money raises the high-water mark.
   var dd = [];
-  var pk = null;
+  var pkRet = null;
   for (var i = 0; i < n; i++) {
-    var eq = portEquities[i];
-    if (eq === null) { dd.push(0); continue; }
-    if (pk === null || eq > pk) pk = eq;
-    dd.push(((eq - pk) / pk) * 100);
+    var r = portReturns[i];
+    if (r === null) { dd.push(0); continue; }
+    if (pkRet === null || r > pkRet) pkRet = r;
+    // Drawdown as pct-points below peak return
+    dd.push(r - pkRet);
   }
   var minDD = Math.min.apply(null, dd);
   if (minDD > -0.5) minDD = -0.5;
@@ -1807,7 +1832,14 @@ function render(d) {
 
   // Equity sparkline from curve data
   var eqCurve = d.equity_curve || [];
-  var sparkPoints = eqCurve.map(function(e) { return e.equity; });
+  // Sparkline uses deposit-adjusted return if available, else raw equity
+  var sparkPoints = eqCurve.map(function(e) {
+    if (e.pnl !== undefined) {
+      var inv = e.equity - e.pnl;
+      return inv > 0 ? (e.pnl / inv) * 100 : 0;
+    }
+    return e.equity;
+  });
   var sparkHtml = sparkline(sparkPoints, 48, 20);
 
   // Exposure %
