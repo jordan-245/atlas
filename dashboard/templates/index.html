@@ -138,7 +138,7 @@ body::after {
 }
 
 /* ── KPI Cards — hero layout ── */
-.cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 18px; }
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px; }
 .card {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 18px 20px;
@@ -643,36 +643,14 @@ tr:hover td { background: rgba(255,255,255,0.015); }
 </head>
 <body>
 <canvas id="phosphor-bg"></canvas>
-<div class="crt-scanlines"></div>
-<div class="crt-vignette"></div>
-<div class="grid-overlay" id="grid-overlay">
-  <div class="grid-col-line"></div>
-  <div class="grid-col-line"></div>
-  <div class="grid-col-line"></div>
-  <div class="grid-col-line"></div>
-  <div class="grid-col-line"></div>
-  <div class="grid-col-line"></div>
-</div>
 <div class="shell">
 
   <div class="header">
     <div class="header-left">
       <canvas class="atlas-globe" id="atlas-globe" width="64" height="64"></canvas>
       <div class="logo">Atlas</div>
-      <span class="version" id="version"></span>
     </div>
     <div class="header-right">
-      <div class="theme-toggle" id="theme-toggle">
-        <button class="theme-btn" data-theme="light" title="Light mode">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-        </button>
-        <button class="theme-btn active" data-theme="auto" title="Auto (time of day)">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 0 0 20V2z" fill="currentColor"/></svg>
-        </button>
-        <button class="theme-btn" data-theme="dark" title="Dark mode">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-        </button>
-      </div>
       <div class="market-clocks" id="market-clocks"></div>
       <div class="status-pill" id="mode-pill" style="display:none">
         <span id="mode-dot" class="pulse"></span>
@@ -683,6 +661,7 @@ tr:hover td { background: rgba(255,255,255,0.015); }
         <span id="updated">Loading…</span>
       </div>
     </div>
+    <span class="version" id="version" style="display:none"></span>
   </div>
 
   <!-- Halt banner (hidden by default) -->
@@ -691,11 +670,8 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     Trading halted — risk limits breached
   </div>
 
-  <!-- Data freshness bar (M3) -->
-  <div id="freshness-bar" style="display:none; padding: 6px 20px; background: var(--surface); border-bottom: 1px solid var(--border-subtle); font-family: var(--mono); font-size: 0.78rem; color: var(--text-secondary); display: flex; gap: 16px; flex-wrap: wrap; align-items: center;"></div>
-
-  <!-- Market Selector -->
   <div class="market-selector" id="market-selector"></div>
+  <div id="freshness-bar" style="display:none"></div>
 
   <!-- Tab Navigation -->
   <div class="tab-nav">
@@ -716,10 +692,7 @@ tr:hover td { background: rgba(255,255,255,0.015); }
   <!-- ═══ TRADING TAB ═══ -->
   <div class="tab-content active" id="tab-trading">
 
-  <!-- Top KPI Cards -->
   <div class="cards" id="cards">
-    <div class="card"><div class="skeleton skeleton-card"></div></div>
-    <div class="card"><div class="skeleton skeleton-card"></div></div>
     <div class="card"><div class="skeleton skeleton-card"></div></div>
     <div class="card"><div class="skeleton skeleton-card"></div></div>
     <div class="card"><div class="skeleton skeleton-card"></div></div>
@@ -782,23 +755,7 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     <div class="section-body" id="body-orders"></div>
   </div>
 
-  <!-- Broker Account -->
-  <div class="section" id="sec-account" style="display:none;animation-delay:0.52s">
-    <div class="section-head" onclick="toggle('account')">
-      <div class="section-title">/Broker Account</div>
-      <span class="chevron down" id="chev-account">▾</span>
-    </div>
-    <div class="section-body" id="body-account"></div>
-  </div>
-
-  <!-- Tasks -->
-  <div class="section" style="animation-delay:0.55s">
-    <div class="section-head" onclick="toggle('tasks')">
-      <div class="section-title">/Tasks <span class="section-count" id="task-count"></span></div>
-      <span class="chevron down" id="chev-tasks">▾</span>
-    </div>
-    <div class="section-body" id="body-tasks"></div>
-  </div>
+  <div id="sec-account" style="display:none"><div id="body-account"></div></div>
 
   <!-- Closed Trades -->
   <div class="section" id="sec-closed" style="display:none;animation-delay:0.60s">
@@ -1800,34 +1757,9 @@ function render(d) {
   var haltEl = document.getElementById('halt-banner');
   if (risk.halted) { haltEl.style.display = 'flex'; } else { haltEl.style.display = 'none'; }
 
-  // M3: Data freshness bar
+  // Freshness bar removed — broker status shown via market selector dots
   var freshBar = document.getElementById('freshness-bar');
-  if (d.markets) {
-    var parts = [];
-    Object.keys(d.markets).sort().forEach(function(mid) {
-      var mkt = d.markets[mid];
-      var f = mkt.data_freshness || {};
-      var src = f.data_source || mkt.data_source || 'offline';
-      var dot, label;
-      if (src === 'broker') {
-        dot = '🟢'; label = 'live';
-      } else if (src === 'cached') {
-        dot = '🟡';
-        var age = f.cache_age_minutes;
-        label = age ? 'cached ' + Math.round(age) + 'm ago' : 'cached';
-      } else {
-        dot = '🔴'; label = 'offline';
-      }
-      var broker = (d.broker && d.broker[mid]) || '';
-      parts.push('<span>' + mid.toUpperCase() + (broker ? ' <span style="color:var(--text-tertiary)">(' + broker + ')</span>' : '') + ' ' + dot + ' ' + label + '</span>');
-    });
-    // FX rate
-    var fx = d.exchange_rates || {};
-    if (fx.AUDUSD) {
-      parts.push('<span data-fx style="margin-left:auto">FX: 1 AUD = ' + fx.AUDUSD.toFixed(4) + ' USD</span>');
-    }
-    freshBar.innerHTML = parts.join('<span style="color:var(--border)">│</span>');
-    freshBar.style.display = 'flex';
+  if (false) {
   }
 
   // Equity sparkline from curve data
@@ -1871,28 +1803,14 @@ function render(d) {
       sub: 'Atlas ' + pct(atlasRet) + ' · ' + benchTk + ' ' + pct(benchRet)
     },
     {
-      label: 'Positions',
-      value: (p.num_open || 0) + '<span style="font-size:15px;color:var(--text-tertiary);font-weight:400"> / ' + (risk.max_positions || 10) + '</span>',
-      c: 'flat',
-      accent: 'accent-blue',
-      sub: exposurePct.toFixed(0) + '% capital deployed' + (((d.manual_positions||{}).num_open||0) > 0 ? ' · ' + ((d.manual_positions||{}).num_open||0) + ' manual' : '') + '<div class="exposure-bar"><div class="exposure-bar-fill" style="width:' + Math.min(exposurePct, 100) + '%"></div></div>'
-    },
-    {
       label: 'Net P&L',
       value: $(p.total_pnl || 0),
       c: cls(p.total_pnl),
       accent: cls(p.total_pnl) === 'up' ? 'accent-green' : cls(p.total_pnl) === 'down' ? 'accent-red' : 'accent-blue',
-      sub: risk.halted ? '<span style="color:var(--red);font-weight:600">HALTED</span>' : (tradingMode === 'live' ? '<span style="color:var(--green)">Live' + (_currentMarket === 'all' ? ' · AUD combined' : ' · ' + getViewCurrency()) + '</span>' : tradingMode === 'live_dry_run' ? '<span style="color:var(--orange)">Dry run mode</span>' : 'Paper trading active')
-    },
-    {
-      label: 'Win Rate',
-      value: (d.closed_trades || []).length > 0 && p.win_rate != null ? p.win_rate.toFixed(0) + '%' : '—',
-      c: 'flat',
-      accent: 'accent-amber',
-      sub: (d.closed_trades || []).length + ' closed trade' + ((d.closed_trades || []).length !== 1 ? 's' : '')
+      sub: (p.num_open || 0) + ' positions · ' + exposurePct.toFixed(0) + '% deployed' + (risk.halted ? ' · <span style="color:var(--red);font-weight:600">HALTED</span>' : '')
     },
   ];
-  var cardIcons = ['equity','benchmark','positions','pnl','winrate'];
+  var cardIcons = ['equity','benchmark','pnl'];
   var ch = '';
   cards.forEach(function(c, i) {
     var iconId = 'card-icon-' + cardIcons[i];
@@ -1902,43 +1820,24 @@ function render(d) {
     ch += '<div class="card-sub">' + c.sub + '</div></div>';
   });
   document.getElementById('cards').innerHTML = ch;
-  // Kick icon animations after DOM insert
   if (typeof _initCardIcons === 'function') _initCardIcons();
 
-  // P&L Breakdown
+  // P&L inline summary
   var atlasPnl = (p.market_pnl || 0) + (p.realized_pnl || 0) - (p.total_commissions || 0);
   var combinedPnl = atlasPnl + manualPnl;
   var netCountEl = document.getElementById('pnl-net');
   if (netCountEl) {
-    // Show Atlas P&L in the header — combined is shown in the breakdown
-    var pnlLabel = manualPnl !== 0 ? ('Atlas ' + $(atlasPnl) + ' · All ' + $(combinedPnl)) : $(atlasPnl);
+    var pnlLabel = manualPnl !== 0 ? ('Atlas ' + $(atlasPnl) + ' · Manual ' + $(manualPnl) + ' · All ' + $(combinedPnl)) : $(atlasPnl);
     netCountEl.textContent = pnlLabel;
     netCountEl.className = 'section-count';
     netCountEl.style.color = atlasPnl >= 0 ? 'var(--green)' : 'var(--red)';
   }
 
-  var pnlHtml = '<div class="pnl-grid">';
-  pnlHtml += '<div class="pnl-item"><div class="pnl-label">Atlas Unrealized</div><div class="pnl-value ' + cls(p.market_pnl) + '">' + $(p.market_pnl || 0) + '</div><div class="pnl-sub">' + (p.num_open || 0) + ' Atlas positions</div></div>';
-  pnlHtml += '<div class="pnl-item"><div class="pnl-label">Atlas Realized</div><div class="pnl-value ' + cls(p.realized_pnl) + '">' + $(p.realized_pnl || 0) + '</div><div class="pnl-sub">' + (d.closed_trades || []).length + ' closed trades</div></div>';
-  pnlHtml += '<div class="pnl-item"><div class="pnl-label">Manual Holdings</div><div class="pnl-value ' + cls(manualPnl) + '">' + $(manualPnl) + '</div><div class="pnl-sub">' + ((d.manual_positions || {}).num_open || 0) + ' positions (not Atlas)</div></div>';
-  pnlHtml += '<div class="pnl-item"><div class="pnl-label">Combined Net</div><div class="pnl-value ' + cls(combinedPnl) + '">' + $(combinedPnl) + '</div><div class="pnl-sub">' + pct((combinedPnl / (p.starting_equity || 5000)) * 100) + ' total return</div></div>';
+  var pnlHtml = '<div style="display:flex;gap:32px;flex-wrap:wrap;padding:4px 0">';
+  pnlHtml += '<div><span class="pnl-label" style="margin-right:6px">Unrealized</span><span class="mono ' + cls(p.market_pnl) + '">' + $(p.market_pnl || 0) + '</span></div>';
+  if ((p.realized_pnl || 0) !== 0) pnlHtml += '<div><span class="pnl-label" style="margin-right:6px">Realized</span><span class="mono ' + cls(p.realized_pnl) + '">' + $(p.realized_pnl) + '</span></div>';
+  if (manualPnl !== 0) pnlHtml += '<div><span class="pnl-label" style="margin-right:6px">Manual</span><span class="mono ' + cls(manualPnl) + '">' + $(manualPnl) + '</span><span style="color:var(--text-tertiary);font-size:11px;margin-left:4px">' + ((d.manual_positions||{}).num_open||0) + ' pos</span></div>';
   pnlHtml += '</div>';
-
-  // Strategy breakdown
-  var strats = d.strategy_summary || [];
-  if (strats.length > 0) {
-    pnlHtml += '<div class="strat-breakdown">';
-    pnlHtml += '<div class="strat-breakdown-label">By Strategy</div>';
-    pnlHtml += '<div class="strat-breakdown-items">';
-    strats.forEach(function(s) {
-      pnlHtml += '<div class="strat-breakdown-item">';
-      pnlHtml += strat(s.strategy);
-      pnlHtml += '<span class="mono" style="font-size:12px;color:var(--text-secondary)">' + s.positions + ' pos</span>';
-      pnlHtml += '<span class="mono ' + cls(s.unrealized_pnl) + '" style="font-size:12px">' + $(s.unrealized_pnl) + '</span>';
-      pnlHtml += '</div>';
-    });
-    pnlHtml += '</div></div>';
-  }
   document.getElementById('body-pnl').innerHTML = pnlHtml;
 
   // Equity chart — portfolio vs benchmark
@@ -2195,7 +2094,7 @@ function render(d) {
   var acct = d.account;
   var acctEl = document.getElementById('sec-account');
   if (acct) {
-    acctEl.style.display = '';
+    // Broker account section removed from visible UI — keep data for API consumers
     var viewCcy = getViewCurrency();
     var ah = '<div class="pnl-grid">';
     ah += '<div class="pnl-item"><div class="pnl-label">Total Equity</div><div class="pnl-value">' + $(acct.equity) + '</div><div class="pnl-sub">' + viewCcy + (_currentMarket === 'all' ? ' · All markets combined' : ' · ' + _currentMarket.toUpperCase()) + '</div></div>';
@@ -2237,36 +2136,7 @@ function render(d) {
     acctEl.style.display = 'none';
   }
 
-  // Tasks
-  var tasks = d.tasks || {};
-  var upcoming = tasks.upcoming || [];
-  var active = tasks.in_progress || [];
-  var done = tasks.done || [];
-
-  var totalTasks = upcoming.length + active.length + done.length;
-  if (totalTasks === 0) {
-    document.getElementById('task-count').textContent = '';
-    document.getElementById('body-tasks').innerHTML = '<div class="empty">Task tracking via <span class="mono" style="font-size:11px">tasks/todo.md</span> — create it to see tasks here</div>';
-  } else {
-    document.getElementById('task-count').textContent = active.length > 0 ? active.length + ' active' : totalTasks;
-    var th2 = '<div class="task-columns">';
-    th2 += '<div>';
-    th2 += '<div class="task-col-head"><span class="dot dot-upcoming"></span> Upcoming (' + upcoming.length + ')</div>';
-    if (upcoming.length) { upcoming.forEach(function(t) { th2 += '<div class="task-item">' + esc(t) + '</div>'; }); }
-    else { th2 += '<div class="task-empty">Nothing planned</div>'; }
-    th2 += '</div>';
-    th2 += '<div>';
-    th2 += '<div class="task-col-head"><span class="dot dot-active"></span> In Progress (' + active.length + ')</div>';
-    if (active.length) { active.forEach(function(t) { th2 += '<div class="task-item">' + esc(t) + '</div>'; }); }
-    else { th2 += '<div class="task-empty">Nothing in flight</div>'; }
-    th2 += '</div>';
-    th2 += '<div>';
-    th2 += '<div class="task-col-head"><span class="dot dot-done"></span> Done (' + done.length + ')</div>';
-    if (done.length) { done.forEach(function(t) { th2 += '<div class="task-item done">' + esc(t) + '</div>'; }); }
-    else { th2 += '<div class="task-empty">Nothing completed yet</div>'; }
-    th2 += '</div></div>';
-    document.getElementById('body-tasks').innerHTML = th2;
-  }
+  // Tasks section removed
 
   // ── Research Tab ──
   renderResearch(d);
@@ -3936,7 +3806,6 @@ switchTab = function(tab) {
     };
 
     var canvases = {};
-    var allReady = true;
     Object.keys(icons).forEach(function(k) {
       var el = document.getElementById('card-icon-' + k);
       if (el) {
@@ -3945,9 +3814,9 @@ switchTab = function(tab) {
         el.style.width = '20px'; el.style.height = '20px';
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         canvases[k] = { ctx: ctx, w: 20, h: 20 };
-      } else { allReady = false; }
+      }
     });
-    if (!allReady) return;
+    if (Object.keys(canvases).length === 0) return;
 
     function tick(t) {
       if (!document.hidden) {
