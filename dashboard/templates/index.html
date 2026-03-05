@@ -3613,8 +3613,8 @@ switchTab = function(tab) {
 (function() {
   'use strict';
 
-  var POLL_INTERVAL = 15000;     // 15 seconds
-  var POLL_INTERVAL_SLOW = 60000; // 60s when markets closed
+  var POLL_INTERVAL = 15000;     // 15s always (covers pre/post market)
+  var POLL_INTERVAL_SLOW = 15000; // same — pre/post market matters too
   var _liveTimer = null;
   var _lastLiveUpdate = null;
   var _liveQuotes = {};
@@ -3720,6 +3720,132 @@ switchTab = function(tab) {
     }
   }
 
+  // ── Update Today's P&L card from live quotes ────────────────
+  function updateTodayPnl(quotes) {
+    if (!_rawData) return;
+    var CSYM = {AUD: 'A$', USD: 'US$', GBP: '£', EUR: '€', JPY: '¥', HKD: 'HK$'};
+    // Collect all positions across all markets (atlas + manual)
+    var allPos = [];
+    var markets = _rawData.markets || {};
+    Object.keys(markets).forEach(function(mid) {
+      var md = markets[mid];
+      var pf = md.portfolio || {};
+      (pf.open_positions || []).forEach(function(p) { allPos.push(p); });
+      ((md.manual_positions || {}).positions || []).forEach(function(p) { allPos.push(p); });
+    });
+    if (allPos.length === 0) return;
+
+    // Compute today's P&L per currency from live quotes
+    var byCcy = {};
+    allPos.forEach(function(p) {
+      var ticker = p.ticker || '';
+      var shares = p.shares || 0;
+      var ccy = p.currency || 'AUD';
+      var q = quotes[ticker];
+      if (q && q.prev_close && q.price && shares) {
+        var dayPnl = (q.price - q.prev_close) * shares;
+        byCcy[ccy] = (byCcy[ccy] || 0) + dayPnl;
+      } else {
+        // Fallback: use broker's today_pnl if no live quote
+        byCcy[ccy] = (byCcy[ccy] || 0) + (p.today_pnl || 0);
+      }
+    });
+
+    // Convert to AUD
+    var rates = (_rawData.exchange_rates || {});
+    var usdaud = rates.USDAUD || 1.42;
+    // Try live FX from quotes
+    var fxq = quotes['AUDUSD=X'];
+    if (fxq && fxq.price) usdaud = 1 / fxq.price;
+    var totalAud = 0;
+    Object.keys(byCcy).forEach(function(ccy) {
+      byCcy[ccy] = Math.round(byCcy[ccy] * 100) / 100;
+      if (ccy === 'AUD') totalAud += byCcy[ccy];
+      else if (ccy === 'USD') totalAud += byCcy[ccy] * usdaud;
+      else totalAud += byCcy[ccy];
+    });
+    totalAud = Math.round(totalAud * 100) / 100;
+
+    // Filter current market view
+    var viewByCcy = byCcy;
+    if (_currentMarket !== 'all') {
+      viewByCcy = {};
+      var md = markets[_currentMarket];
+      if (md) {
+        var viewPos = (md.portfolio || {}).open_positions || [];
+        var manPos = ((md.manual_positions || {}).positions || []);
+        viewPos.concat(manPos).forEach(function(p) {
+          var ticker = p.ticker || '';
+          var shares = p.shares || 0;
+          var ccy = p.currency || 'AUD';
+          var q = quotes[ticker];
+          if (q && q.prev_close && q.price && shares) {
+            viewByCcy[ccy] = (viewByCcy[ccy] || 0) + (q.price - q.prev_close) * shares;
+          } else {
+            viewByCcy[ccy] = (viewByCcy[ccy] || 0) + (p.today_pnl || 0);
+          }
+        });
+        Object.keys(viewByCcy).forEach(function(k) { viewByCcy[k] = Math.round(viewByCcy[k] * 100) / 100; });
+      }
+    }
+
+    // Compute display value in view currency
+    var viewCcy = _currentMarket === 'all' ? 'AUD' : ((markets[_currentMarket] || {}).currency || 'AUD');
+    var viewTotal = 0;
+    Object.keys(viewByCcy).forEach(function(ccy) {
+      if (ccy === viewCcy) viewTotal += viewByCcy[ccy];
+      else if (ccy === 'USD' && viewCcy === 'AUD') viewTotal += viewByCcy[ccy] * usdaud;
+      else if (ccy === 'AUD' && viewCcy === 'USD') viewTotal += viewByCcy[ccy] / usdaud;
+      else viewTotal += viewByCcy[ccy];
+    });
+    viewTotal = Math.round(viewTotal * 100) / 100;
+
+    // Update the card DOM
+    var cards = document.querySelectorAll('.card');
+    var pnlCard = cards[2]; // 3rd card = Today's P&L
+    if (!pnlCard) return;
+
+    var valEl = pnlCard.querySelector('.card-value');
+    var subEl = pnlCard.querySelector('.card-sub');
+    if (!valEl) return;
+
+    var dispSym = CSYM[viewCcy] || '$';
+    var newVal = (viewTotal >= 0 ? '+' : '-') + dispSym + Math.abs(viewTotal).toLocaleString('en-AU', {minimumFractionDigits:2, maximumFractionDigits:2});
+    var oldVal = valEl.textContent;
+
+    // Update value with flash
+    valEl.textContent = newVal;
+    valEl.className = 'card-value ' + (viewTotal > 0.005 ? 'up' : viewTotal < -0.005 ? 'down' : 'flat');
+    if (newVal !== oldVal) {
+      valEl.style.transition = 'background 0.3s';
+      valEl.style.background = viewTotal > 0 ? 'rgba(127,184,88,0.1)' : 'rgba(208,88,88,0.1)';
+      setTimeout(function() { valEl.style.background = ''; }, 800);
+    }
+
+    // Update subtitle
+    if (subEl) {
+      var parts = [];
+      Object.keys(viewByCcy).sort().forEach(function(ccy) {
+        var val = viewByCcy[ccy];
+        if (Math.abs(val) < 0.005) return;
+        var sym = CSYM[ccy] || (ccy + ' ');
+        var c = val > 0.005 ? 'up' : val < -0.005 ? 'down' : 'flat';
+        parts.push('<span class="' + c + '">' + (val >= 0 ? '+' : '-') + sym + Math.abs(val).toFixed(2) + '</span>');
+      });
+      // Keep position info from existing subtitle
+      var existingSub = subEl.innerHTML;
+      var posMatch = existingSub.match(/(\d+ positions? ·[^<]*)/);
+      var posInfo = posMatch ? posMatch[1] : '';
+      subEl.innerHTML = (parts.length > 0 ? parts.join(' · ') + (posInfo ? ' · ' : '') : '') + posInfo;
+    }
+
+    // Also update the raw data so full re-render stays consistent
+    if (_currentMarket === 'all') {
+      _rawData.portfolio.today_pnl_by_ccy = byCcy;
+      _rawData.portfolio.today_pnl_aud = totalAud;
+    }
+  }
+
   // ── Update live indicator ──────────────────────────────────
   function updateLiveIndicator(data) {
     var el = document.getElementById('live-indicator');
@@ -3757,6 +3883,7 @@ switchTab = function(tab) {
         _lastLiveUpdate = Date.now();
         updatePositions(data.quotes);
         updateIndices(data.quotes);
+        updateTodayPnl(data.quotes);
         updateLiveIndicator(data);
         // Clear error indicator on success
         var errEl = document.getElementById('live-price-error');
@@ -3783,19 +3910,11 @@ switchTab = function(tab) {
       });
   }
 
-  // ── Adaptive polling: faster during market hours ──────────
+  // ── Always poll at 15s — pre/post market and AH trading matters ──
   function startLivePoll() {
     if (_liveTimer) clearInterval(_liveTimer);
-    var interval = isAnyMarketOpen() ? POLL_INTERVAL : POLL_INTERVAL_SLOW;
     fetchLivePrices(); // immediate first fetch
-    _liveTimer = setInterval(fetchLivePrices, interval);
-    // Re-check interval every 5 minutes (market open/close transitions)
-    setInterval(function() {
-      var shouldBeFast = isAnyMarketOpen();
-      var currentInterval = shouldBeFast ? POLL_INTERVAL : POLL_INTERVAL_SLOW;
-      clearInterval(_liveTimer);
-      _liveTimer = setInterval(fetchLivePrices, currentInterval);
-    }, 300000);
+    _liveTimer = setInterval(fetchLivePrices, POLL_INTERVAL);
   }
 
   function stopLivePoll() {
