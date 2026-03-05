@@ -183,7 +183,9 @@ Statuses: clear (0), monitoring (1), elevated (2), imminent (3+).
 
 ## YOUR ACTIONS (in order)
 
-### A. Read both data files (use read tool, NOT cat)
+### A. Read all data files (use read tool, NOT cat)
+
+Also read `data/position_monitor/ceasefire_factors.json` to get the current ceasefire probability. Extract `probability`, `probability_label`, and `timeline` from it for use in the briefing.
 
 ### B. Assess and update manual toggles
 ```bash
@@ -235,6 +237,7 @@ Required briefing format — oil prices FRONT AND CENTRE:
 <b>Health:</b> XOP X | RTX X | INSW X | NEM X | CIBR X | PSQ X | WDS X | CHTR X
 <b>Energy exposure:</b> XX% [XOP+WDS+INSW] (status)
 <b>Kill switch:</b> X/4 [details or "clear"]
+<b>Ceasefire:</b> X% — LABEL (timeline)
 
 Threat: 🟢/🟡/🔴/⚫
 ```

@@ -1802,6 +1802,84 @@ def _merge_benchmark_curves(market_data: dict, exchange_rates: dict,
     return curve, label
 
 
+def generate_ceasefire_data() -> dict:
+    """Read ceasefire factor JSON and produce the ceasefire probability block.
+
+    Reads from data/position_monitor/ceasefire_factors.json (created by
+    ceasefire_evaluator.py, updated hourly). Returns an empty-safe dict.
+    """
+    factors_path = PROJECT_ROOT / "data" / "position_monitor" / "ceasefire_factors.json"
+    data = safe_json(factors_path, None)
+    if not data:
+        return {
+            "probability": 0,
+            "probability_label": "UNKNOWN",
+            "timeline": "Unknown",
+            "portfolio_action": "No ceasefire data available.",
+            "last_updated": None,
+            "active_ceasefire_count": 0,
+            "active_escalation_count": 0,
+            "factors": [],
+            "change_log": [],
+        }
+
+    prob = int(data.get("probability", 0))
+
+    # Derive label and guidance bands
+    if prob <= 15:
+        label, timeline, action = (
+            "VERY UNLIKELY",
+            "4+ weeks",
+            "Hold all positions. Thesis intact.",
+        )
+    elif prob <= 30:
+        label, timeline, action = (
+            "UNLIKELY",
+            "2-4 weeks",
+            "Monitor closely. Consider tightening stops.",
+        )
+    elif prob <= 50:
+        label, timeline, action = (
+            "COIN FLIP",
+            "1-2 weeks",
+            "Watch for ceasefire signals. Reduce risk on most exposed positions.",
+        )
+    elif prob <= 70:
+        label, timeline, action = (
+            "POSSIBLE",
+            "Days to 2 weeks",
+            "Elevated ceasefire risk. Begin position reduction.",
+        )
+    else:
+        label, timeline, action = (
+            "LIKELY",
+            "Within days",
+            "Ceasefire IMMINENT. Follow kill switch protocol immediately.",
+        )
+
+    factors = data.get("factors", [])
+    active_ceasefire = sum(
+        1 for f in factors
+        if f.get("type") == "ceasefire" and f.get("state", False)
+    )
+    active_escalation = sum(
+        1 for f in factors
+        if f.get("type") == "escalation" and f.get("state", False)
+    )
+
+    return {
+        "probability": prob,
+        "probability_label": label,
+        "timeline": timeline,
+        "portfolio_action": action,
+        "last_updated": data.get("last_updated"),
+        "active_ceasefire_count": active_ceasefire,
+        "active_escalation_count": active_escalation,
+        "factors": factors,
+        "change_log": data.get("change_log", []),
+    }
+
+
 def generate():
     """Generate multi-market dashboard data.
 
@@ -2009,11 +2087,14 @@ def generate():
         if md.get("stale_warning")
     ]
 
+    ceasefire_data = generate_ceasefire_data()
+
     result = {
         "timestamp": now.isoformat(),
         "project": "Atlas",
         "markets": market_data,
         "exchange_rates": exchange_rates,
+        "ceasefire": ceasefire_data,
         # Top-level summary (combined across ALL markets, AUD-normalised)
         "trading_mode": "live" if any(md.get("trading_mode") == "live" for md in market_data.values()) else "offline",
         "data_source": "broker" if broker_caches else "offline",
