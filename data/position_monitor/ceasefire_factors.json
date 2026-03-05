@@ -1,0 +1,572 @@
+{
+  "baseline": 12,
+  "probability": 8,
+  "probability_label": "VERY UNLIKELY",
+  "timeline": "4+ weeks",
+  "portfolio_action": "Hold all positions. Thesis intact.",
+  "last_updated": "2026-03-05T12:53:39",
+  "change_log": [
+    {
+      "timestamp": "2026-03-05T12:52:24",
+      "factor_id": "iran_collapse",
+      "old_active": true,
+      "new_active": false,
+      "confidence": "low",
+      "reason": "Toggled via CLI",
+      "source": "test"
+    },
+    {
+      "timestamp": "2026-03-05T12:52:48",
+      "factor_id": "iran_collapse",
+      "old_active": false,
+      "new_active": true,
+      "confidence": "high",
+      "reason": "Toggled via CLI",
+      "source": "revert"
+    },
+    {
+      "timestamp": "2026-03-05T12:53:03",
+      "factor_id": "iran_collapse",
+      "old_active": true,
+      "new_active": false,
+      "confidence": "low",
+      "reason": "Toggled via CLI",
+      "source": "test"
+    },
+    {
+      "timestamp": "2026-03-05T12:53:04",
+      "factor_id": "iran_collapse",
+      "old_active": false,
+      "new_active": true,
+      "confidence": "high",
+      "reason": "Toggled via CLI",
+      "source": "revert"
+    },
+    {
+      "timestamp": "2026-03-05T12:53:05",
+      "factor_id": "backchannel",
+      "old_active": false,
+      "new_active": true,
+      "confidence": "medium",
+      "reason": "Toggled via CLI",
+      "source": "test"
+    },
+    {
+      "timestamp": "2026-03-05T12:53:05",
+      "factor_id": "supreme_leader",
+      "old_active": false,
+      "new_active": true,
+      "confidence": "medium",
+      "reason": "Toggled via CLI",
+      "source": "test"
+    },
+    {
+      "timestamp": "2026-03-05T12:53:22",
+      "factor_id": "backchannel",
+      "old_active": true,
+      "new_active": false,
+      "confidence": "low",
+      "reason": "Toggled via CLI",
+      "source": "revert"
+    },
+    {
+      "timestamp": "2026-03-05T12:53:22",
+      "factor_id": "supreme_leader",
+      "old_active": true,
+      "new_active": false,
+      "confidence": "low",
+      "reason": "Toggled via CLI",
+      "source": "revert"
+    }
+  ],
+  "factors": [
+    {
+      "id": "supreme_leader",
+      "category": "diplomatic",
+      "label": "New Iranian supreme leader selected AND signals willingness to negotiate",
+      "weight": 18,
+      "direction": "ceasefire",
+      "active": false,
+      "confidence": "low",
+      "last_checked": "2026-03-05T12:53:22",
+      "source": "revert",
+      "description": "",
+      "search_keywords": [
+        "iran supreme leader successor",
+        "assembly of experts iran",
+        "iran negotiate talks",
+        "khamenei successor",
+        "iran new leadership diplomacy"
+      ]
+    },
+    {
+      "id": "backchannel",
+      "category": "diplomatic",
+      "label": "Confirmed backchannel talks (Oman/Qatar mediation, both sides participating)",
+      "weight": 14,
+      "direction": "ceasefire",
+      "active": false,
+      "confidence": "low",
+      "last_checked": "2026-03-05T12:53:22",
+      "source": "revert",
+      "description": "",
+      "search_keywords": [
+        "iran backchannel talks",
+        "iran secret negotiations",
+        "oman iran mediation",
+        "iran US indirect talks",
+        "qatar iran diplomacy"
+      ]
+    },
+    {
+      "id": "trump_tone",
+      "category": "diplomatic",
+      "label": "Trump publicly signals desire for off-ramp / deal with Iran",
+      "weight": 12,
+      "direction": "ceasefire",
+      "active": false,
+      "confidence": "low",
+      "last_checked": null,
+      "source": "",
+      "description": "",
+      "search_keywords": [
+        "trump iran ceasefire deal",
+        "trump iran negotiations",
+        "trump deescalate iran",
+        "trump iran offer",
+        "trump iran end war"
+      ]
+    },
+    {
+      "id": "war_powers_house",
+      "category": "diplomatic",
+      "label": "House passes War Powers Resolution to limit Iran operations",
+      "weight": 5,
+      "direction": "ceasefire",
+      "active": false,
+      "confidence": "low",
+      "last_checked": null,
+      "source": "",
+      "description": "",
+      "search_keywords": [
+        "war powers resolution house iran",
+        "congress iran war authorization",
+        "house vote iran war",
+        "house war powers act iran"
+      ]
+    },
+    {
+      "id": "coalition_fracture",
+      "category": "diplomatic",
+      "label": "Key US coalition partner publicly withdraws support / calls for ceasefire",
+      "weight": 8,
+      "direction": "ceasefire",
+      "active": false,
+      "confidence": "low",
+      "last_checked": null,
+      "source": "",
+      "description": "",
+      "search_keywords": [
+        "US coalition fracture iran",
+        "ally withdraw iran war",
+        "coalition ceasefire call iran",
+        "partner opposition iran strikes",
+        "europe ceasefire iran"
+      ]
+    },
+    {
+      "id": "un_resolution",
+      "category": "diplomatic",
+      "label": "UN Security Council passes binding ceasefire resolution",
+      "weight": 4,
+      "direction": "ceasefire",
+      "active": false,
+      "confidence": "low",
+      "last_checked": null,
+      "source": "",
+      "description": "",
+      "search_keywords": [
+        "UN security council iran ceasefire resolution",
+        "UN vote iran war",
+        "UN binding resolution iran",
+        "security council iran vote"
+      ]
+    },
+    {
+      "id": "iran_collapse",
+      "category": "military",
+      "label": "Iran conventional military capability severely degraded (missiles, drones, air defence)",
+      "weight": 15,
+      "direction": "ceasefire",
+      "active": true,
+      "confidence": "high",
+      "last_checked": "2026-03-05T12:53:04",
+      "source": "revert",
+      "description": "Missiles down 86%, drones 73%",
+      "search_keywords": [
+        "iran military capability degraded",
+        "iran missile stockpile depleted",
+        "iran drone capability losses",
+        "iran air defence destroyed",
+        "iran military attrition"
+      ]
+    },
+    {
+      "id": "navy_destroyed",
+      "category": "military",
+      "label": "IRGC Navy substantially destroyed / port infrastructure degraded",
+      "weight": 8,
+      "direction": "ceasefire",
+      "active": true,
+      "confidence": "high",
+      "last_checked": "2026-03-05T12:00:00",
+      "source": "Initial assessment",
+      "description": "20+ ships sunk",
+      "search_keywords": [
+        "iran navy destroyed",
+        "IRGC navy sunk",
+        "iran warship losses",
+        "iran naval port attack",
+        "iran fast boat sunk"
+      ]
+    },
+    {
+      "id": "ground_troops",
+      "category": "military",
+      "label": "US ground troops deployed into Iran or neighbouring territory for invasion",
+      "weight": -15,
+      "direction": "escalation",
+      "active": false,
+      "confidence": "low",
+      "last_checked": null,
+      "source": "",
+      "description": "",
+      "search_keywords": [
+        "US ground troops iran",
+        "US invasion iran",
+        "troops deployed iran ground",
+        "US soldiers iran territory"
+      ]
+    },
+    {
+      "id": "kurdish_front",
+      "category": "military",
+      "label": "Kurdish militias or PKK open second front against Iran / Turkish involvement",
+      "weight": -10,
+      "direction": "escalation",
+      "active": false,
+      "confidence": "low",
+      "last_checked": null,
+      "source": "",
+      "description": "",
+      "search_keywords": [
+        "kurdish iran conflict",
+        "PKK iran attack",
+        "iran kurdistan military",
+        "kurdish militia iran front",
+        "turkey iran kurdish"
+      ]
+    },
+    {
+      "id": "hezbollah_major",
+      "category": "military",
+      "label": "Hezbollah launches major offensive (hundreds of rockets, multi-front attack)",
+      "weight": -12,
+      "direction": "escalation",
+      "active": true,
+      "confidence": "high",
+      "last_checked": "2026-03-05T12:00:00",
+      "source": "Initial assessment",
+      "description": "Hezbollah active offensive ongoing",
+      "search_keywords": [
+        "hezbollah attack rockets",
+        "hezbollah offensive major",
+        "hezbollah escalation",
+        "lebanon hezbollah strike",
+        "hezbollah barrage"
+      ]
+    },
+    {
+      "id": "houthi_red_sea",
+      "category": "military",
+      "label": "Houthis actively attacking Red Sea shipping (Bab el-Mandeb disrupted)",
+      "weight": -8,
+      "direction": "escalation",
+      "active": true,
+      "confidence": "medium",
+      "last_checked": "2026-03-05T12:00:00",
+      "source": "Initial assessment",
+      "description": "Houthi Red Sea attacks ongoing",
+      "search_keywords": [
+        "houthi red sea attack",
+        "houthi ship attack",
+        "bab el mandeb disruption",
+        "houthi missile shipping",
+        "red sea shipping disruption houthi"
+      ]
+    },
+    {
+      "id": "us_casualties_spike",
+      "category": "military",
+      "label": "Sudden spike in US military casualties triggers domestic political backlash",
+      "weight": 10,
+      "direction": "ceasefire",
+      "active": false,
+      "confidence": "low",
+      "last_checked": null,
+      "source": "",
+      "description": "",
+      "search_keywords": [
+        "US military casualties iran spike",
+        "american soldiers killed iran",
+        "US casualty count iran war",
+        "domestic backlash US war iran"
+      ]
+    },
+    {
+      "id": "nato_engaged",
+      "category": "military",
+      "label": "NATO formally invoked or NATO member directly engages militarily",
+      "weight": -10,
+      "direction": "escalation",
+      "active": false,
+      "confidence": "low",
+      "last_checked": null,
+      "source": "",
+      "description": "",
+      "search_keywords": [
+        "NATO iran war",
+        "NATO article 5 iran",
+        "NATO military action iran",
+        "NATO engaged iran conflict",
+        "NATO member attack iran"
+      ]
+    },
+    {
+      "id": "war_powers_dead",
+      "category": "political",
+      "label": "Senate kills War Powers Resolution \u2014 Congress signals support for operations",
+      "weight": -8,
+      "direction": "escalation",
+      "active": true,
+      "confidence": "high",
+      "last_checked": "2026-03-05T12:00:00",
+      "source": "Senate vote March 4 2026",
+      "description": "Senate 47-53 March 4",
+      "search_keywords": [
+        "senate war powers iran vote",
+        "war powers resolution failed senate",
+        "congress iran war support",
+        "senate defeat iran war powers"
+      ]
+    },
+    {
+      "id": "gas_prices",
+      "category": "political",
+      "label": "US retail gasoline exceeds $5/gallon \u2014 political pressure on administration",
+      "weight": 6,
+      "direction": "ceasefire",
+      "active": true,
+      "confidence": "medium",
+      "last_checked": "2026-03-05T12:00:00",
+      "source": "Initial assessment",
+      "description": "$5/gal",
+      "search_keywords": [
+        "US gas prices $5 gallon",
+        "gasoline prices spike",
+        "fuel prices high US",
+        "gas prices political pressure",
+        "pump prices record"
+      ]
+    },
+    {
+      "id": "maga_split",
+      "category": "political",
+      "label": "MAGA base splits on Iran war \u2014 visible Republican dissent in Congress",
+      "weight": 5,
+      "direction": "ceasefire",
+      "active": false,
+      "confidence": "low",
+      "last_checked": null,
+      "source": "",
+      "description": "",
+      "search_keywords": [
+        "MAGA split iran war",
+        "republican oppose iran war",
+        "GOP dissent iran",
+        "trump base war iran opposition",
+        "republican anti-war iran"
+      ]
+    },
+    {
+      "id": "poll_collapse",
+      "category": "political",
+      "label": "Trump approval collapses below 40% directly tied to Iran war",
+      "weight": 7,
+      "direction": "ceasefire",
+      "active": false,
+      "confidence": "low",
+      "last_checked": null,
+      "source": "",
+      "description": "",
+      "search_keywords": [
+        "trump approval poll decline iran",
+        "trump poll collapse iran war",
+        "american opposition iran war poll",
+        "war unpopular polls US"
+      ]
+    },
+    {
+      "id": "iran_regime_falls",
+      "category": "political",
+      "label": "Iranian regime collapses / is overthrown \u2014 new government signals ceasefire",
+      "weight": 20,
+      "direction": "ceasefire",
+      "active": false,
+      "confidence": "low",
+      "last_checked": null,
+      "source": "",
+      "description": "",
+      "search_keywords": [
+        "iran regime collapse",
+        "iran government overthrown",
+        "iran revolution 2026",
+        "iran regime change",
+        "iran new government ceasefire"
+      ]
+    },
+    {
+      "id": "assassination_personal",
+      "category": "political",
+      "label": "Assassination or personal attack on US official / ally \u2014 retaliation cycle escalates",
+      "weight": -5,
+      "direction": "escalation",
+      "active": true,
+      "confidence": "medium",
+      "last_checked": "2026-03-05T12:00:00",
+      "source": "Initial assessment",
+      "description": "Assassination retaliation risk active",
+      "search_keywords": [
+        "assassination US official iran",
+        "iran assassination plot",
+        "retaliation assassination cycle",
+        "iran target US diplomat",
+        "iran assassination threat"
+      ]
+    },
+    {
+      "id": "oil_100",
+      "category": "economic",
+      "label": "Brent crude sustains above $100/barrel \u2014 economic pain triggers political pressure",
+      "weight": 8,
+      "direction": "ceasefire",
+      "active": false,
+      "confidence": "low",
+      "last_checked": null,
+      "source": "",
+      "description": "",
+      "search_keywords": [
+        "oil price $100 barrel",
+        "brent crude $100",
+        "WTI $100",
+        "oil price spike $100",
+        "crude oil triple digits"
+      ]
+    },
+    {
+      "id": "hormuz_escort",
+      "category": "economic",
+      "label": "US Navy establishes formal convoy escort system through Strait of Hormuz",
+      "weight": 10,
+      "direction": "ceasefire",
+      "active": false,
+      "confidence": "low",
+      "last_checked": null,
+      "source": "",
+      "description": "",
+      "search_keywords": [
+        "US navy hormuz escort convoy",
+        "strait of hormuz naval escort",
+        "hormuz shipping convoy US",
+        "navy protect tanker hormuz",
+        "hormuz convoy system"
+      ]
+    },
+    {
+      "id": "insurance_restored",
+      "category": "economic",
+      "label": "War risk insurance premiums return to normal / Lloyd's reopens cover",
+      "weight": 12,
+      "direction": "ceasefire",
+      "active": false,
+      "confidence": "low",
+      "last_checked": null,
+      "source": "",
+      "description": "",
+      "search_keywords": [
+        "war risk insurance restored",
+        "lloyd's shipping insurance iran",
+        "marine insurance premium normal",
+        "shipping insurance cover resumed",
+        "war risk premium decline"
+      ]
+    },
+    {
+      "id": "qatar_restart",
+      "category": "economic",
+      "label": "Qatar resumes LNG deliveries to Asia / restarts energy diplomacy with Iran",
+      "weight": 8,
+      "direction": "ceasefire",
+      "active": false,
+      "confidence": "low",
+      "last_checked": null,
+      "source": "",
+      "description": "",
+      "search_keywords": [
+        "qatar LNG restart",
+        "qatar energy resumption",
+        "qatar diplomacy iran restart",
+        "qatar mediation energy",
+        "qatar LNG delivery resume"
+      ]
+    },
+    {
+      "id": "recession_fears",
+      "category": "economic",
+      "label": "Recession fears spike (PMI <45, unemployment rising) \u2014 pressure to end war",
+      "weight": 5,
+      "direction": "ceasefire",
+      "active": false,
+      "confidence": "low",
+      "last_checked": null,
+      "source": "",
+      "description": "",
+      "search_keywords": [
+        "recession fears iran war economy",
+        "economic recession war pressure",
+        "PMI decline recession",
+        "unemployment rising recession fears",
+        "economic cost iran war"
+      ]
+    },
+    {
+      "id": "storage_limits",
+      "category": "economic",
+      "label": "Global oil storage near capacity \u2014 producers pressure both sides to reopen Hormuz",
+      "weight": -6,
+      "direction": "escalation",
+      "active": false,
+      "confidence": "low",
+      "last_checked": null,
+      "source": "",
+      "description": "",
+      "search_keywords": [
+        "oil storage capacity limit",
+        "crude oil storage full",
+        "oil oversupply storage tanks",
+        "global oil storage saturation",
+        "oil inventory maximum capacity"
+      ]
+    }
+  ]
+}
