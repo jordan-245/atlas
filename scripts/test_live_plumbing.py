@@ -155,36 +155,6 @@ check("ticker" in entry or "BHP" in str(entry), "Journal entry contains ticker i
 print()
 
 
-# ─── Test 9: IBKR config ──────────────────────────────────────
-print("9. IBKR broker config")
-cfg_ibkr = json.loads(json.dumps(real_config))
-cfg_ibkr["trading"]["broker"] = "ibkr"
-cfg_ibkr["trading"]["live_enabled"] = True
-cfg_ibkr["ibkr"] = {"host": "127.0.0.1", "port": 4002, "client_id": 1, "currency": "AUD"}
-
-ibkr_broker = get_live_broker(cfg_ibkr)
-check(ibkr_broker is not None, "get_live_broker returns IBKRBroker")
-check(type(ibkr_broker).__name__ == "IBKRBroker", f"Type is IBKRBroker (got {type(ibkr_broker).__name__})")
-check(ibkr_broker.is_live, "IBKR broker is_live=True")
-
-# IBKR + live_enabled=False → None
-cfg_ibkr_nolife = json.loads(json.dumps(cfg_ibkr))
-cfg_ibkr_nolife["trading"]["live_enabled"] = False
-ibkr_none = get_broker("asx", cfg_ibkr_nolife)
-check(ibkr_none is None, f"IBKR + live_enabled=False → None (got {type(ibkr_none).__name__ if ibkr_none else 'None'})")
-
-# IBKR preflight
-errors_ibkr = preflight_check_config(cfg_ibkr)
-check(len(errors_ibkr) == 0, f"IBKR config passes pre-flight (errors: {errors_ibkr})")
-
-bad_ibkr = json.loads(json.dumps(cfg_ibkr))
-del bad_ibkr["ibkr"]
-errors_bad_ibkr = preflight_check_config(bad_ibkr)
-check(len(errors_bad_ibkr) > 0, f"Missing ibkr section caught: {errors_bad_ibkr[0] if errors_bad_ibkr else 'NONE'}")
-
-# IBKR LiveExecutor
-executor_ibkr = get_live_executor(cfg_ibkr)
-check(executor_ibkr is not None, "LiveExecutor created for IBKR config")
 print()
 
 

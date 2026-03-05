@@ -61,19 +61,9 @@ def test_hk_config_loads():
     assert cfg_path.exists(), "hk.json not found in active/ or inactive/"
     cfg = json.loads(cfg_path.read_text())
     assert cfg["market"] == "hk"
-    assert cfg["trading"]["broker"] == "moomoo"  # HK uses Moomoo (not IBKR)
+    assert cfg["trading"]["broker"] == "moomoo"  # HK uses Moomoo
     assert cfg["fees"]["commission_per_trade"] == 0.0  # Moomoo HK: no flat fee, % only
     assert cfg["risk"]["starting_equity"] == 0  # No HK equity allocated yet
-
-def test_hk_ibkr_mapper():
-    from brokers.ibkr.mapper import strip_suffix, to_atlas, to_conid_lookup, get_exchange, get_currency
-    assert strip_suffix("0700.HK", "hk") == "0700"
-    assert to_atlas("0700", "SEHK") == "0700.HK"
-    lookup = to_conid_lookup("0700.HK", "hk")
-    assert lookup["symbol"] == "0700"
-    assert lookup["exchange"] == "SEHK"
-    assert get_exchange("hk") == "SEHK"
-    assert get_currency("hk") == "HKD"
 
 def test_hk_backtest_defaults():
     m = HKMarket()

@@ -86,29 +86,7 @@ def check_infra(project: Path) -> list:
     except Exception:
         results.append({"check": "opend_gateway", "verdict": "fail", "message": "OpenD not reachable on port 11111. Run: systemctl start opend"})
 
-    # IB Gateway (IBKR) — only check if an IBKR market is live-enabled
-    ibkr_needed = False
-    for mkt_file in ["asx.json", "hk.json"]:
-        mkt_path = os.path.join(project, "config", "active", mkt_file)
-        if os.path.exists(mkt_path):
-            try:
-                with open(mkt_path) as f:
-                    mkt_cfg = json.load(f)
-                if mkt_cfg.get("trading", {}).get("live_enabled", False) and mkt_cfg.get("trading", {}).get("broker") == "ibkr":
-                    ibkr_needed = True
-            except Exception:
-                pass
-    if ibkr_needed:
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(2)
-            s.connect(("127.0.0.1", 4001))
-            s.close()
-            results.append({"check": "ibkr_gateway", "verdict": "ok", "message": "IB Gateway responding on port 4001"})
-        except Exception:
-            results.append({"check": "ibkr_gateway", "verdict": "fail", "message": "IB Gateway not reachable on port 4001. Run: cd /root/atlas/docker && docker compose -f docker-compose-ibgw.yml up -d"})
-    else:
-        results.append({"check": "ibkr_gateway", "verdict": "ok", "message": "IB Gateway not required (no live IBKR markets)"})
+    # (IBKR broker removed — no gateway check needed)
 
     # Telegram bot service
     try:
@@ -135,14 +113,12 @@ def check_infra(project: Path) -> list:
         has_telegram = bool(secrets.get("telegram_bot_token")) and bool(secrets.get("telegram_chat_id"))
         has_moomoo = bool(secrets.get("moomoo_rsa_key_path") or secrets.get("moomoo_password_md5")
                          or secrets.get("MOOMOO_LOGIN_PWD_MD5") or secrets.get("moomoo"))
-        has_ibkr = bool(secrets.get("IBKR_ACCOUNT_ID") or secrets.get("IBEAM_ACCOUNT"))
         has_alpaca = bool(secrets.get("ALPACA_API_KEY") and secrets.get("ALPACA_SECRET_KEY"))
         results.append({"check": "secrets_telegram", "verdict": "ok" if has_telegram else "fail",
                         "message": "Telegram credentials present" if has_telegram else "Missing telegram_bot_token or telegram_chat_id in ~/.atlas-secrets.json"})
-        broker_ok = has_moomoo or has_ibkr or has_alpaca
+        broker_ok = has_moomoo or has_alpaca
         broker_names = []
         if has_moomoo: broker_names.append("moomoo")
-        if has_ibkr: broker_names.append("ibkr")
         if has_alpaca: broker_names.append("alpaca")
         results.append({"check": "secrets_broker", "verdict": "ok" if broker_ok else "warn",
                         "message": f"Broker credentials: {', '.join(broker_names)}" if broker_ok else "No broker credentials in ~/.atlas-secrets.json"})
@@ -243,7 +219,7 @@ def check_config(project: Path, market_id: str) -> list:
     # Trading mode
     trading = cfg.get("trading", {})
     mode = trading.get("mode", "live")
-    broker = trading.get("broker", "ibkr")
+    broker = trading.get("broker", "moomoo")
     live = trading.get("live_enabled", False)
     dry = trading.get("live_safety", {}).get("dry_run_first", True)
     results.append({"check": "trading_mode", "verdict": "ok",
@@ -269,8 +245,8 @@ def check_broker(project: Path, market_id: str) -> list:
         return results
 
     cfg = _load_json(cfg_path)
-    broker_name = cfg.get("trading", {}).get("broker", "ibkr")
-    if broker_name not in ("moomoo", "ibkr", "alpaca"):
+    broker_name = cfg.get("trading", {}).get("broker", "moomoo")
+    if broker_name not in ("moomoo", "alpaca"):
         results.append({"check": "broker", "verdict": "ok", "message": "No valid broker configured"})
         return results
 

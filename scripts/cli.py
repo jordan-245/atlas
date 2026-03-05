@@ -231,7 +231,7 @@ def cmd_plan(args):
 
     # Use live broker portfolio as source of truth
     portfolio = _get_portfolio(config, market_id)
-    broker_name = config.get("trading", {}).get("broker", "ibkr")
+    broker_name = config.get("trading", {}).get("broker", "moomoo")
     n_atlas = len(portfolio.atlas_positions) if hasattr(portfolio, 'atlas_positions') else len(portfolio.positions)
     n_manual = len(portfolio.manual_positions) if hasattr(portfolio, 'manual_positions') else 0
     manual_note = f" + {n_manual} manual" if n_manual else ""
@@ -407,7 +407,7 @@ def cmd_broker_status(args):
     """Show broker connection and account status."""
     market_id = getattr(args, "market", DEFAULT_MARKET)
     config = get_active_config(market_id)
-    broker_name = config.get("trading", {}).get("broker", "ibkr")
+    broker_name = config.get("trading", {}).get("broker", "moomoo")
     mode = config.get("trading", {}).get("mode", "live")
 
     print("\n" + "=" * 55)
@@ -422,11 +422,9 @@ def cmd_broker_status(args):
         print("    OpenD:      %s:%s" % (moomoo_cfg.get("opend_host"), moomoo_cfg.get("opend_port")))
         print("    Firm:       %s" % moomoo_cfg.get("security_firm"))
         print("    TrdEnv:     %s" % moomoo_cfg.get("trd_env"))
-    elif broker_name == "ibkr":
-        ibkr_cfg = config.get("ibkr", {})
-        print("    Host:       %s:%s" % (ibkr_cfg.get("host", "127.0.0.1"), ibkr_cfg.get("port", "4001/4002")))
-        print("    Account:    %s" % ibkr_cfg.get("account_id", "auto"))
-        print("    Gateway:    %s" % ibkr_cfg.get("gateway_type", "gateway"))
+    elif broker_name == "alpaca":
+        alpaca_cfg = config.get("alpaca", {})
+        print("    Base URL:   %s" % alpaca_cfg.get("base_url", "paper"))
 
     try:
         broker = _get_broker(market_id)
@@ -463,10 +461,10 @@ def cmd_live_run(args):
     market_id = getattr(args, "market", DEFAULT_MARKET)
     config = get_active_config(market_id)
     mode = config.get("trading", {}).get("mode", "live")
-    broker_name = config.get("trading", {}).get("broker", "ibkr")
+    broker_name = config.get("trading", {}).get("broker", "moomoo")
 
-    if broker_name not in ("moomoo", "ibkr"):
-        print("ERROR: trading.broker must be 'moomoo' or 'ibkr'.")
+    if broker_name not in ("moomoo", "alpaca"):
+        print("ERROR: trading.broker must be 'moomoo' or 'alpaca'.")
         return
     if mode != "live":
         print("ERROR: trading.mode must be 'live'")

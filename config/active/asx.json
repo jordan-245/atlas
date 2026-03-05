@@ -1,0 +1,31 @@
+{
+  "version": "v1.0-passive",
+  "project": "Atlas",
+  "description": "ASX market — no active trading. Cross-broker positions from Moomoo shown as manual holdings.",
+  "market": "asx",
+  "universe": {
+    "benchmark_ticker": "IOZ.AX"
+  },
+  "risk": {
+    "starting_equity": 0,
+    "max_open_positions": 0
+  },
+  "trading": {
+    "mode": "passive",
+    "broker": "moomoo",
+    "live_enabled": false,
+    "data_frequency": "daily"
+  },
+  "moomoo": {
+    "opend_host": "127.0.0.1",
+    "opend_port": 11111,
+    "security_firm": "FUTUAU",
+    "trd_market": "AU",
+    "trd_env": "REAL",
+    "currency": "AUD"
+  },
+  "fees": {
+    "commission_per_trade": 0
+  },
+  "strategies": {}
+}

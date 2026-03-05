@@ -338,9 +338,9 @@ def main():
 
     # Reconcile protective orders on broker (SL/TP)
     # Ensures all positions have broker-side stops even after restarts/missed syncs
-    # Only for IBKR — Moomoo protective orders are managed separately
+    # Protective orders are broker-specific
     broker_type = type(portfolio._broker).__name__ if portfolio._broker else ""
-    if broker_type == "IBKRBroker" and not args.dry_run:
+    if False:  # IBKR removed — protective orders handled per-broker
         log.info("Reconciling protective orders on broker...")
         try:
             plan_path = PROJECT / "plans" / f"plan_{market_id}_{trade_date}.json"
@@ -435,6 +435,7 @@ def main():
         "trade_date": trade_date,
         "market_id": market_id,
         "equity": eq,
+        "broker_equity": portfolio.broker_equity,
         "cash": portfolio.cash,
         "daily_pnl": daily_pnl,
         "daily_pnl_pct": round(daily_pnl / prev_equity * 100, 2) if prev_equity > 0 else 0,

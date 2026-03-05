@@ -4,8 +4,27 @@
   "probability_label": "VERY UNLIKELY",
   "timeline": "4+ weeks",
   "portfolio_action": "Hold all positions. Thesis intact.",
-  "last_updated": "2026-03-05T13:20:04",
-  "change_log": [],
+  "last_updated": "2026-03-05T15:05:53",
+  "change_log": [
+    {
+      "timestamp": "2026-03-05T14:05:22",
+      "factor_id": "gas_prices",
+      "old_active": true,
+      "new_active": false,
+      "confidence": "high",
+      "reason": "Toggled via CLI",
+      "source": "AAA March 5: national avg .11/gal \u2014 well below  threshold. California highest at .74. GasBuddy  source was erroneous."
+    },
+    {
+      "timestamp": "2026-03-05T15:05:49",
+      "factor_id": "storage_crisis",
+      "old_active": false,
+      "new_active": true,
+      "confidence": "high",
+      "reason": "Toggled via CLI",
+      "source": "Reuters March 4 2026 \u2014 Iraq cut 1.1mb/d due to storage limits; IEA confirms forced production shutdowns across Gulf"
+    }
+  ],
   "factors": [
     {
       "id": "supreme_leader",
@@ -310,10 +329,10 @@
       "label": "US retail gasoline exceeds $5/gallon \u2014 political pressure on administration",
       "weight": 6,
       "direction": "ceasefire",
-      "active": true,
-      "confidence": "medium",
-      "last_checked": "2026-03-05T13:20:04",
-      "source": "GasBuddy: $5/gal, 12c/day increase",
+      "active": false,
+      "confidence": "high",
+      "last_checked": "2026-03-05T14:05:22",
+      "source": "AAA March 5: national avg .11/gal \u2014 well below  threshold. California highest at .74. GasBuddy  source was erroneous.",
       "description": "$5/gal",
       "search_keywords": [
         "US gas prices $5 gallon",
@@ -499,10 +518,10 @@
       "label": "Gulf producers hitting storage limits \u2014 forced production shutdowns",
       "weight": -6,
       "direction": "escalation",
-      "active": false,
-      "confidence": "low",
-      "last_checked": null,
-      "source": "",
+      "active": true,
+      "confidence": "high",
+      "last_checked": "2026-03-05T15:05:49",
+      "source": "Reuters March 4 2026 \u2014 Iraq cut 1.1mb/d due to storage limits; IEA confirms forced production shutdowns across Gulf",
       "description": "Shipping problem becomes supply destruction \u2014 harder to restart, deepens crisis. JPMorgan: 25-day limit from Feb 28 = watch ~March 20-25.",
       "search_keywords": [
         "gulf oil storage full",

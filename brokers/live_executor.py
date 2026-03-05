@@ -1,7 +1,7 @@
 """Live Trade Executor — bridges trade plan → broker order execution.
 
 Reads an approved trade plan and executes it through the configured
-broker (Moomoo, IBKR, or any future BrokerAdapter implementation).
+broker (Moomoo, Alpaca, or any future BrokerAdapter implementation).
 Broker selection is driven by config and handled by the registry.
 
 Safety architecture:
@@ -70,11 +70,9 @@ def preflight_check_config(config: dict) -> list[str]:
             errors.append("live_safety.max_daily_orders must be > 0")
 
     # Check broker-specific config exists
-    broker_name = config.get("trading", {}).get("broker", "ibkr").lower()
+    broker_name = config.get("trading", {}).get("broker", "moomoo").lower()
     if broker_name == "moomoo" and not config.get("moomoo", {}).get("opend_host"):
         errors.append("moomoo.opend_host not configured")
-    elif broker_name == "ibkr" and not config.get("ibkr", {}):
-        errors.append("ibkr config section missing")
 
     return errors
 
@@ -208,7 +206,7 @@ class LiveExecutor:
         from brokers.registry import get_live_broker
         self._broker = get_live_broker(self.config)
         if not self._broker:
-            broker_name = self.config.get("trading", {}).get("broker", "ibkr")
+            broker_name = self.config.get("trading", {}).get("broker", "moomoo")
             _journal_entry("connect_failed", {"reason": f"No live broker for {broker_name}"})
             logger.error("LiveExecutor: no live broker available for '%s'", broker_name)
             return False

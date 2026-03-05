@@ -146,9 +146,9 @@ def format_plan_message(plan: dict, market_id: str = "sp500") -> str:
     config = get_active_config(market_id)
     mode = config.get("trading", {}).get("mode", "live")
     dry_run = config.get("trading", {}).get("live_safety", {}).get("dry_run_first", True)
-    broker = config.get("trading", {}).get("broker", "ibkr")
+    broker = config.get("trading", {}).get("broker", "moomoo")
 
-    if not broker or broker not in ("moomoo", "ibkr"):
+    if not broker or broker not in ("moomoo", "alpaca"):
         mode_str = "📝 PAPER"
     elif dry_run:
         mode_str = "🔶 LIVE (DRY RUN)"

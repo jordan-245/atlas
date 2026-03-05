@@ -198,7 +198,7 @@ def get_live_broker_data(config):
     Broker is the sole source of truth for positions and equity.
     """
     trading = config.get("trading", {})
-    broker_name = trading.get("broker", "ibkr")
+    broker_name = trading.get("broker", "moomoo")
     if not trading.get("live_enabled"):
         return None, [], False, []
 
@@ -206,10 +206,9 @@ def get_live_broker_data(config):
         from brokers.registry import get_live_broker
 
         broker = get_live_broker(config)
-        # Use a separate clientId for dashboard reads to avoid conflicts
-        # with the executor (clientId=10) and telegram bot
-        if hasattr(broker, '_client_id'):
-            broker._client_id = config.get("ibkr", {}).get("dashboard_client_id", 20)
+        # Use a separate clientId for dashboard reads if broker supports it
+        if hasattr(broker, '_client_id') and hasattr(broker, '_set_client_id'):
+            broker._set_client_id(20)
         if not broker or not broker.connect():
             logger.warning("Dashboard: broker connect failed (broker=%s)", broker_name)
             return None, [], False, []
@@ -709,7 +708,7 @@ def generate_market(market_id: str, broker_cache: dict | None = None,
     # ── Try live broker data first ──────────────────────────────
     broker_acct, broker_positions, broker_ok = None, [], False
     # Also check for cross-broker positions: Moomoo may hold .AX stocks
-    # even when this market's primary broker is IBKR.
+    # even when this market is not in live trading mode.
     cross_broker_positions = []
     if is_live_mode:
         if broker_cache and broker_cache.get("ok"):
@@ -761,18 +760,24 @@ def generate_market(market_id: str, broker_cache: dict | None = None,
         # Manual positions value (not managed by Atlas)
         manual_value = sum(p.get("market_value", 0) for p in manual_positions)
 
-        # Equity/cash from broker — use the starting_equity allocation
-        # to calculate Atlas-specific P&L against the configured allocation
+        # Broker is sole source of truth for headline equity/cash.
+        # This includes ALL positions (Atlas + manual) so the dashboard
+        # equity matches what the broker app shows.
+        broker_equity = round(broker_acct["equity"], 2)
+        broker_cash = round(broker_acct["cash"], 2)
+
+        # Atlas P&L: computed from Atlas-managed positions only.
+        # Don't mix broker total equity with Atlas starting_equity — that
+        # conflates manual trade gains with strategy performance.
         pos_value = atlas_value
-        # Cash allocated to Atlas = starting_equity - entry_value of open positions
         cash = round(seq - total_entry_value, 2) if total_entry_value > 0 else seq
-        equity = round(cash + atlas_value, 2)
+        equity = round(cash + atlas_value, 2)  # Atlas virtual equity
 
         total_pnl = round(equity - seq, 2)
         total_pnl_pct = round(total_pnl / seq * 100, 2) if seq > 0 else 0
 
         # ── C1: Refresh stale prices for same-day MOO fills ──────────
-        # IBKR returns fill price as marketPrice when no market data snapshot exists
+        # Broker may return fill price as marketPrice when no market data snapshot exists
         # (common for ASX MOO orders with no market data subscription).
         # Detect: current_price ≈ entry_price → override with Yahoo Finance price.
         if data_source in ("broker", "cached"):
@@ -797,7 +802,7 @@ def generate_market(market_id: str, broker_cache: dict | None = None,
                             "C1 stale price refresh [%s]: entry=%.4f → yf=%.4f, pnl=%.2f",
                             t, ep, new_price, p["unrealized_pnl"],
                         )
-                # Recalculate market-level aggregates after price refresh
+                # Recalculate Atlas P&L after price refresh
                 atlas_value = sum(p.get("market_value", 0) for p in atlas_positions)
                 market_pnl = round(atlas_value - total_entry_value, 2)
                 pos_value = atlas_value
@@ -825,13 +830,43 @@ def generate_market(market_id: str, broker_cache: dict | None = None,
                     p["unrealized_pnl"] = expected_pnl
                     p["unrealized_pnl_pct"] = round((cp - ep) / ep * 100, 2)
 
-    else:
-        # Paper/fallback mode
+    elif cross_broker_positions:
+        # Not in live mode, but we have cross-broker positions from a shared
+        # broker (e.g. ASX stocks held on Moomoo). Show their real value.
         positions = portfolio.get("positions", [])
         atlas_positions = positions
-        # Include cross-broker positions (e.g. ASX stocks held on Moomoo)
-        # as manual (non-Atlas) holdings alongside paper positions.
         all_positions = list(positions) + cross_broker_positions
+        data_source = "cross-broker"
+
+        # Equity = value of cross-broker positions (real broker data)
+        cross_value = sum(p.get("market_value", 0) for p in cross_broker_positions)
+        cross_cost = sum(
+            p.get("cost_basis", p.get("entry_price", 0) * p.get("shares", 0))
+            for p in cross_broker_positions
+        )
+        cross_pnl = sum(p.get("unrealized_pnl", 0) for p in cross_broker_positions)
+
+        pos_value = cross_value
+        cash = 0  # no separate cash allocation for cross-broker markets
+        equity = round(cross_value, 2)
+        # Use cost basis as starting reference for P&L
+        seq = round(cross_cost, 2) if cross_cost > 0 else 0
+        total_pnl = round(cross_pnl, 2)
+        total_pnl_pct = round(total_pnl / seq * 100, 2) if seq > 0 else 0
+
+        total_entry_value = round(cross_cost, 2)
+        total_commissions = 0
+        market_pnl = round(cross_pnl, 2)
+
+        # Define broker vars for cross-broker markets
+        broker_equity = equity
+        broker_cash = 0
+
+    else:
+        # Paper/fallback mode — no broker, no cross-broker positions
+        positions = portfolio.get("positions", [])
+        atlas_positions = positions
+        all_positions = positions
         data_source = "offline"
         cash = portfolio.get("cash", seq)
         # When no capital is allocated and no positions exist, cash must be 0
@@ -986,27 +1021,30 @@ def generate_market(market_id: str, broker_cache: dict | None = None,
             logger.info("Market %s treated as UNFUNDED (offline, no positions, no history)",
                         market_id)
 
-    # Issue #4: Update equity curve for broker AND cached data (cached = broker
-    # offline but last-known-good data used). Mark cached points as estimated.
-    # Only skip update when data_source == "offline" (no broker data at all).
-    # Issue #8: Use atomic write (tmp + rename) to avoid corrupt JSON on crash.
-    if data_source in ("broker", "cached"):
-        # Issue #3: Store the FX rate used so historical combined-curve
-        # conversions can use the rate that was current at that time.
-        # NOTE: Without per-point historical FX rates the combined curve uses
-        # the current rate for all history — accepted limitation documented here.
-        point: dict = {"date": today_str, "equity": round(equity, 2)}
+    # Update equity curve for any market with real data (broker, cached, or
+    # cross-broker). Use broker_equity when available so the chart matches
+    # what the broker app shows. Skip only pure offline/paper markets.
+    if data_source in ("broker", "cached", "cross-broker"):
+        # Store the equity that matches the headline (broker total for live
+        # markets, cross-broker position value for passive markets).
+        chart_equity = equity
+        if data_source in ("broker", "cached") and broker_ok:
+            chart_equity = broker_equity if broker_equity else equity
+
+        point: dict = {"date": today_str, "equity": round(chart_equity, 2)}
         if fx_rates is not None:
             point["fx_rate"] = fx_rates.get("USDAUD", 1.0) if currency != "AUD" else 1.0
         if data_source == "cached":
-            point["estimated"] = True  # flag so frontend can dim/style these points
+            point["estimated"] = True
+        if data_source == "cross-broker":
+            point["cross_broker"] = True
 
         if not eq_curve or eq_curve[-1].get("date") != today_str:
             eq_curve.append(point)
         else:
             eq_curve[-1].update(point)
 
-        # Atomic persist: write to .tmp then rename so readers never see half-written JSON
+        # Atomic persist
         tmp_curve = curve_path.with_suffix(".tmp")
         with open(tmp_curve, "w") as f:
             json.dump(eq_curve, f, indent=2)
@@ -1052,8 +1090,8 @@ def generate_market(market_id: str, broker_cache: dict | None = None,
         "market_id": market_id,
         "currency": currency,
         "trading_mode": mode_label,
-        "data_source": data_source if broker_ok else "offline",
-        "broker": trading.get("broker", "ibkr"),
+        "data_source": data_source,
+        "broker": trading.get("broker", "moomoo"),
         "portfolio": {
             "equity": equity, "cash": round(cash, 2),
             "starting_equity": seq,
@@ -1066,6 +1104,10 @@ def generate_market(market_id: str, broker_cache: dict | None = None,
             "realized_pnl": realized_pnl,
             "open_positions": atlas_open,
             "buying_power": broker_acct["buying_power"] if broker_ok else round(cash, 2),
+            # Broker-reported totals (includes manual positions).
+            # Used by dashboard for headline equity that matches broker app.
+            "broker_equity": broker_equity if (broker_ok or data_source == "cross-broker") else None,
+            "broker_cash": broker_cash if (broker_ok or data_source == "cross-broker") else None,
         },
         "manual_positions": {
             "positions": manual_open,
@@ -1683,6 +1725,10 @@ def _merge_equity_curves(market_data: dict, exchange_rates: dict) -> list:
     start_vals = {}   # {mid: starting equity in AUD}
     all_dates = set()
     for mid, md in market_data.items():
+        # Skip cross-broker markets — their equity is already inside
+        # the primary broker's curve (e.g. WDS.AX is in Moomoo's total).
+        if md.get("data_source") == "cross-broker":
+            continue
         ccy = md.get("currency", "AUD")
         currencies[mid] = ccy
         series = {}
@@ -1740,8 +1786,10 @@ def _merge_benchmark_curves(market_data: dict, exchange_rates: dict,
     tickers = []
     all_dates = set()
     for mid, md in market_data.items():
+        # Skip cross-broker markets (their equity is in the primary broker's curve)
+        if md.get("data_source") == "cross-broker":
+            continue
         # Issue #10: skip markets with no meaningful equity history (< 2 points)
-        # to avoid distorting the combined benchmark scale factor.
         eq_curve_len = len(md.get("equity_curve", []))
         if eq_curve_len < 2:
             logger.debug("_merge_benchmark_curves: skipping %s (equity_curve has %d points)",
@@ -1884,7 +1932,7 @@ def generate():
     """Generate multi-market dashboard data.
 
     Each market connects to its own broker independently (SP500=Moomoo,
-    ASX=IBKR), then results are merged into a combined payload.
+    ASX=Moomoo cross-broker), then results are merged into a combined payload.
     """
     from markets.registry import list_markets
 
@@ -1906,7 +1954,7 @@ def generate():
     for mid in markets:
         cfg = get_config(mid)
         trading = cfg.get("trading", {})
-        broker_name = trading.get("broker", "ibkr")
+        broker_name = trading.get("broker", "moomoo")
         if (trading.get("mode") == "live"
                 and trading.get("live_enabled", False)):
             if broker_name == "moomoo" and moomoo_data is not None:
@@ -1915,7 +1963,7 @@ def generate():
                 print(f"  {mid}: reusing moomoo connection")
             else:
                 # Per-broker timeout — don't let one broker block others
-                broker_timeout = 30 if broker_name == "ibkr" else 15
+                broker_timeout = 15
                 try:
                     signal.signal(signal.SIGALRM, _broker_timeout_handler)
                     signal.alarm(broker_timeout)
@@ -1992,20 +2040,28 @@ def generate():
     all_manual = []
     all_closed = []
     combined_strats = {}
-    combined_equity_aud = 0
-    combined_cash_aud = 0
+    combined_broker_equity_aud = 0   # headline (matches broker app)
+    combined_broker_cash_aud = 0
+    combined_atlas_equity_aud = 0    # for P&L / benchmark
     combined_starting_aud = 0
 
     for mid, md in market_data.items():
         pf = md.get("portfolio", {})
         ccy = md.get("currency", "AUD")
-        # Issue #2: skip unfunded/offline markets when computing combined equity totals.
-        # An unfunded market (funded=False) has zero real capital deployed and would
-        # falsely inflate combined equity by ~$5K per offline market.
+        # Only include markets with broker data in combined totals.
+        # Offline/paper markets (ASX paused, HK unfunded) would inflate the
+        # combined number with phantom capital that doesn't exist at the broker.
+        has_broker = md.get("data_source") in ("broker", "cached")
         is_funded = md.get("funded", True)
-        if is_funded:
-            combined_equity_aud += to_aud(pf.get("equity", 0), ccy)
-            combined_cash_aud += to_aud(pf.get("cash", 0), ccy)
+        include_in_combined = has_broker and is_funded
+        if include_in_combined:
+            # Headline equity from broker (matches broker app)
+            be = pf.get("broker_equity") or pf.get("equity", 0)
+            bc = pf.get("broker_cash") or pf.get("cash", 0)
+            combined_broker_equity_aud += to_aud(be, ccy)
+            combined_broker_cash_aud += to_aud(bc, ccy)
+            # Atlas equity for P&L tracking
+            combined_atlas_equity_aud += to_aud(pf.get("equity", 0), ccy)
             combined_starting_aud += to_aud(pf.get("starting_equity", 0), ccy)
         # Tag positions with market (include all markets for position display)
         for p in pf.get("open_positions", []):
@@ -2017,8 +2073,8 @@ def generate():
         for t in md.get("closed_trades", []):
             t["market"] = mid
             all_closed.append(t)
-        # Strategy summary merge (only funded markets contribute to combined P&L)
-        if is_funded:
+        # Strategy summary merge (only broker-connected funded markets)
+        if include_in_combined:
             for s in md.get("strategy_summary", []):
                 key = s["strategy"]
                 if key not in combined_strats:
@@ -2038,7 +2094,8 @@ def generate():
 
     # ── Build combined result ───────────────────────────────────
     now = datetime.now(BRISBANE)
-    combined_pnl = round(combined_equity_aud - combined_starting_aud, 2)
+    # P&L from Atlas strategy performance (not broker total)
+    combined_pnl = round(combined_atlas_equity_aud - combined_starting_aud, 2)
     combined_pnl_pct = round(combined_pnl / combined_starting_aud * 100, 2) if combined_starting_aud > 0 else 0
 
     # ── Research data ──────────────────────────────────────────
@@ -2072,8 +2129,8 @@ def generate():
         for md in market_data.values()
     )
     combined_risk = {
-        "exposure_pct": round(combined_pos_value_aud / combined_equity_aud * 100, 2)
-                        if combined_equity_aud > 0 else 0,
+        "exposure_pct": round(combined_pos_value_aud / combined_broker_equity_aud * 100, 2)
+                        if combined_broker_equity_aud > 0 else 0,
         "max_positions": sum(md.get("risk", {}).get("max_positions", 0) for md in market_data.values()),
         "halted": any(md.get("risk", {}).get("halted", False) for md in market_data.values()),
         "risk_per_trade": "varies",
@@ -2098,17 +2155,17 @@ def generate():
         # Top-level summary (combined across ALL markets, AUD-normalised)
         "trading_mode": "live" if any(md.get("trading_mode") == "live" for md in market_data.values()) else "offline",
         "data_source": "broker" if broker_caches else "offline",
-        "broker": {mid: get_config(mid).get("trading", {}).get("broker", "ibkr") for mid in markets},
+        "broker": {mid: get_config(mid).get("trading", {}).get("broker", "moomoo") for mid in markets},
         "config_version": {mid: md.get("config_version", "?") for mid, md in market_data.items()},
         "account": {
-            "equity": round(combined_equity_aud, 2),
-            "cash": round(combined_cash_aud, 2),
-            "buying_power": round(combined_cash_aud, 2),
+            "equity": round(combined_broker_equity_aud, 2),
+            "cash": round(combined_broker_cash_aud, 2),
+            "buying_power": round(combined_broker_cash_aud, 2),
             "currency": "AUD",
         },
         "portfolio": {
-            "equity": round(combined_equity_aud, 2),
-            "cash": round(combined_cash_aud, 2),
+            "equity": round(combined_broker_equity_aud, 2),
+            "cash": round(combined_broker_cash_aud, 2),
             "starting_equity": round(combined_starting_aud, 2),
             "total_pnl": combined_pnl,
             "total_pnl_pct": combined_pnl_pct,
@@ -2163,8 +2220,9 @@ def generate():
         print(f"  {mid.upper():6s} {label}: ${pf.get('equity',0):,.2f} equity, "
               f"{pf.get('num_open',0)} positions, "
               f"v{md.get('config_version','?')}")
-    print(f"  COMBINED (AUD): A${combined_equity_aud:,.2f} equity, "
-          f"A${combined_cash_aud:,.2f} cash, "
+    print(f"  COMBINED (AUD): A${combined_broker_equity_aud:,.2f} equity, "
+          f"A${combined_broker_cash_aud:,.2f} cash, "
+          f"Atlas P&L A${combined_pnl:,.2f} ({combined_pnl_pct:+.2f}%), "
           f"{len(all_positions)} positions across {len(market_data)} markets"
           f" (1 USD = {exchange_rates['USDAUD']:.4f} AUD)")
 

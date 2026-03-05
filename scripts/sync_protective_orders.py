@@ -52,9 +52,9 @@ logger = logging.getLogger("atlas.sync_protective_orders")
 _MARKETS = ("asx", "sp500", "hk")
 # Default broker per market (overridden by config)
 _DEFAULT_BROKER: dict[str, str] = {
-    "asx": "ibkr",
+    "asx": "moomoo",
     "sp500": "moomoo",
-    "hk": "ibkr",
+    "hk": "moomoo",
 }
 
 
@@ -150,7 +150,7 @@ def sync_market(
         return result
 
     # ── Determine broker ─────────────────────────────────────
-    broker_name = config.get("trading", {}).get("broker", _DEFAULT_BROKER.get(market_id, "ibkr"))
+    broker_name = config.get("trading", {}).get("broker", _DEFAULT_BROKER.get(market_id, "moomoo"))
     live_enabled = config.get("trading", {}).get("live_enabled", False)
 
     if not live_enabled:
@@ -172,9 +172,6 @@ def sync_market(
         if broker_name == "moomoo":
             from brokers.moomoo.broker import MomooBroker
             broker = MomooBroker(config, live=True)
-        elif broker_name == "ibkr":
-            from brokers.ibkr.broker import IBKRBroker
-            broker = IBKRBroker(config, live=True)
         else:
             result["error"] = f"Unknown broker: {broker_name}"
             logger.error("Unknown broker '%s' for %s", broker_name, market_id)
@@ -186,12 +183,7 @@ def sync_market(
             return result
 
         # ── Sync protective orders ────────────────────────────
-        if broker_name == "ibkr":
-            # IBKR broker's sync method fetches positions internally via
-            # portfolio() and takes plan_entries as a flat list of dicts.
-            plan_entries = plan.get("proposed_entries", []) if plan else []
-            sync_result = broker.sync_all_protective_orders(plan_entries, dry_run=dry_run)
-        elif broker_name == "moomoo":
+        if broker_name == "moomoo":
             # Moomoo needs positions + open orders for duplicate detection.
             # Use LivePortfolio to get enriched position objects.
             from brokers.live_portfolio import LivePortfolio

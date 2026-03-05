@@ -3,7 +3,7 @@
 Provides the ticker universe, fee structure, trading hours, and
 configuration for the Stock Exchange of Hong Kong (SEHK).
 
-Trades via IBKR (Interactive Brokers) on the Hang Seng Composite index.
+Trades via Moomoo on the Hang Seng Composite index.
 All ticker codes are STRINGS with leading zeros (e.g. '0700', '0005').
 yfinance format appends '.HK' suffix (e.g. '0700.HK', '0005.HK').
 """
@@ -19,7 +19,7 @@ class HKMarket(MarketProfile):
     """Stock Exchange of Hong Kong (SEHK) — Hang Seng Composite market profile.
 
     Benchmark: Tracker Fund of Hong Kong (2800.HK).
-    Broker: IBKR via IB Gateway.
+    Broker: Moomoo.
     All raw ticker codes are zero-padded strings (e.g. '0700', '0005').
     """
 
@@ -79,7 +79,7 @@ class HKMarket(MarketProfile):
     @property
     def default_fees(self) -> FeeStructure:
         return FeeStructure(
-            commission_per_trade=18.0,    # IBKR HK: min HKD 18 per order
+            commission_per_trade=18.0,    # Moomoo HK: min HKD 18 per order
             commission_pct=0.0005,        # 0.05% of trade value
             slippage_pct=0.001,           # 0.1% estimated slippage
             flat_fee_threshold=36000.0,   # HKD 36,000 → pct fee applies (~USD 4,600)

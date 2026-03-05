@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <!-- Dashboard accent gradient (matches body::after bar) -->
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#c17040"/>
+      <stop offset="40%" stop-color="#d4a84a"/>
+      <stop offset="70%" stop-color="#5a8fba"/>
+      <stop offset="100%" stop-color="#738c5a"/>
+    </linearGradient>
+    <!-- Subtle inner shadow -->
+    <radialGradient id="bg" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#1c1914"/>
+      <stop offset="100%" stop-color="#0d0c0a"/>
+    </radialGradient>
+  </defs>
+  <!-- Rounded dark background (matches --radius: 10px scaled down) -->
+  <rect width="32" height="32" rx="7" fill="url(#bg)"/>
+  <!-- Subtle border -->
+  <rect width="32" height="32" rx="7" fill="none" stroke="#2a2419" stroke-width="0.8"/>
+  <!-- Stylised "A" — geometric, sharp, monogrammatic -->
+  <path d="M16 5 L25 25 L22 25 L19.5 19 L12.5 19 L10 25 L7 25 Z M16 10.5 L13.5 17 L18.5 17 Z" fill="url(#g)"/>
+  <!-- Rising accent dot (like a pulse indicator) — top right -->
+  <circle cx="24.5" cy="7.5" r="2" fill="#7fb858" opacity="0.85"/>
+</svg>
