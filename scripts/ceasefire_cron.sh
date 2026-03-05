@@ -46,6 +46,16 @@ if [ ! -s "$FACTOR_FILE" ]; then
 fi
 echo "[$(date '+%H:%M:%S')] Factor context generated ($(wc -c < "$FACTOR_FILE") bytes)" >> "$LOG_FILE"
 
+# ── Step 2b: Pre-fetch ceasefire-focused news (multi-source) ──
+echo "[$(date '+%H:%M:%S')] Fetching ceasefire-focused news (multi-source)..." >> "$LOG_FILE"
+NEWS_FILE="/tmp/ceasefire_news_${TIMESTAMP}.txt"
+timeout 180 python3 "$PROJECT/scripts/news_intel.py" --hours 6 --query ceasefire > "$NEWS_FILE" 2>>"$LOG_FILE"
+if [ ! -s "$NEWS_FILE" ]; then
+    echo "[$(date '+%H:%M:%S')] WARNING: news_intel.py returned empty, agent will search directly" >> "$LOG_FILE"
+    echo "(no pre-fetched news available)" > "$NEWS_FILE"
+fi
+echo "[$(date '+%H:%M:%S')] News collected ($(wc -c < "$NEWS_FILE") bytes)" >> "$LOG_FILE"
+
 # ── Step 3: Spawn pi agent to search news and update toggles ──
 echo "[$(date '+%H:%M:%S')] Spawning evaluation agent..." >> "$LOG_FILE"
 
@@ -57,8 +67,13 @@ geopolitical developments and update the Iran/US ceasefire factor model.
 ## YOUR DATA FILES
 1. **Factor state + keywords**: /tmp/ceasefire_factors_TS.txt
    This lists all 26 factors with their current TRUE/FALSE state and search keywords.
+2. **Pre-fetched news**: /tmp/ceasefire_news_TS.txt
+   Multi-source intelligence (Brave + GDELT + Google News + live blogs), already deduplicated.
+   Wire service articles (Reuters/AP) marked with ⚡. This covers broad ceasefire/diplomacy news.
 
-Read this file FIRST using the read tool before taking any action.
+Read BOTH files FIRST using the read tool before taking any action.
+Use the pre-fetched news to evaluate most factors. Only do additional targeted
+searches (via brave-search) for factors where the pre-fetched news is insufficient.
 
 ## YOUR TASK
 
@@ -170,7 +185,7 @@ echo "[$(date '+%H:%M:%S')] Refreshing dashboard..." >> "$LOG_FILE"
 python3 dashboard/generate_data.py >> "$LOG_FILE" 2>&1 || true
 
 # ── Cleanup ──
-rm -f "$FACTOR_FILE"
+rm -f "$FACTOR_FILE" "$NEWS_FILE"
 find "$LOG_DIR" -name "ceasefire-tracker_*.log" -mtime +7 -delete 2>/dev/null
 
 echo "[$(date '+%H:%M:%S')] Done" >> "$LOG_FILE"

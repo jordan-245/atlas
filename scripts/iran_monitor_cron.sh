@@ -41,20 +41,21 @@ if [ ! -s "$DATA_FILE" ]; then
 fi
 echo "[$(date '+%H:%M:%S')] Data collected ($(wc -c < "$DATA_FILE") bytes)" >> "$LOG_FILE"
 
-# ── Step 2: Search latest news (multi-endpoint: news API + web API) ──
-# Uses /news/search for breaking coverage + /web/search for analysis depth
-# 11 API calls: 6 news (count=20) + 3 web (count=10) + 2 video (count=5)
-# Results split into 🔴 LAST 4H (since previous cron) vs 🟡 OLDER CONTEXT
-echo "[$(date '+%H:%M:%S')] Searching news (multi-endpoint)..." >> "$LOG_FILE"
+# ── Step 2: Search latest news (multi-source intelligence) ──
+# Sources: Brave API + GDELT API + Google News RSS + live blog scraping
+# Parallel fetch, fuzzy dedup, wire service prioritisation
+echo "[$(date '+%H:%M:%S')] Searching news (multi-source)..." >> "$LOG_FILE"
 NEWS_FILE="/tmp/iran_monitor_news_${TIMESTAMP}.txt"
 
-timeout 120 node "$PROJECT/scripts/brave_news.js" --hours 4 > "$NEWS_FILE" 2>>"$LOG_FILE"
+timeout 180 python3 "$PROJECT/scripts/news_intel.py" --hours 4 > "$NEWS_FILE" 2>>"$LOG_FILE"
 SEARCH_EXIT=$?
 if [ $SEARCH_EXIT -ne 0 ] || [ ! -s "$NEWS_FILE" ]; then
-    echo "[$(date '+%H:%M:%S')] WARNING: brave_news.js failed (exit=$SEARCH_EXIT), falling back to basic search" >> "$LOG_FILE"
-    # Fallback: single web search query
-    echo "=== BRAVE SEARCH — FALLBACK ===" > "$NEWS_FILE"
-    timeout 30 node "$BRAVE_SEARCH" "Iran conflict war latest news" -n 10 --freshness pd >> "$NEWS_FILE" 2>>"$LOG_FILE"
+    echo "[$(date '+%H:%M:%S')] WARNING: news_intel.py failed (exit=$SEARCH_EXIT), falling back to brave_news.js" >> "$LOG_FILE"
+    timeout 120 node "$PROJECT/scripts/brave_news.js" --hours 4 > "$NEWS_FILE" 2>>"$LOG_FILE"
+    if [ ! -s "$NEWS_FILE" ]; then
+        echo "=== BRAVE SEARCH — FALLBACK ===" > "$NEWS_FILE"
+        timeout 30 node "$BRAVE_SEARCH" "Iran conflict war latest news" -n 10 --freshness pd >> "$NEWS_FILE" 2>>"$LOG_FILE"
+    fi
 fi
 
 echo "[$(date '+%H:%M:%S')] News collected ($(wc -c < "$NEWS_FILE") bytes)" >> "$LOG_FILE"
