@@ -275,6 +275,12 @@ if [ $EXIT_CODE -eq 0 ] && [ "$MODE" = "research" ]; then
     fi
 fi
 
+# --- Regenerate research knowledge base after successful research ---
+if [ $EXIT_CODE -eq 0 ] && [ "$MODE" = "research" ]; then
+    echo "$(date -Iseconds) Regenerating research knowledge base..." >> "$LOG_DIR/pi-cron.log"
+    python3 scripts/build_obsidian_vault.py --force >> "$LOG_DIR/pi-cron.log" 2>&1 || true
+fi
+
 # --- Dashboard refresh (always, regardless of pi exit) ---
 python3 dashboard/generate_data.py >> "$LOG_DIR/dashboard-refresh.log" 2>&1 || true
 
