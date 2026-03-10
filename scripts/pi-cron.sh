@@ -101,10 +101,24 @@ case "$MODE" in
     postclose)
         PROMPT="Run the atlas-daily post-close workflow for the ${MARKET} market: run cli_eod_settlement (pass -m ${MARKET}), then dashboard_generate_data. Summarize any exits triggered and the final equity snapshot. Write results to logs/pi-cron-postclose-${TIMESTAMP}.md"
         LOGFILE="$LOG_DIR/pi-cron-postclose-${TIMESTAMP}.log"
+
+        # Check research daemon health
+        if systemctl is-active --quiet atlas-research-daemon 2>/dev/null; then
+            HEARTBEAT=$(cat /tmp/research-daemon-heartbeat.json 2>/dev/null || echo '{}')
+            echo "$(date -Iseconds) Research daemon health: $HEARTBEAT" >> "$LOG_DIR/pi-cron.log"
+        else
+            echo "$(date -Iseconds) WARNING: Research daemon is not running" >> "$LOG_DIR/pi-cron.log"
+        fi
         ;;
     research)
         LOGFILE="$LOG_DIR/research_${TIMESTAMP}.log"
         SKILL_DIR="$RESEARCH_SKILL_DIR"
+
+        # Check if daemon is running — if so, skip cron research
+        if systemctl is-active --quiet atlas-research-daemon 2>/dev/null; then
+            echo "$(date -Iseconds) Research daemon is active, skipping cron research" >> "$LOG_DIR/pi-cron.log"
+            exit 0
+        fi
 
         # Quick check: any queued experiments? Skip spawning agent if nothing to do.
         QUEUED_COUNT=$(cd "$PROJECT" && python3 -c "
