@@ -196,6 +196,50 @@ the portfolio Sharpe by more than -0.02.
 5. When done with a strategy, `summary()` and move to the next
 6. Repeat until interrupted
 
+## Two Modes
+
+### Mode 1: Headless Sweeper (24/7, no LLM needed)
+Systematic parameter grid search. Runs as a systemd service.
+Handles the mechanical grunt work — every parameter × every value.
+
+```bash
+# Start the 24/7 sweeper
+systemctl start atlas-autoresearch
+
+# Check status
+systemctl status atlas-autoresearch
+cat /tmp/autoresearch-heartbeat.json
+tail -50 /tmp/autoresearch.log
+
+# Graceful stop
+touch /tmp/autoresearch-stop       # or: systemctl stop atlas-autoresearch
+
+# Run manually (one cycle, top 50 tickers for speed)
+python3 research/sweep.py --cycles 1 --top-n 50
+```
+
+The sweeper iterates through all strategies in priority order, tries every
+value in the parameter grid, keeps improvements, discards the rest. It
+sends Telegram notifications when it finds improvements.
+
+### Mode 2: Interactive LLM Loop (creative research)
+The LLM (you) drives the loop with full reasoning between experiments.
+This mode is for creative hypotheses, cross-strategy insights, radical
+changes the grid wouldn't try, and promotion decisions.
+
+Use this mode when:
+- The sweeper has plateaued (no improvements in last cycle)
+- You want to try something the grid doesn't cover
+- You need to screen new sandbox strategies
+- A strategy needs combined portfolio testing
+- Something needs promotion review
+
+### Workflow
+1. Let the sweeper run 24/7 grinding through parameter grids
+2. Periodically check `leaderboard()` to see what it found
+3. Use interactive sessions for creative research the sweeper can't do
+4. Promote good configs after combined testing + human approval
+
 ## NEVER STOP
 
 Once the loop begins, do NOT pause to ask the human if you should continue.

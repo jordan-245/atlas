@@ -2,3 +2,7 @@ timestamp	sharpe	trades	max_dd_pct	pf	cagr_pct	params_changed	status	description
 2026-03-10T10:17:22	-3.2363	41	1.45	1.8170	0.71		keep	baseline
 2026-03-10T10:18:15	-1.6962	84	1.52	2.6868	2.14	rsi_period=10	keep	RSI period 14→10
 2026-03-10T10:19:06	-1.6962	84	1.52	2.6868	2.14	atr_stop_mult=2.5	discard	wider ATR stops: 2.0→2.5
+2026-03-10T10:25:51	-1.6962	84	1.52	2.6868	2.14		keep	baseline
+2026-03-10T10:26:47	-1.5209	130	2.86	1.8279	1.92	rsi_period=7	keep	rsi_period: 10→7
+2026-03-10T10:27:41	-2.0685	92	2.64	1.8431	1.46	rsi_oversold=30	discard	rsi_oversold: 35→30
+2026-03-10T10:28:31	-2.3070	63	1.71	2.5332	1.54	rsi_oversold=25	discard	rsi_oversold: 35→25
