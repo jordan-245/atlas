@@ -3,401 +3,231 @@ name: atlas-research-loop
 description: "Drive the daily Atlas research cycle: hypothesis generation, experiment execution, result analysis, and promotion gating. Single agent wearing 4 hats (researcher, backtester, analyst, risk), structured for future multi-agent split."
 ---
 
-# Atlas Research Loop
+# Atlas Autoresearch Loop
 
-This skill drives one full cycle of the continuous research pipeline.
-Run daily during the quiet window (09:00–17:00 AEST) when both markets are closed.
+Run autonomous trading strategy research using a tight keep/discard loop.
+Inspired by karpathy/autoresearch — the LLM (you) drives the loop.
 
-## Overview
+## Quick Start
 
-You cycle through 4 distinct roles per session. Each role reads from and writes to
-specific files — all inter-role state passes through JSON files, never in-memory variables.
-
-```
-🎩 Researcher → 🧪 Backtester → 📊 Analyst → 🛡️ Risk
-    (queue)        (experiments)    (journal)    (candidates)
-```
-
-## File Ownership Table
-
-| Role       | Reads                                    | Writes                                         |
-|------------|------------------------------------------|-------------------------------------------------|
-| Researcher | journal.json, perf data, health check    | queue.json (append new hypotheses)              |
-| Backtester | queue.json                               | experiments/exp-*.json, queue.json (status)     |
-| Analyst    | experiments/exp-*.json                   | journal.json (append), experiments (annotate)   |
-| Risk       | experiments/exp-*.json, journal.json     | config/candidates/*.json, promotion requests    |
-
----
-
-## 🎩 RESEARCHER HAT — Hypothesis Generation
-
-### Step 1: Read current state
-1. Read `research/journal.json` — what's been tried, passed, failed, and why
-2. Read latest health check: `python3 scripts/health_check.py --market sp500` and `--market asx`
-3. Read paper trading state: `paper_engine/state/paper_sp500.json`, `paper_engine/state/paper_asx.json`
-4. Read current active configs: `config/active/sp500.json`, `config/active/asx.json`
-5. Check `research/queue.json` for already-queued experiments (don't duplicate)
-
-### Step 2: Reason about what to test next
-
-Apply this priority framework (highest first):
-
-1. **P1 Degradation** — Is any active strategy losing money or showing Sharpe < 0 in recent paper trades? If so, queue a diagnostic experiment.
-2. **P2 Dormant activation** — Are there coded strategies in `strategies/` that aren't enabled? Queue solo + combined tests.
-3. **P3 Param drift** — Has it been >30 days since last optimization for a market? Queue re-optimization.
-4. **P4 New filters** — Are there untested filters (VIX regime, volume, etc.) that could improve signal quality?
-5. **P5 New strategies** — Any new strategy ideas from learnings in journal? Queue sandbox development.
-6. **P5 Cross-market** — Are there cross-market correlation patterns worth testing?
-
-### Step 3: Write hypothesis to queue
-
-Use the research models to create a QueueEntry:
 ```python
 import sys; sys.path.insert(0, '/root/atlas')
-from research.models import QueueEntry, ExperimentType, Priority, append_to_queue, generate_experiment_id
+from research.loop import ResearchSession, leaderboard, strategy_status, quick_check, combined_test
 
-entry = QueueEntry(
-    id=generate_experiment_id(),
-    title="Test momentum_breakout on SP500",
-    category="dormant",
-    market="sp500",
-    hypothesis="Momentum breakout captures trend initiations that TF misses",
-    method=ExperimentType.SINGLE_STRATEGY_TEST,
-    acceptance_criteria={"min_sharpe": 0.3, "min_trades": 15, "max_max_drawdown_pct": 10},
-    estimated_runtime_min=5,
-    priority=Priority.P2_HIGH,
-    strategy_name="momentum_breakout",
-)
-append_to_queue(entry)
+# 1. See what's available
+print(strategy_status())
+print(leaderboard())
+
+# 2. Pick a strategy, start a session
+s = ResearchSession('mean_reversion', 'sp500')
+s.baseline()    # always first — establishes the bar
+
+# 3. Run experiments
+r = s.experiment({'rsi_period': 7}, 'shorter RSI period')
+s.keep()    # if recommendation is 'keep'
+# or
+s.discard() # if recommendation is 'discard'
+
+# 4. Check progress
+print(s.history())
+print(s.summary())
 ```
 
-### CRITICAL: Check journal before queuing
-- Search `research/journal.json` for the strategy name / hypothesis
-- If a similar experiment FAILED before, do NOT re-queue unless you have a NEW rationale
-- Document the new rationale in the `notes` field
+## Read First
 
----
-
-## 🧪 BACKTESTER HAT — Experiment Execution
-
-### Step 1: Pick next experiment
-```bash
-cd /root/atlas && python3 scripts/research_runner.py --dry-run
+Before starting, read the research program:
+```
+/root/atlas/research/program.md
 ```
 
-### Step 2: Execute — ALWAYS IN PARALLEL
+This contains:
+- Keep/discard criteria
+- Simplicity rules
+- Strategy priority tiers
+- Tactics for when you're stuck
+- What you can and cannot modify
 
-**This machine has 8 cores. Never run experiments sequentially.**
+## The Loop
 
-Use `scripts/run_wave2_parallel.py` (or a custom parallel runner) to execute
-independent experiments across all cores simultaneously:
+You run this loop **forever** (until manually stopped):
 
-```bash
-cd /root/atlas && python3 scripts/run_wave2_parallel.py --workers 8
-```
-
-For a specific subset, write a small parallel runner:
+### Phase 1: Survey (5 min)
 ```python
-from concurrent.futures import ProcessPoolExecutor, as_completed
-from scripts.research_runner import run_experiment
-from research.models import read_queue, claim_experiment
+# What strategies exist and their current state
+print(strategy_status())
 
-def run_one(exp_id):
-    queue = read_queue()
-    entry = next((e for e in queue if e['id'] == exp_id), None)
-    claimed = claim_experiment(exp_id, 'atlas-research')
-    return run_experiment(claimed, 'atlas-research')
+# Current rankings
+print(leaderboard())
 
-exp_ids = [...]  # your experiment IDs
-with ProcessPoolExecutor(max_workers=8) as pool:
-    futures = {pool.submit(run_one, eid): eid for eid in exp_ids}
-    for f in as_completed(futures):
-        print(f"{futures[f]}: {f.result().get('verdict')}")
+# Pick the highest-value target
+# Tier 1 (active) > Tier 2 (dormant) > Tier 3 (sandbox)
 ```
 
-**Long-running parallel jobs MUST use systemd** (not screen/nohup):
+### Phase 2: Baseline (2-5 min)
+```python
+s = ResearchSession('mean_reversion', 'sp500')
+metrics = s.baseline()
+# This sets the bar. All experiments compared to this.
+```
+
+### Phase 3: Experiment Loop (most of your time)
+
+For each strategy, sweep parameters one at a time:
+
+```python
+# Try each parameter individually
+r = s.experiment({'rsi_period': 7}, 'RSI period 14→7: faster signals')
+if r['recommendation'] == 'keep':
+    s.keep()    # baseline advances — next experiment compared to THIS
+else:
+    s.discard() # baseline stays the same
+
+r = s.experiment({'atr_stop_mult': 2.5}, 'wider stops: 2.0→2.5')
+if r['recommendation'] == 'keep':
+    s.keep()
+else:
+    s.discard()
+
+# After individual sweeps, try combinations
+r = s.experiment({'rsi_period': 7, 'rsi_oversold': 25}, 'RSI 7 + oversold 25')
+# ...
+```
+
+**Stop rules for a strategy:**
+- 5+ consecutive discards → move on (diminishing returns)
+- Sharpe > 0.5 → good enough, try next strategy
+- Sharpe < 0.0 after 10+ experiments → this strategy is dead, move on
+
+### Phase 4: Combined Test (when a strategy is well-optimized)
+```python
+result = combined_test('mean_reversion', s.best()['params'])
+print(f"Portfolio Sharpe change: {result['delta']['sharpe']:+.4f}")
+# If delta >= -0.02: strategy is portfolio-compatible
+```
+
+### Phase 5: Move to Next Strategy
+```python
+print(s.summary())  # record what happened
+# Pick next strategy from leaderboard/status
+s = ResearchSession('trend_following', 'sp500')
+s.baseline()
+# ... repeat Phase 3 ...
+```
+
+## Screening New Strategies
+
+For sandbox strategies that haven't been tested:
+
+```python
+# Step 1: Quick signal check (<10s)
+result = quick_check('consecutive_down_days', 'sp500')
+if not result['alive']:
+    print(f"Dead: {result['reason']}")
+    # Skip this strategy
+else:
+    # Step 2: Full baseline
+    s = ResearchSession('consecutive_down_days', 'sp500')
+    s.baseline()
+    # Step 3: If Sharpe > 0.2, enter the optimization loop
+    # Step 4: If optimized Sharpe > 0.3, run combined_test()
+```
+
+## Output Format
+
+Each experiment prints:
+```
+--- Experiment: shorter RSI (mean_reversion) ---
+sharpe:           0.4800
+trades:           38
+max_dd_pct:       7.20
+profit_factor:    1.4500
+cagr_pct:         12.30
+win_rate_pct:     55.2
+sortino:          0.6200
+runtime_s:        3.1
+recommendation:   KEEP (Sharpe +0.0600, trades -4, DD -1.3%)
+rationale:        KEEP: Sharpe +0.0600, trades -4, DD -1.3%
+---
+```
+
+## Results Storage
+
+- **TSV per strategy**: `research/results/{strategy}.tsv` — full experiment log
+- **Best params**: `research/best/{strategy}.json` — current champion config
+- **Journal**: `research/journal.json` — appended for dashboard compatibility
+
+## Promotion Flow
+
+When a strategy is well-optimized (Sharpe > 0.3, combined test passes):
+
+1. Stage candidate config:
+```python
+import json
+from pathlib import Path
+from utils.config import get_active_config
+
+config = get_active_config('sp500')
+config['strategies']['mean_reversion'].update(s.best()['params'])
+config['strategies']['mean_reversion']['enabled'] = True
+
+candidate_path = Path('/root/atlas/config/candidates/sp500_autoresearch.json')
+candidate_path.write_text(json.dumps(config, indent=2))
+```
+
+2. Send promotion request via Telegram (requires human approval):
 ```bash
-# Write runner to /tmp/run_experiments.py, then:
-cat > /etc/systemd/system/atlas-research-run.service <<EOF
+cd /root/atlas && python3 scripts/research_promote.py \
+    --stage --experiment-id autoresearch --market sp500
+```
+
+**NEVER auto-promote. Always require human approval.**
+
+## Parallel Execution
+
+For screening multiple strategies at once, use parallel workers:
+```python
+from concurrent.futures import ProcessPoolExecutor
+
+strategies_to_screen = ['consecutive_down_days', 'donchian_breakout', 'williams_percent_r']
+
+def screen_one(name):
+    return quick_check(name, 'sp500')
+
+with ProcessPoolExecutor(max_workers=6) as pool:
+    results = dict(zip(strategies_to_screen, pool.map(screen_one, strategies_to_screen)))
+
+for name, r in results.items():
+    status = "✅ ALIVE" if r['alive'] else "❌ DEAD"
+    print(f"{name}: {status} — {r['reason'][:60]}")
+```
+
+## Long-Running Sessions
+
+If running for hours, use a systemd service:
+```bash
+cat > /etc/systemd/system/atlas-autoresearch.service <<EOF
 [Service]
 Type=simple
 WorkingDirectory=/root/atlas
-ExecStart=/bin/bash -c 'python3 /tmp/run_experiments.py > /tmp/research_results.log 2>&1'
-TimeoutStartSec=7200
+ExecStart=/bin/bash -c 'python3 -c "
+import sys; sys.path.insert(0, \"/root/atlas\")
+from research.loop import ResearchSession
+s = ResearchSession(\"mean_reversion\", \"sp500\")
+s.baseline()
+# Automated param sweep would go here
+" > /tmp/autoresearch.log 2>&1'
+TimeoutStartSec=28800
 EOF
-systemctl daemon-reload && systemctl start atlas-research-run
-# Check: systemctl status atlas-research-run && grep verdict /tmp/research_results.log
+systemctl daemon-reload && systemctl start atlas-autoresearch
 ```
 
-### Wave design rule: max 8 independent experiments per batch
-
-When planning a wave, **design experiments so each batch has ≤ 8 independent
-(no dependencies) experiments** that can saturate all 8 cores in parallel.
-If a wave has 20 experiments, split into batches:
-- Batch 1: 8 independent experiments (run in parallel)
-- Batch 2: 8 more independent experiments (run in parallel after batch 1)
-- Batch 3: 4 dependent experiments (run after their prereqs complete)
-
-A single backtest takes ~4 min. 8 in parallel = ~4 min wall-clock per batch.
-A 24-experiment wave completes in ~12 min instead of ~96 min sequential.
-
-### Step 3: Verify output
-Check that `research/experiments/exp-{id}.json` was created with full envelope.
-
-### Budget constraints
-- Max 4 hours per experiment (enforced by runner)
-- Max 8 hours total per research session
-- If a single_strategy_test takes >10 min, something is wrong — investigate
-
----
-
-## 📊 ANALYST HAT — Result Evaluation
-
-### Step 1: Read experiment results
-Load the experiment envelope:
-```python
-from research.models import load_experiment
-exp = load_experiment("20260227_150000_abc123")
-```
-
-### Step 2: Apply judgment
-For each completed experiment, evaluate:
-
-1. **Statistical significance** — Are there enough trades (>15) for the metrics to be meaningful?
-2. **Overfitting risk** — If Sharpe is suspiciously high (>2.0), be skeptical. Check trade count.
-3. **OOS vs IS** — If only IS metrics available, note that OOS validation is needed before promotion.
-4. **Compared to baseline** — Is this actually better than the current active config?
-5. **Trade count impact** — Adding the strategy shouldn't reduce total portfolio trades below 200.
-6. **Drawdown check** — Combined DD should stay below 8%.
-
-### Step 3: Annotate experiment
-Update the experiment envelope with verdict and learnings:
-```python
-from research.models import ExperimentEnvelope, update_queue_entry, ExperimentStatus
-
-env = ExperimentEnvelope.load(exp_id)
-env.verdict = "pass"  # or "fail" or "partial"
-env.verdict_rationale = "Sharpe 0.85 meets min 0.3 threshold, 45 trades sufficient"
-env.learnings = [
-    "momentum_breakout works on SP500 with default params",
-    "Win rate 52% is marginal but PF 1.3 compensates",
-]
-env.save()
-
-update_queue_entry(exp_id, {"status": ExperimentStatus.PASSED})
-```
-
-### Step 4: Append to journal
-```python
-from research.models import JournalEntry, append_to_journal
-
-journal_entry = JournalEntry(
-    experiment_id=exp_id,
-    timestamp=datetime.now(timezone.utc).isoformat(),
-    market="sp500",
-    category="dormant",
-    strategy="momentum_breakout",
-    hypothesis="Momentum breakout captures trend initiations that TF misses",
-    verdict="pass",
-    key_metrics={"sharpe": 0.85, "cagr_pct": 8.5, "max_dd_pct": 7.2, "trades": 45},
-    delta_vs_baseline={"sharpe": +0.02, "cagr_pct": +1.5},
-    learnings=["Works on SP500 with default params", "Needs optimization next"],
-)
-append_to_journal(journal_entry)
-```
-
-### Log learnings from failures too!
-Even failed experiments teach us something. Always append to journal with learnings.
-
----
-
-## 🛡️ RISK HAT — Promotion Gating
-
-### When to activate this role
-Only when an experiment has `verdict="pass"` AND the strategy improvement is meaningful
-(delta Sharpe >= 0.02 or delta CAGR >= 1pp or delta DD <= -0.5pp).
-
-### Step 1: Stage candidate config
-```python
-from research.models import CANDIDATES_DIR
-import json, shutil
-from utils.config import get_active_config
-
-config = get_active_config("sp500")
-# Apply the successful experiment's params
-config["strategies"]["momentum_breakout"]["enabled"] = True
-# ... apply optimized params ...
-
-candidate_path = CANDIDATES_DIR / f"sp500_{exp_id}.json"
-candidate_path.parent.mkdir(parents=True, exist_ok=True)
-with open(candidate_path, "w") as f:
-    json.dump(config, f, indent=2)
-```
-
-### Step 2: Run OOS validation
-```bash
-cd /root/atlas && python3 scripts/validate_oos.py \
-    --config-path config/candidates/sp500_{exp_id}.json \
-    --output-path backtest/results/oos_{exp_id}.json
-```
-All 3 tests MUST pass before promotion.
-
-### Step 3: Regression check
-Run combined backtest with candidate config and compare to current active:
-```bash
-cd /root/atlas && python3 scripts/strategy_evaluator.py \
-    --market sp500 --active-only  # Current baseline
-```
-Compare metrics — candidate must not degrade any metric by >10%.
-
-### Step 4: Rate limit check
-```python
-from research.models import get_recent_promotions
-recent = get_recent_promotions("sp500", days=7)
-if len(recent) >= 1:
-    print("Rate limit: max 1 promotion per week per market. Defer.")
-```
-
-### Step 5: Send promotion request with Approve/Reject buttons
-Use the promotion-request command which sends inline Approve/Reject buttons via Telegram:
-```bash
-cd /root/atlas && python3 scripts/telegram_notify.py promotion-request {exp_id} {market_id}
-```
-This loads the candidate config and validation results, then sends a rich message with
-Before→After metric comparisons, OOS results, and **inline Approve/Reject buttons** that
-the Telegram bot handles for one-tap promotion.
-
-Prerequisites before calling:
-1. Candidate must be staged: `python3 scripts/research_promote.py --stage --experiment-id {exp_id} --market {market_id}`
-2. OOS validation should be complete (the command will use cached results if available)
-
-Alternatively, you can use the Python API directly:
-```python
-from utils.telegram import send_research_promotion_request
-send_research_promotion_request(
-    experiment_id=exp_id,
-    market=market_id,
-    comparisons=comparisons,  # dict from regression check
-    oos_details=oos_details,  # dict from OOS validation
-)
-```
-
-### Step 6: NEVER auto-promote
-- Wait for human approval via Telegram
-- On approve: copy candidate to `config/active/`, version to `config/versions/`
-- On reject: log reason, archive candidate, update queue status to REJECTED
-
-### Step 7: Rollback watchdog
-After promotion, if paper trading shows degradation within 5 trading days:
-- Auto-flag for review (don't auto-rollback — let human decide)
-- Send Telegram alert with degradation metrics
-
----
-
-## Session Flow Summary
-
-```
-1. Read state (journal, health check, paper state, queue)
-2. Generate 1-3 hypotheses → append to queue
-3. Execute queued experiments (research_runner.py --run-all)
-4. Evaluate results → annotate experiments → append to journal
-5. If any pass: evaluate for promotion → stage candidate → OOS validate
-6. If promotion worthy: send Telegram request → wait for human approval
-7. Summary: what was tested, what passed/failed, what's next
-```
-
-## Max Session Duration: 8 hours
-Kill any experiment exceeding 4 hours. Total session should complete in 2-6 hours
-depending on number of queued experiments and their complexity.
-
----
-
-## 🌊 WAVE PLANNING — Designing the Next Research Wave
-
-This mode is triggered when the experiment queue is empty. The cron generates a
-wave brief at `research/waves/wave_N_brief.json` and gives you a planning prompt.
-
-### Web Research with Brave Search
-
-Use the brave-search skill to research ideas. Run from the skill directory:
-
-```bash
-# Search for strategy research
-/root/.pi/agent/skills/pi-skills/brave-search/search.js "quantitative swing trading position sizing research" -n 5 --content
-
-# Search for specific topics from previous findings
-/root/.pi/agent/skills/pi-skills/brave-search/search.js "regime detection stock trading volatility filter backtest" -n 5
-
-# Get content from a specific article
-/root/.pi/agent/skills/pi-skills/brave-search/content.js https://example.com/article
-```
-
-Run **3-5 searches** covering:
-1. The specific patterns/gaps identified in the wave brief
-2. Recent quantitative trading research (quantifiedstrategies.com, quantpedia.com, alphaarchitect.com)
-3. Academic papers or practitioner blogs on the wave theme
-
-### Wave Design Principles
-
-1. **One central theme** — every experiment in the wave relates to a single research question
-2. **Progressive depth** — start with quick feasibility tests, then optimize, then validate
-3. **Build on learnings** — reference specific findings from previous waves
-4. **6-12 experiments** — enough to thoroughly explore the theme, not so many it takes weeks
-5. **Clear acceptance criteria** — every experiment has measurable pass/fail thresholds
-6. **Parallelism-first batching** — design waves so independent experiments come in groups of ≤ 8 (matching CPU cores). All independent experiments in a batch run simultaneously. Dependent chains run after their prereqs complete. A well-designed wave with 12 experiments might have batch 1 (8 independent, ~4 min parallel), then batch 2 (4 dependent, ~4 min parallel) = ~8 min total instead of ~48 min sequential.
-
-### Theme Selection — Profit First
-
-Every wave must directly target making the live trading system more profitable.
-Pick themes that either find new profitable strategies or optimise existing ones:
-
-1. **New strategies from web research** — find published backtested strategies with Sharpe > 0.5, implement and test them
-2. **Optimise existing strategy params** — re-tune for higher Sharpe/CAGR (especially if >30 days since last optimisation)
-3. **Unlock portfolio capacity** — position allocation, per-strategy pools, signal priority (enables more strategies = more profit)
-4. **Better exits** — adaptive stops, trailing stops, profit targets that capture more per trade
-5. **New signal sources** — uncorrelated entry signals that add returns without competing for positions
-
-Do NOT pick themes like 'diagnostics', 'monitoring', 'infrastructure', or 'data quality'.
-Every experiment must have acceptance criteria tied to profitability metrics (Sharpe, CAGR, PF, win rate).
-
-### Seeding Experiments
-
-Use the research models to create queue entries:
-
-```python
-import sys; sys.path.insert(0, '/root/atlas')
-from research.models import (
-    QueueEntry, ExperimentType, Priority,
-    append_to_queue, generate_experiment_id,
-)
-
-entry = QueueEntry(
-    id="wave2_theme_test1",
-    title="Test: <description>",
-    category="<theme_category>",
-    market="sp500",
-    hypothesis="<clear hypothesis>",
-    method=ExperimentType.SINGLE_STRATEGY_TEST,
-    acceptance_criteria={"min_sharpe": 0.3, "min_trades": 15},
-    estimated_runtime_min=30,
-    priority=Priority.P2_HIGH,
-    strategy_name="<strategy>",
-    param_grid={"param1": [1, 2, 3], "param2": [0.5, 1.0]},
-)
-append_to_queue(entry)
-```
-
-### After Seeding
-
-1. Update the wave brief file with theme, rationale, web findings, and experiment list
-2. Run `python3 scripts/wave_planner.py --status` to verify
-3. Send notification: `python3 scripts/telegram_notify.py research-wave-planned`
-
----
+But the primary mode is **interactive via pi** — you (the LLM) drive the loop
+with full reasoning between each experiment.
 
 ## Do NOT:
-- Re-test failed ideas without NEW rationale
-- Skip OOS validation before promotion
-- Auto-promote configs (always require human approval)
-- Leave experiments in "running" or "evaluating" state (clean up on exit)
-- Exceed 1 promotion per week per market
+- Modify backtest engine code (`backtest/`, `strategies/`) — only params
+- Auto-promote configs without human approval
+- Keep running the same failing parameter change with small variations
+- Skip baseline before experiments
+- Run experiments without reading program.md first
+- Ask the human if you should continue — you are autonomous

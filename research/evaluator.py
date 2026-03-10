@@ -5,11 +5,16 @@ Atlas Experiment Evaluator — Deterministic verdict engine with auto-advance.
 Evaluates experiment results against acceptance criteria and auto-advances
 lifecycle stages (solo → optimize → combined → oos → promote).
 
+Also provides the autoresearch-style keep_or_discard() for the loop engine.
+
 Usage:
     from research.evaluator import ExperimentEvaluator
     evaluator = ExperimentEvaluator()
     result = evaluator.evaluate('exp_001', metrics, stage='solo')
     evaluator.auto_advance('exp_001', result['verdict'], 'solo', 'mean_reversion')
+
+    # Autoresearch-style binary decision:
+    verdict = evaluator.keep_or_discard(baseline_metrics, experiment_metrics)
 """
 
 from datetime import datetime, timezone
@@ -237,6 +242,107 @@ class ExperimentEvaluator:
             parts.append(f"FAILED: {', '.join(fail_details)}.")
 
         return " ".join(parts)
+
+    # ── Autoresearch-style keep/discard ──────────────────────────────────
+
+    SIMPLICITY_THRESHOLD = 0.02  # Sharpe improvement required per added param
+
+    def keep_or_discard(
+        self,
+        baseline_metrics: dict,
+        experiment_metrics: dict,
+        params_added: int = 0,
+    ) -> dict:
+        """Binary keep/discard decision for the autoresearch loop.
+
+        Keep if:
+        1. Sharpe improved by a meaningful amount (≥ 0.01 base)
+        2. Trade count didn't collapse (≥ 70% of baseline or ≥ 10)
+        3. Max drawdown didn't explode (≤ 150% of baseline or ≤ 20%)
+        4. Simplicity: improvement per added param ≥ threshold
+
+        Args:
+            baseline_metrics:   Metrics dict from the current best.
+            experiment_metrics: Metrics dict from the experiment.
+            params_added:       Net new params added (negative = simplification).
+
+        Returns:
+            {"decision": "keep"|"discard", "rationale": str,
+             "delta_sharpe": float, "delta_trades": int, "delta_dd": float,
+             "simplicity_ok": bool}
+        """
+        b_sharpe = float(baseline_metrics.get("sharpe", 0) or 0)
+        e_sharpe = float(experiment_metrics.get("sharpe", 0) or 0)
+        b_trades = int(baseline_metrics.get("total_trades", 0) or 0)
+        e_trades = int(experiment_metrics.get("total_trades", 0) or 0)
+        b_dd = float(baseline_metrics.get("max_drawdown_pct", 0) or 0)
+        e_dd = float(experiment_metrics.get("max_drawdown_pct", 0) or 0)
+
+        delta_sharpe = round(e_sharpe - b_sharpe, 4)
+        delta_trades = e_trades - b_trades
+        delta_dd = round(e_dd - b_dd, 2)
+        reasons: list[str] = []
+
+        # Gate 1: Sharpe must improve (bar scales with complexity)
+        min_improvement = 0.01
+        if params_added > 0:
+            min_improvement = self.SIMPLICITY_THRESHOLD * max(params_added, 1)
+        elif params_added < 0:
+            min_improvement = 0.0  # simplification: any non-negative delta is fine
+
+        simplicity_ok = delta_sharpe >= min_improvement
+        if not simplicity_ok:
+            reasons.append(
+                f"Sharpe {delta_sharpe:+.4f} < threshold +{min_improvement:.3f}"
+            )
+
+        # Gate 2: Trades can't collapse
+        min_trades = max(10, int(b_trades * 0.7)) if b_trades > 0 else 10
+        if e_trades < min_trades:
+            reasons.append(f"Trades {e_trades} < {min_trades}")
+
+        # Gate 3: Drawdown can't explode
+        max_dd = max(20.0, b_dd * 1.5) if b_dd > 0 else 20.0
+        if e_dd > max_dd:
+            reasons.append(f"DD {e_dd:.1f}% > {max_dd:.1f}%")
+
+        if reasons:
+            decision = "discard"
+            rationale = "DISCARD: " + "; ".join(reasons)
+        else:
+            decision = "keep"
+            parts = [f"Sharpe {delta_sharpe:+.4f}"]
+            if delta_trades != 0:
+                parts.append(f"trades {delta_trades:+d}")
+            if abs(delta_dd) > 0.01:
+                parts.append(f"DD {delta_dd:+.1f}%")
+            rationale = "KEEP: " + ", ".join(parts)
+
+        return {
+            "decision": decision,
+            "rationale": rationale,
+            "delta_sharpe": delta_sharpe,
+            "delta_trades": delta_trades,
+            "delta_dd": delta_dd,
+            "simplicity_ok": simplicity_ok,
+        }
+
+    @staticmethod
+    def complexity_score(params: dict, default_params: dict) -> int:
+        """Count non-default parameters (a rough complexity measure).
+
+        Args:
+            params:         Current parameter dict.
+            default_params: Default parameter dict for comparison.
+
+        Returns:
+            Number of parameters that differ from defaults.
+        """
+        diff = 0
+        for k, v in params.items():
+            if k not in default_params or default_params[k] != v:
+                diff += 1
+        return diff
 
     def get_next_stage(self, current_stage: str) -> Optional[str]:
         """Return next lifecycle stage, or None if at end.

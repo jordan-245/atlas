@@ -1,0 +1,77 @@
+{
+  "strategy": "mean_reversion",
+  "market": "sp500",
+  "params": {
+    "rsi_period": 10,
+    "rsi_oversold": 35,
+    "zscore_lookback": 20,
+    "zscore_entry": -2.0,
+    "atr_period": 14,
+    "atr_stop_mult": 2.5,
+    "profit_target_atr_mult": 1.5,
+    "max_hold_days": 10,
+    "sma200_filter": true,
+    "ibs_max": 1.0,
+    "volume": {
+      "lookback": 20,
+      "min_ratio": 0.5,
+      "surge_threshold": 1.5,
+      "surge_boost": 0.0,
+      "dry_penalty": 0.0
+    },
+    "earnings_blackout": {
+      "enabled": true,
+      "days_before": 5,
+      "days_after": 1
+    },
+    "breadth": {
+      "enabled": true,
+      "metric": "pct_above_50ma",
+      "low_threshold": 48.0,
+      "high_threshold": 58.0,
+      "low_boost": 0.015,
+      "high_penalty": 0.015
+    },
+    "relative_strength": {
+      "enabled": false
+    },
+    "cointegration_filter": {
+      "enabled": false
+    }
+  },
+  "metrics": {
+    "total_trades": 84,
+    "cagr_pct": 2.1358,
+    "cagr_full_period_pct": 1.8076,
+    "sharpe": -1.6962,
+    "sortino": -3.0863,
+    "max_drawdown_pct": 1.5158,
+    "win_rate_pct": 70.24,
+    "profit_factor": 2.6868,
+    "total_pnl": 533.81,
+    "avg_trade": 6.35,
+    "final_equity": 4533.81,
+    "expectancy_r": 0.3221,
+    "avg_r": 0.3221,
+    "r_count": 84,
+    "edge_p_value": 0.000288,
+    "edge_significant": true,
+    "var_95_pct": 0.104,
+    "cvar_95_pct": 0.208,
+    "calmar": 1.409,
+    "mc_p95_drawdown_pct": 2.18,
+    "mc_fragile": false,
+    "strategy_breakdown": {
+      "mean_reversion": {
+        "trades": 84,
+        "total_pnl": 533.81,
+        "win_rate_pct": 70.2
+      }
+    },
+    "runtime_s": 52.8
+  },
+  "description": "RSI period 14\u219210",
+  "experiments_run": 2,
+  "experiments_kept": 2,
+  "updated_at": "2026-03-10T10:18:15.183473+00:00"
+}
