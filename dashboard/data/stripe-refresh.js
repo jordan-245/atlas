@@ -383,6 +383,21 @@
     var resolved = theme === 'auto' ? resolveAutoTheme() : theme;
     document.documentElement.setAttribute('data-theme', resolved);
 
+    // FIX 1A: Repaint equity chart with correct theme colors after theme change
+    if (typeof paintChart === 'function') { setTimeout(paintChart, 50); }
+
+    // FIX 19: Repaint agent canvas on theme change
+    if (typeof updateAgentFloor === 'function' && window._lastAgentData) {
+      setTimeout(function() {
+        var d = window._lastAgentData;
+        updateAgentFloor(d.agents, d.stats, d.leaderboard, d.strategyPipeline);
+      }, 80);
+    }
+
+    // FIX 23: Update browser theme-color meta tag
+    var metaTheme = document.getElementById('meta-theme-color');
+    if (metaTheme) { metaTheme.setAttribute('content', resolved === 'light' ? '#ffffff' : '#111111'); }
+
     // Update toggle button states
     document.querySelectorAll('.theme-btn').forEach(function (btn) {
       btn.classList.toggle('active', btn.getAttribute('data-theme') === theme);
