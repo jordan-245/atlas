@@ -4718,5 +4718,28 @@
     "promoted": false,
     "runtime_s": 7.5,
     "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260311_232235",
+    "timestamp": "2026-03-11T13:22:35.668577+00:00",
+    "market": "sp500",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "zscore_lookback: 20\u219230",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.3627,
+      "cagr_pct": 9.9383,
+      "max_drawdown_pct": 4.0231,
+      "total_trades": 159,
+      "profit_factor": 3.0199
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 zscore_lookback: 20\u219230"
+    ],
+    "promoted": false,
+    "runtime_s": 13.7,
+    "agent_id": "autoresearch"
   }
 ]

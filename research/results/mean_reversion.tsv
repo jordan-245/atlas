@@ -92,3 +92,15 @@ timestamp	sharpe	trades	max_dd_pct	pf	cagr_pct	params_changed	status	description
 2026-03-11T13:11:38	-2.2073	33	1.93	2.0053	1.08	rsi_oversold=25	discard	rsi_oversold: 35→25
 2026-03-11T13:11:38	-4.5825	10	0.83	2.3797	0.40	rsi_oversold=20	discard	rsi_oversold: 35→20
 2026-03-11T13:11:38	-0.5508	206	9.14	1.2808	2.44	rsi_oversold=40	discard	rsi_oversold: 35→40
+2026-03-11T13:22:35	0.3627	159	4.02	3.0199	9.94	zscore_lookback=30	keep	zscore_lookback: 20→30 (best of 3)
+2026-03-11T13:22:35	0.1206	75	3.26	3.4333	5.92	zscore_lookback=10	discard	zscore_lookback: 20→10
+2026-03-11T13:22:35	0.2028	133	4.61	2.4679	7.24	zscore_lookback=15	discard	zscore_lookback: 20→15
+2026-03-11T13:22:49	-1.1417	100	5.15	1.3625	1.47	zscore_entry=-2.5	discard	zscore_entry: -2.0→-2.5
+2026-03-11T13:22:49	0.3360	204	5.24	2.3513	9.54	zscore_entry=-1.5	discard	zscore_entry: -2.0→-1.5
+2026-03-11T13:22:49	0.1710	244	9.78	1.6850	6.76	zscore_entry=-1.0	discard	zscore_entry: -2.0→-1.0
+2026-03-11T13:23:04	0.3305	159	4.20	2.8867	9.24	atr_period=10	discard	atr_period: 20→10
+2026-03-11T13:23:04	0.3508	161	3.58	2.9428	9.78	atr_period=14	discard	atr_period: 20→14
+2026-03-11T13:23:04	0.3162	156	4.91	2.8111	8.55	atr_period=7	discard	atr_period: 20→7
+2026-03-11T13:23:18	0.1863	142	4.63	2.7744	6.63	atr_stop_mult=2.0	discard	atr_stop_mult: 1.5→2.0
+2026-03-11T13:23:18	-0.0580	123	2.87	3.1700	4.30	atr_stop_mult=3.0	discard	atr_stop_mult: 1.5→3.0
+2026-03-11T13:23:18	0.0691	134	3.87	2.8157	5.26	atr_stop_mult=2.5	discard	atr_stop_mult: 1.5→2.5
