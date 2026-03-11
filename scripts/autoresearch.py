@@ -49,6 +49,12 @@ QUEUE_PATH = PROJECT / "research" / "strategy_queue.json"
 # Directives — written by Director agent, consumed by Atlas/Nova to guide research focus
 DIRECTIVES_PATH = PROJECT / "research" / "directives.json"
 
+# Director research queue — queued experiments written by Director for agents to consume
+RESEARCH_QUEUE_PATH = PROJECT / "research" / "queue.json"
+
+# Cycle report — written at end of each cycle for Director to read (path set in main)
+REPORT_PATH: Path = Path("/tmp/autoresearch-report-solo.json")
+
 # Fallback strategy list used when QUEUE_PATH is missing or unreadable
 _FALLBACK_STRATEGIES = [
     "mean_reversion",
@@ -145,6 +151,111 @@ def apply_directives_to_strategies(strategies: list[str]) -> list[str]:
     return strategies
 
 
+# ─── Director Queue Integration ──────────────────────────────────────────────
+
+def _check_director_queue(strategies: list[str], agent_name: str) -> list[dict]:
+    """Find and claim queued experiments from research/queue.json matching our strategies.
+
+    Looks for entries with status=="queued", no claimed_by, and strategy_name in our
+    partition's strategies. Atomically claims them and returns the list.
+    """
+    try:
+        queue = json.loads(RESEARCH_QUEUE_PATH.read_text())
+    except Exception:
+        return []
+
+    claimed = []
+    for entry in queue:
+        if (
+            entry.get("status") == "queued"
+            and not entry.get("claimed_by")
+            and entry.get("strategy_name") in strategies
+        ):
+            entry["claimed_by"] = agent_name
+            entry["claimed_at"] = datetime.now(timezone.utc).isoformat()
+            entry["status"] = "claimed"
+            claimed.append(entry)
+
+    if claimed:
+        # Write back atomically
+        tmp = RESEARCH_QUEUE_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(queue, indent=2))
+        tmp.rename(RESEARCH_QUEUE_PATH)
+        logger.info(
+            "Director queue: claimed %d experiments for %s: %s",
+            len(claimed),
+            agent_name,
+            [e.get("id", "?") for e in claimed],
+        )
+
+    return claimed
+
+
+def _update_queue_entries(entries: list[dict], status: str) -> None:
+    """Update queue entries status after agent completes (done or failed)."""
+    if not entries:
+        return
+    try:
+        queue = json.loads(RESEARCH_QUEUE_PATH.read_text())
+        entry_ids = {e["id"] for e in entries if "id" in e}
+        updated = 0
+        for q_entry in queue:
+            if q_entry.get("id") in entry_ids:
+                q_entry["status"] = status
+                q_entry["updated_at"] = datetime.now(timezone.utc).isoformat()
+                updated += 1
+        if updated:
+            tmp = RESEARCH_QUEUE_PATH.with_suffix(".tmp")
+            tmp.write_text(json.dumps(queue, indent=2))
+            tmp.rename(RESEARCH_QUEUE_PATH)
+            logger.info("Director queue: marked %d entries as '%s'", updated, status)
+    except Exception as e:
+        logger.warning("Failed to update queue entries: %s", e)
+
+
+def _write_cycle_report(
+    cycle: int,
+    strategies_details: list[dict],
+    total_experiments: int,
+) -> None:
+    """Write cycle report for Director to read.
+
+    Written atomically to REPORT_PATH (e.g. /tmp/autoresearch-report-0.json).
+    The Director reads these in gather_state() to know what each agent accomplished.
+    """
+    agent_name = "nova" if PARTITION == 1 else "atlas"
+
+    # Compute next strategies (wrap around for preview)
+    strat_count = len(STRATEGIES)
+    if strat_count > 0:
+        next_strategies = STRATEGIES[:min(3, strat_count)]
+    else:
+        next_strategies = []
+
+    report = {
+        "partition": PARTITION,
+        "agent_name": agent_name,
+        "cycle": cycle,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "strategies_completed": strategies_details,
+        "total_experiments_this_cycle": total_experiments,
+        "next_strategies": next_strategies,
+    }
+
+    tmp = REPORT_PATH.with_suffix(".tmp")
+    try:
+        tmp.write_text(json.dumps(report, indent=2))
+        tmp.rename(REPORT_PATH)
+        logger.info(
+            "Cycle report written: cycle=%d, strategies=%d, experiments=%d",
+            cycle,
+            len(strategies_details),
+            total_experiments,
+        )
+    except Exception as e:
+        logger.warning("Failed to write cycle report to %s: %s", REPORT_PATH, e)
+
+
 SWEEP_TOP_N = 50
 SWEEP_WORKERS = max(1, os.cpu_count() - 2)
 SWEEP_MAX_FAILS = 8       # bumped from 5 — parallel batches explore more params
@@ -164,6 +275,7 @@ STRATEGIES: list[str] = []
 LOG_PATH: Path = Path("/tmp/autoresearch.log")
 HEARTBEAT_PATH: Path = Path("/tmp/autoresearch-parent-heartbeat.json")
 STOP_PATH: Path = Path("/tmp/autoresearch-stop")
+# NOTE: REPORT_PATH is also set in main() to /tmp/autoresearch-report-{0,1,solo}.json
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
 
@@ -335,8 +447,15 @@ def run_sweep(strategy: str) -> dict:
 
 # ─── Agent Phase ─────────────────────────────────────────────────────────────
 
-def build_agent_prompt(strategy: str, cycle: int) -> str:
-    """Build the LLM agent prompt with current state."""
+def build_agent_prompt(strategy: str, cycle: int, director_exps: list[dict] | None = None) -> str:
+    """Build the LLM agent prompt with current state.
+
+    Args:
+        strategy:      Strategy name to research.
+        cycle:         Current cycle number.
+        director_exps: List of Director-queued experiments to run as priority tasks.
+                       These are injected into the prompt so the agent runs them first.
+    """
     # Get best info
     try:
         from research.loop import load_best, read_results
@@ -363,6 +482,27 @@ def build_agent_prompt(strategy: str, cycle: int) -> str:
     except Exception:
         lb = "(failed)"
 
+    # Build Director-queued experiments section (if any)
+    director_section = ""
+    if director_exps:
+        director_section = (
+            "\n\n⚡ DIRECTOR-QUEUED EXPERIMENTS (run these FIRST — high priority):\n"
+        )
+        for exp in director_exps:
+            exp_id = exp.get("id", "?")
+            title = exp.get("title", exp_id)
+            hypothesis = exp.get("hypothesis", "")[:200]
+            params = exp.get("params_override")
+            director_section += f"• [{exp_id}] {title}\n"
+            if hypothesis:
+                director_section += f"  Hypothesis: {hypothesis}\n"
+            if params:
+                director_section += f"  Params override: {json.dumps(params, default=str)[:300]}\n"
+        director_section += (
+            "\nFor each Director experiment: run experiment() with the params_override "
+            "shown, then keep() or discard() as normal.\n"
+        )
+
     return f"""You are an autonomous researcher. Read research/program.md first.
 
 CURRENT STRATEGY: {strategy} (cycle {cycle})
@@ -374,7 +514,7 @@ SWEEPER RESULTS FOR {strategy}:
 
 FULL LEADERBOARD:
 {lb}
-
+{director_section}
 YOUR TASK (budget: 1 hour on {strategy}):
 1. Start a ResearchSession('{strategy}', 'sp500') and baseline()
 2. Look at the sweep history — what params improved? What patterns?
@@ -393,13 +533,18 @@ RULES:
 - The next cycle will sweep the grid again with your improvements as the new baseline"""
 
 
-def run_agent(strategy: str, cycle: int) -> dict:
+def run_agent(strategy: str, cycle: int, director_exps: list[dict] | None = None) -> dict:
     """Run the LLM research agent. Mostly LLM-bound.
+
+    Args:
+        strategy:     Strategy name to research.
+        cycle:        Current cycle number.
+        director_exps: Director-queued experiments to inject into the agent prompt.
 
     Returns: {"exit_code": int, "duration_s": float}
     """
     logger.info("AGENT: %s (budget %ds)", strategy, AGENT_TIMEOUT)
-    prompt = build_agent_prompt(strategy, cycle)
+    prompt = build_agent_prompt(strategy, cycle, director_exps=director_exps)
     t0 = time.time()
     try:
         result = subprocess.run(
@@ -423,7 +568,7 @@ def run_agent(strategy: str, cycle: int) -> dict:
 
 # ─── Pipeline Orchestrator ───────────────────────────────────────────────────
 
-def run_cycle(cycle: int) -> dict:
+def run_cycle(cycle: int, claimed_experiments: list[dict] | None = None) -> dict:
     """Run one full cycle through all strategies with pipelined execution.
 
     Pipeline pattern:
@@ -433,11 +578,27 @@ def run_cycle(cycle: int) -> dict:
     the sweep pre-runs on strategy N+1 (CPU-bound, all cores).
     When the agent finishes, the next strategy's sweep is already done.
 
-    Returns: {"strategies": int, "sweep_time_s": float, "agent_time_s": float}
+    Args:
+        cycle:               Current cycle number.
+        claimed_experiments: Director-queued experiments claimed at cycle start.
+                             These are passed to agents as priority tasks and marked
+                             done/failed after the agent completes.
+
+    Returns: {"strategies": int, "sweep_time_s": float, "agent_time_s": float,
+              "strategies_details": list, "total_experiments": int}
     """
     total_sweep_time = 0.0
     total_agent_time = 0.0
     strategies_completed = 0
+    strategies_details: list[dict] = []
+
+    # Build per-strategy map of director-queued experiments
+    director_queue: dict[str, list[dict]] = {}
+    if claimed_experiments:
+        for exp in claimed_experiments:
+            sname = exp.get("strategy_name")
+            if sname:
+                director_queue.setdefault(sname, []).append(exp)
 
     # Track pre-swept strategies
     sweep_done = {}         # strategy -> sweep result dict
@@ -471,6 +632,22 @@ def run_cycle(cycle: int) -> dict:
         # ── AGENT + pre-sweep next strategy in background ────────────
         write_heartbeat("agent", strategy, cycle)
 
+        # Read experiments_run before agent — to compute delta for cycle report
+        try:
+            from research.loop import load_best as _load_best
+            _best_before = _load_best(strategy)
+            _exp_before = _best_before.get("experiments_run", 0) if _best_before else 0
+        except Exception:
+            _exp_before = 0
+
+        # Get director-queued experiments for this strategy (if any)
+        strat_director_exps = director_queue.get(strategy, [])
+        if strat_director_exps:
+            logger.info(
+                "AGENT: %s has %d Director-queued experiments to run first",
+                strategy, len(strat_director_exps),
+            )
+
         # Start pre-sweeping next strategy in background
         next_strategy = STRATEGIES[i + 1] if i + 1 < len(STRATEGIES) else None
         if next_strategy and next_strategy not in sweep_done and not should_stop():
@@ -483,10 +660,33 @@ def run_cycle(cycle: int) -> dict:
             sweep_target = next_strategy
             logger.info("PRE-SWEEP: %s started in background", next_strategy)
 
-        # Run agent (foreground, blocks until done)
-        agent_result = run_agent(strategy, cycle)
+        # Run agent (foreground, blocks until done), passing director experiments
+        agent_result = run_agent(strategy, cycle, director_exps=strat_director_exps or None)
         total_agent_time += agent_result["duration_s"]
         strategies_completed += 1
+
+        # Update Director queue entries based on agent exit code
+        if strat_director_exps:
+            outcome = "done" if agent_result["exit_code"] == 0 else "failed"
+            _update_queue_entries(strat_director_exps, outcome)
+
+        # Read experiments_run after agent — compute delta for cycle report
+        try:
+            _best_after = _load_best(strategy)
+            _exp_after = _best_after.get("experiments_run", 0) if _best_after else 0
+            _best_sharpe = (
+                _best_after.get("metrics", {}).get("sharpe", 0) if _best_after else 0
+            )
+        except Exception:
+            _exp_after = _exp_before
+            _best_sharpe = 0
+
+        strategies_details.append({
+            "name": strategy,
+            "phase": "agent+sweep",
+            "experiments_run": max(0, _exp_after - _exp_before),
+            "best_sharpe": round(float(_best_sharpe or 0), 4),
+        })
 
         # If background sweep is still running (shouldn't be — agent takes way longer),
         # it'll be picked up next iteration.
@@ -497,10 +697,14 @@ def run_cycle(cycle: int) -> dict:
         logger.info("Waiting for background sweep to finish...")
         sweep_thread.join(timeout=SWEEP_TIMEOUT)
 
+    total_experiments = sum(d["experiments_run"] for d in strategies_details)
+
     return {
         "strategies": strategies_completed,
         "sweep_time_s": total_sweep_time,
         "agent_time_s": total_agent_time,
+        "strategies_details": strategies_details,
+        "total_experiments": total_experiments,
     }
 
 
@@ -508,6 +712,7 @@ def run_cycle(cycle: int) -> dict:
 
 def main():
     global PARTITION, PARTITION_TAG, STRATEGIES, LOG_PATH, HEARTBEAT_PATH, STOP_PATH
+    global REPORT_PATH
 
     args = parse_args()
     PARTITION = args.partition
@@ -524,6 +729,11 @@ def main():
     LOG_PATH = Path(f"/tmp/autoresearch{PARTITION_TAG}.log")
     HEARTBEAT_PATH = Path(f"/tmp/autoresearch-parent{PARTITION_TAG}-heartbeat.json")
     STOP_PATH = Path(f"/tmp/autoresearch{PARTITION_TAG}-stop")
+
+    # Cycle report path — Director reads these to track agent progress
+    # PARTITION=None → solo, PARTITION=0 → 0, PARTITION=1 → 1
+    _report_suffix = PARTITION if PARTITION is not None else "solo"
+    REPORT_PATH = Path(f"/tmp/autoresearch-report-{_report_suffix}.json")
 
     setup_logging()
 
@@ -573,10 +783,14 @@ def main():
         STRATEGIES = apply_directives_to_strategies(STRATEGIES)
         logger.info("Strategies this cycle: %s", ", ".join(STRATEGIES))
 
+        # Check Director research queue for priority experiments to run this cycle
+        _agent_name = "nova" if PARTITION == 1 else "atlas"
+        _claimed = _check_director_queue(STRATEGIES, _agent_name)
+
         write_heartbeat("cycle_start", "", cycle)
 
         t0 = time.time()
-        result = run_cycle(cycle)
+        result = run_cycle(cycle, claimed_experiments=_claimed)
         cycle_time = time.time() - t0
 
         # Cycle summary
@@ -612,6 +826,13 @@ def main():
             flush_digest()
         except Exception:
             pass
+
+        # Write cycle report for Director to read (atomically, before sleep)
+        _write_cycle_report(
+            cycle,
+            result.get("strategies_details", []),
+            result.get("total_experiments", 0),
+        )
 
         write_heartbeat("cycle_done", "", cycle, cycle_time_min=round(cycle_time / 60, 1))
         time.sleep(10)
