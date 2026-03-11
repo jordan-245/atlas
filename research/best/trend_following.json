@@ -3,11 +3,11 @@
   "market": "sp500",
   "params": {
     "fast_ma": 25,
-    "slow_ma": 200,
+    "slow_ma": 175,
     "pullback_pct": 0.05,
     "atr_period": 14,
-    "atr_stop_mult": 2.0,
-    "trailing_stop_atr_mult": 2.5,
+    "atr_stop_mult": 1.9,
+    "trailing_stop_atr_mult": 2.8,
     "max_hold_days": 15,
     "volume": {
       "lookback": 20,
@@ -35,38 +35,38 @@
     "sma200_filter": true
   },
   "metrics": {
-    "total_trades": 293,
-    "cagr_pct": 1.3743,
-    "cagr_full_period_pct": 1.1633,
-    "sharpe": -0.9356,
-    "sortino": -1.3211,
-    "max_drawdown_pct": 8.2814,
-    "win_rate_pct": 50.51,
-    "profit_factor": 1.1619,
-    "total_pnl": 335.28,
-    "avg_trade": 1.14,
-    "final_equity": 4337.08,
-    "expectancy_r": 0.1041,
-    "avg_r": 0.1041,
-    "r_count": 293,
-    "edge_p_value": 0.136752,
-    "edge_significant": false,
-    "var_95_pct": 0.36,
-    "cvar_95_pct": 0.52,
-    "calmar": 0.166,
-    "mc_p95_drawdown_pct": 9.08,
+    "total_trades": 290,
+    "cagr_pct": 3.8238,
+    "cagr_full_period_pct": 3.2308,
+    "sharpe": -0.2466,
+    "sortino": -0.3427,
+    "max_drawdown_pct": 10.2343,
+    "win_rate_pct": 51.38,
+    "profit_factor": 1.406,
+    "total_pnl": 990.01,
+    "avg_trade": 3.41,
+    "final_equity": 4996.42,
+    "expectancy_r": 0.1654,
+    "avg_r": 0.1654,
+    "r_count": 290,
+    "edge_p_value": 0.041327,
+    "edge_significant": true,
+    "var_95_pct": 0.388,
+    "cvar_95_pct": 0.58,
+    "calmar": 0.3736,
+    "mc_p95_drawdown_pct": 8.6,
     "mc_fragile": false,
     "strategy_breakdown": {
       "trend_following": {
-        "trades": 293,
-        "total_pnl": 335.28,
-        "win_rate_pct": 50.5
+        "trades": 290,
+        "total_pnl": 990.01,
+        "win_rate_pct": 51.4
       }
     },
-    "runtime_s": 382.6
+    "runtime_s": 396.9
   },
-  "description": "fast_ma=25 (between 20 and 30 \u2014 never tried)",
-  "experiments_run": 35,
-  "experiments_kept": 11,
-  "updated_at": "2026-03-11T03:53:40.047316+00:00"
+  "description": "trail=2.8 (between 2.5 and 3.0)",
+  "experiments_run": 50,
+  "experiments_kept": 16,
+  "updated_at": "2026-03-11T05:27:20.657095+00:00"
 }

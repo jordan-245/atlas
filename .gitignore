@@ -83,3 +83,6 @@ tasks/cleanup-plan.md
 tasks/plan-discovery-agent.md
 config/candidates/archive/
 config/versions/archive/
+backtest/results/oos_promotion_*.json
+research/mr_creative.py
+research/mr_research.py
