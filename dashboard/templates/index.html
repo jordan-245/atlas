@@ -400,7 +400,7 @@ td:nth-child(2) .strat-tip .strat-tiptext::after {
   content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
   background: linear-gradient(90deg, transparent, var(--border), transparent); opacity: 0.3;
 }
-#agent-canvas { display: block; width: 100%; height: 180px; image-rendering: pixelated; }
+#agent-canvas { display: block; width: 100%; height: 220px; image-rendering: pixelated; }
 
 /* KPI Strip */
 .research-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
@@ -2872,8 +2872,8 @@ function renderResearch(d) {
   var agents = res.agents || [];
   var discoveries = res.discoveries || [];
 
-  // Update agents canvas
-  updateAgentFloor(agents);
+  // Update agents canvas (pass stats + leaderboard for whiteboard)
+  updateAgentFloor(agents, stats, lb);
 
   // Tab badge — show active agent count or total experiments
   var badge = document.getElementById('research-tab-badge');
@@ -3231,170 +3231,222 @@ function initAgentFloor() {
   tick();
 }
 
-function updateAgentFloor(agents) {
+function updateAgentFloor(agents, stats, leaderboard) {
   _agentFloor.agents = agents;
+  _agentFloor.stats = stats || {};
+  _agentFloor.leaderboard = leaderboard || [];
   if (!_agentFloor.inited) initAgentFloor();
   // Force resize when agents update (tab may have just become visible)
   setTimeout(_resizeAgentCanvas, 50);
 }
 
 // ── Room Props ──────────────────────────────────────────────────
-function _drawProps(ctx, W, H, wallH, tc, frame) {
+function _drawProps(ctx, W, H, wallH, tc, frame, agents, stats, leaderboard) {
   // All props drawn with theme colors, positioned relative to canvas edges
 
-  // ── Server rack (left side, against wall) ──
-  var rackX = 28, rackY = wallH - 38, rackW = 18, rackH = 38;
+  // ── Server rack (left edge, against wall) ──
+  var rackX = 14, rackY = wallH - 38, rackW = 16, rackH = 38;
   ctx.fillStyle = tc.surfaceRaised;
   ctx.fillRect(rackX, rackY, rackW, rackH);
   ctx.strokeStyle = tc.border;
   ctx.lineWidth = 1;
   ctx.strokeRect(rackX, rackY, rackW, rackH);
-  // Blink lights
   for (var li = 0; li < 4; li++) {
     var blinkOn = ((frame + li * 17) % 60) < 40;
     ctx.fillStyle = blinkOn ? tc.green : tc.border;
     ctx.globalAlpha = blinkOn ? 0.9 : 0.3;
-    ctx.fillRect(rackX + 4, rackY + 6 + li * 8, 3, 2);
+    ctx.fillRect(rackX + 3, rackY + 6 + li * 8, 3, 2);
     ctx.fillStyle = ((frame + li * 23) % 80) < 50 ? tc.blue : tc.border;
-    ctx.fillRect(rackX + 10, rackY + 6 + li * 8, 3, 2);
+    ctx.fillRect(rackX + 9, rackY + 6 + li * 8, 3, 2);
   }
   ctx.globalAlpha = 1.0;
 
-  // ── Plant (right side) ──
-  var plantX = W - 52, potY = wallH - 8, potW = 14, potH = 10;
-  // Pot
-  ctx.fillStyle = tc.amber;
-  ctx.globalAlpha = 0.6;
+  // ── Plant (right edge) ──
+  var plantX = W - 38, potY = wallH - 6, potW = 12, potH = 8;
+  ctx.fillStyle = tc.amber; ctx.globalAlpha = 0.6;
   ctx.fillRect(plantX, potY, potW, potH);
   ctx.fillRect(plantX + 2, potY + potH, potW - 4, 3);
   ctx.globalAlpha = 1.0;
-  // Leaves (little pixel circles)
-  ctx.fillStyle = tc.green;
-  ctx.globalAlpha = 0.7;
+  ctx.fillStyle = tc.green; ctx.globalAlpha = 0.7;
   var leafCx = plantX + potW / 2;
   var sway = Math.sin(frame * 0.02) * 1.5;
-  ctx.fillRect(leafCx - 6 + sway, potY - 12, 5, 5);
-  ctx.fillRect(leafCx + 2 - sway, potY - 14, 5, 5);
-  ctx.fillRect(leafCx - 2, potY - 8, 5, 5);
-  ctx.fillRect(leafCx - 8 + sway, potY - 6, 4, 4);
-  ctx.fillRect(leafCx + 5 - sway, potY - 8, 4, 4);
-  // Stem
+  ctx.fillRect(leafCx - 5 + sway, potY - 10, 4, 4);
+  ctx.fillRect(leafCx + 2 - sway, potY - 12, 4, 4);
+  ctx.fillRect(leafCx - 1, potY - 7, 4, 4);
   ctx.globalAlpha = 0.5;
-  ctx.fillRect(leafCx, potY - 6, 2, 8);
+  ctx.fillRect(leafCx, potY - 5, 2, 7);
   ctx.globalAlpha = 1.0;
 
-  // ── Whiteboard on wall (center-right) ──
-  var wbX = W - 180, wbY = 10, wbW = 70, wbH = wallH - 26;
-  if (wbW > 0 && wbH > 10 && W > 400) {
-    ctx.fillStyle = tc.surface || tc.surfaceRaised;
-    ctx.globalAlpha = 0.4;
-    ctx.fillRect(wbX, wbY, wbW, wbH);
-    ctx.globalAlpha = 1.0;
-    ctx.strokeStyle = tc.border;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(wbX, wbY, wbW, wbH);
-    // Scribble lines
-    ctx.strokeStyle = tc.textTertiary;
-    ctx.globalAlpha = 0.25;
-    ctx.lineWidth = 1;
-    for (var sl = 0; sl < 4; sl++) {
-      ctx.beginPath();
-      ctx.moveTo(wbX + 6, wbY + 8 + sl * Math.floor(wbH / 5));
-      ctx.lineTo(wbX + wbW - 6 - (sl % 2) * 15, wbY + 8 + sl * Math.floor(wbH / 5));
-      ctx.stroke();
-    }
-    ctx.globalAlpha = 1.0;
-  }
-
-  // ── Small bookshelf on wall (left of center) ──
-  var bsX = 80, bsY = 8, bsW = 40, bsH = wallH - 22;
-  if (bsH > 10 && W > 500) {
-    // Shelf frame
+  // ── Coffee mug (right floor) ──
+  var mugX = W - 90, mugY = H - 20;
+  if (W > 500) {
     ctx.fillStyle = tc.surfaceRaised;
-    ctx.globalAlpha = 0.5;
-    ctx.fillRect(bsX, bsY, bsW, bsH);
-    ctx.globalAlpha = 1.0;
-    ctx.strokeStyle = tc.border;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(bsX, bsY, bsW, bsH);
-    // Shelf divider
-    var shelfMid = bsY + Math.floor(bsH / 2);
-    ctx.fillStyle = tc.border;
-    ctx.fillRect(bsX + 1, shelfMid, bsW - 2, 1);
-    // Books (colored blocks)
-    var bookColors = [tc.green, tc.blue, tc.amber, tc.purple, tc.red];
-    var bx = bsX + 3;
-    for (var bi = 0; bi < 5; bi++) {
-      var bw = 4 + (bi % 3);
-      var bh = Math.floor(bsH / 2) - 6 - (bi % 2) * 2;
-      ctx.fillStyle = bookColors[bi % bookColors.length];
-      ctx.globalAlpha = 0.45;
-      ctx.fillRect(bx, bsY + 3 + (bi % 2), bw, bh);
-      bx += bw + 1;
-    }
-    // Bottom shelf books
-    bx = bsX + 4;
-    for (var bi2 = 0; bi2 < 4; bi2++) {
-      var bw2 = 5 + (bi2 % 2) * 2;
-      var bh2 = Math.floor(bsH / 2) - 6 - (bi2 % 2) * 3;
-      ctx.fillStyle = bookColors[(bi2 + 2) % bookColors.length];
-      ctx.fillRect(bx, shelfMid + 3 + (bi2 % 2), bw2, bh2);
-      bx += bw2 + 1;
-    }
-    ctx.globalAlpha = 1.0;
-  }
-
-  // ── Coffee mug on floor (between agents and plant) ──
-  var mugX = W - 120, mugY = H - 22;
-  if (W > 600) {
-    ctx.fillStyle = tc.surfaceRaised;
-    ctx.fillRect(mugX, mugY, 8, 10);
-    ctx.strokeStyle = tc.border;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(mugX, mugY, 8, 10);
-    // Handle
-    ctx.beginPath();
-    ctx.arc(mugX + 10, mugY + 5, 3, -Math.PI / 2, Math.PI / 2);
-    ctx.stroke();
-    // Steam (animated)
+    ctx.fillRect(mugX, mugY, 7, 9);
+    ctx.strokeStyle = tc.border; ctx.lineWidth = 1;
+    ctx.strokeRect(mugX, mugY, 7, 9);
+    ctx.beginPath(); ctx.arc(mugX + 9, mugY + 4, 3, -Math.PI/2, Math.PI/2); ctx.stroke();
     ctx.globalAlpha = 0.2 + Math.sin(frame * 0.05) * 0.1;
     ctx.fillStyle = tc.textTertiary;
     ctx.fillRect(mugX + 2, mugY - 4 - Math.sin(frame * 0.03) * 2, 1, 3);
-    ctx.fillRect(mugX + 5, mugY - 5 - Math.cos(frame * 0.04) * 2, 1, 3);
+    ctx.fillRect(mugX + 4, mugY - 5 - Math.cos(frame * 0.04) * 2, 1, 3);
     ctx.globalAlpha = 1.0;
   }
 
-  // ── Clock on wall (small, far left) ──
-  var clkX = W / 2, clkY = 14, clkR = 8;
-  if (W > 400) {
-    ctx.strokeStyle = tc.border;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(clkX, clkY, clkR, 0, Math.PI * 2);
-    ctx.stroke();
-    // Clock fill
-    ctx.fillStyle = tc.surfaceRaised;
-    ctx.globalAlpha = 0.3;
-    ctx.fill();
+  // ════════════════════════════════════════════════════════════════
+  // ── WHITEBOARD (center of wall — the main feature) ──
+  // ════════════════════════════════════════════════════════════════
+  if (W < 350) return; // Too narrow to render
+
+  var wbPad = 8;
+  var wbW = Math.min(W - 100, 560);
+  var wbX = (W - wbW) / 2;
+  var wbY = 3;
+  var wbH = wallH - 16;
+
+  // Board background — bright white/cream
+  ctx.fillStyle = tc.text;
+  ctx.globalAlpha = 0.07;
+  ctx.beginPath();
+  ctx.roundRect(wbX, wbY, wbW, wbH, 3);
+  ctx.fill();
+  ctx.globalAlpha = 1.0;
+
+  // Board border
+  ctx.strokeStyle = tc.border;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(wbX, wbY, wbW, wbH, 3);
+  ctx.stroke();
+
+  // ── Header ──
+  ctx.fillStyle = tc.textSecondary;
+  ctx.globalAlpha = 0.7;
+  ctx.font = 'bold 8px "JetBrains Mono", monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText('RESEARCH LAB', wbX + wbPad, wbY + 11);
+  ctx.globalAlpha = 1.0;
+
+  // Divider line under header
+  ctx.strokeStyle = tc.border;
+  ctx.globalAlpha = 0.4;
+  ctx.beginPath();
+  ctx.moveTo(wbX + wbPad, wbY + 15);
+  ctx.lineTo(wbX + wbW - wbPad, wbY + 15);
+  ctx.stroke();
+  ctx.globalAlpha = 1.0;
+
+  // ── Stats row (right-aligned in header) ──
+  var exp = stats.total_experiments || 0;
+  var passRate = stats.pass_rate_pct || 0;
+  var promoted = stats.promoted || 0;
+  ctx.font = '7px "JetBrains Mono", monospace';
+  ctx.textAlign = 'right';
+  ctx.fillStyle = tc.textTertiary;
+  ctx.globalAlpha = 0.7;
+  var statsStr = exp + ' exp  ' + passRate.toFixed(0) + '% pass  ' + promoted + ' promoted';
+  ctx.fillText(statsStr, wbX + wbW - wbPad, wbY + 11);
+  ctx.globalAlpha = 1.0;
+
+  // ── Strategy list with status indicators ──
+  // Build a strategy map from leaderboard + agents
+  var allStrats = [
+    'mean_reversion', 'trend_following', 'opening_gap', 'connors_rsi2',
+    'momentum_breakout', 'short_term_mr', 'bb_squeeze'
+  ];
+
+  // Who's working on what?
+  var agentTasks = {};
+  (agents || []).forEach(function(a) {
+    if (a.task && a.status !== 'sleeping') {
+      // Extract strategy name from task like "Sweeping Mean Reversion"
+      var taskLower = a.task.toLowerCase().replace(/sweeping |analyzing /, '');
+      allStrats.forEach(function(s) {
+        if (taskLower === s.replace(/_/g, ' ')) {
+          agentTasks[s] = a;
+        }
+      });
+    }
+  });
+
+  // Best sharpe per strategy from leaderboard
+  var bestSharpe = {};
+  (leaderboard || []).forEach(function(s) {
+    if (s.id && s.best_sharpe) bestSharpe[s.id] = s.best_sharpe;
+  });
+
+  var colY = wbY + 19;
+  var lineH = 9;
+  var useTwoCols = wbW > 400;
+  var colW = useTwoCols ? (wbW - wbPad * 2) / 2 : wbW - wbPad * 2;
+
+  ctx.textAlign = 'left';
+
+  allStrats.forEach(function(strat, idx) {
+    var col = useTwoCols ? Math.floor(idx / 4) : 0;
+    var row = useTwoCols ? idx % 4 : idx;
+    var ly = colY + row * lineH;
+    var lx = wbX + wbPad + col * colW;
+    if (ly + lineH > wbY + wbH - 1) return;
+
+    var label = strat.replace(/_/g, ' ');
+    label = label.replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+    if (label.length > 18) label = label.substring(0, 16) + '..';
+
+    var activeAgent = agentTasks[strat];
+    var sharpe = bestSharpe[strat];
+
+    // Status indicator
+    var dotX = lx;
+    if (activeAgent) {
+      ctx.fillStyle = tc.green;
+      ctx.globalAlpha = 0.6 + Math.sin(frame * 0.1 + idx) * 0.3;
+      ctx.beginPath();
+      ctx.arc(dotX + 2, ly + 3, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1.0;
+    } else if (sharpe && sharpe > 0.3) {
+      ctx.strokeStyle = tc.green;
+      ctx.globalAlpha = 0.6; ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(dotX, ly + 3);
+      ctx.lineTo(dotX + 2, ly + 5);
+      ctx.lineTo(dotX + 5, ly);
+      ctx.stroke();
+      ctx.globalAlpha = 1.0;
+    } else {
+      ctx.strokeStyle = tc.textTertiary;
+      ctx.globalAlpha = 0.3; ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(dotX + 2, ly + 3, 2, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1.0;
+    }
+
+    // Strategy name
+    ctx.font = '7px "JetBrains Mono", monospace';
+    ctx.fillStyle = activeAgent ? tc.text : tc.textSecondary;
+    ctx.globalAlpha = activeAgent ? 0.9 : 0.5;
+    ctx.fillText(label, dotX + 8, ly + 5);
     ctx.globalAlpha = 1.0;
-    // Hands
-    var now = new Date();
-    var hourAngle = ((now.getHours() % 12) / 12) * Math.PI * 2 - Math.PI / 2;
-    var minAngle = (now.getMinutes() / 60) * Math.PI * 2 - Math.PI / 2;
-    ctx.strokeStyle = tc.text;
-    ctx.globalAlpha = 0.5;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(clkX, clkY);
-    ctx.lineTo(clkX + Math.cos(hourAngle) * 4, clkY + Math.sin(hourAngle) * 4);
-    ctx.stroke();
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(clkX, clkY);
-    ctx.lineTo(clkX + Math.cos(minAngle) * 6, clkY + Math.sin(minAngle) * 6);
-    ctx.stroke();
-    ctx.globalAlpha = 1.0;
-  }
+
+    // Sharpe value
+    if (sharpe) {
+      ctx.fillStyle = sharpe > 0.5 ? tc.green : sharpe > 0.2 ? tc.amber : tc.textTertiary;
+      ctx.globalAlpha = 0.7;
+      ctx.font = '7px "JetBrains Mono", monospace';
+      ctx.fillText(sharpe.toFixed(2), dotX + colW - 65, ly + 5);
+      ctx.globalAlpha = 1.0;
+    }
+
+    // Agent tag
+    if (activeAgent) {
+      ctx.fillStyle = activeAgent.type === 'nova' ? '#7a4a8a' : tc.green;
+      ctx.globalAlpha = 0.8;
+      ctx.font = '7px "Inter", sans-serif';
+      ctx.fillText('← ' + activeAgent.name, dotX + colW - 40, ly + 5);
+      ctx.globalAlpha = 1.0;
+    }
+  });
 }
 
 function drawAgentFloor() {
@@ -3411,7 +3463,7 @@ function drawAgentFloor() {
 
   // ── Background: wall + floor ──
   // Upper 40% = wall, lower 60% = floor
-  var wallH = Math.round(H * 0.38);
+  var wallH = Math.round(H * 0.46);
 
   // Wall — subtle gradient
   var wallGrad = ctx.createLinearGradient(0, 0, 0, wallH);
@@ -3454,7 +3506,7 @@ function drawAgentFloor() {
   ctx.globalAlpha = 1.0;
 
   // ── Props (placed at fixed positions relative to canvas) ──
-  _drawProps(ctx, W, H, wallH, tc, f.frame);
+  _drawProps(ctx, W, H, wallH, tc, f.frame, f.agents, f.stats || {}, f.leaderboard || []);
 
   var agents = f.agents;
   if (!agents.length) {
@@ -3474,7 +3526,7 @@ function drawAgentFloor() {
 
   agents.forEach(function(agent, i) {
     var cx = startX + i * spacing;
-    var baseY = wallH + 4; // Characters sit just below the wall
+    var baseY = wallH + 8; // Characters sit just below the wall
 
     // Draw desk (theme-aware)
     var deskW = 36 * scale / 3;
@@ -3618,7 +3670,7 @@ function drawAgentFloor() {
     var bubbleText = agent.task || '';
     if (bubbleText) {
       if (bubbleText.length > 28) bubbleText = bubbleText.substring(0, 25) + '...';
-      var bubbleY = charY - 22;
+      var bubbleY = charY - 24;
       ctx.font = '10px "JetBrains Mono", monospace';
       var textW = ctx.measureText(bubbleText).width;
       var padX = 8, padY = 4;
