@@ -3062,13 +3062,16 @@ def generate():
         # Only include markets with real data in combined totals.
         # Offline/paper markets with no positions (HK unfunded) would inflate
         # the combined number with phantom capital that doesn't exist.
-        # Cross-broker markets (ASX positions on Moomoo) ARE included since
-        # they represent real positions with real P&L.
-        has_broker = md.get("data_source") in ("broker", "cached", "cross-broker")
+        has_broker = md.get("data_source") in ("broker", "cached")
+        is_cross_broker = md.get("data_source") == "cross-broker"
         is_funded = md.get("funded", True)
         include_in_combined = has_broker and is_funded
         if include_in_combined:
-            # Headline equity from broker (matches broker app)
+            # Headline equity from broker (matches broker app).
+            # NOTE: For multi-market brokers (Moomoo), broker_equity is
+            # the FULL account including positions from other markets
+            # (.AX stocks). Cross-broker markets are skipped below to
+            # avoid double-counting those positions.
             be = pf.get("broker_equity") or pf.get("equity", 0)
             bc = pf.get("broker_cash") or pf.get("cash", 0)
             combined_broker_equity_aud += to_aud(be, ccy)
@@ -3076,6 +3079,9 @@ def generate():
             # Atlas equity for P&L tracking
             combined_atlas_equity_aud += to_aud(pf.get("equity", 0), ccy)
             combined_starting_aud += to_aud(pf.get("starting_equity", 0), ccy)
+        # Cross-broker markets (ASX on Moomoo): equity is already a SUBSET
+        # of the parent broker's equity. Don't add to combined headline
+        # to avoid double-counting. Positions are still included below.
         # Tag positions with market (include all markets for position display)
         for p in pf.get("open_positions", []):
             p["market"] = mid
