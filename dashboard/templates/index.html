@@ -3162,11 +3162,19 @@ function _readThemeColors() {
   };
 }
 
-// Agent type → color map (uses theme-aware skin/hair tones)
+// Agent type → color map
+// B=body/shirt, H=hair, P=pants, E=eyes, S=skin, M=skin-shadow, X=shoes
 var _AGENT_COLORS = {
-  researcher: { B: '#5a7a3a', H: '#6B4E0A', P: '#3a3020', E: '#e8e4da', S: '#d4a574', M: '#c0825a', X: '#8a7e70' },
+  // Atlas — green shirt, brown hair, light skin (the OG researcher)
+  atlas:      { B: '#5a7a3a', H: '#6B4E0A', P: '#3a3020', E: '#e8e4da', S: '#d4a574', M: '#c0825a', X: '#8a7e70' },
+  // Nova — purple shirt, dark red hair, warm skin
+  nova:       { B: '#7a4a8a', H: '#8B2500', P: '#2a2a3a', E: '#c8e8ff', S: '#c8956a', M: '#a87050', X: '#6a6a7a' },
+  // Job agent — blue shirt
   job:        { B: '#3a5a7a', H: '#4a3020', P: '#3a3020', E: '#e8e4da', S: '#c8a080', M: '#b08060', X: '#8a7e70' },
+  // Sweep agent — amber shirt
   sweep:      { B: '#7a6a3a', H: '#5a3010', P: '#3a3020', E: '#e8e4da', S: '#d4a574', M: '#c0825a', X: '#8a7e70' },
+  // Fallback
+  researcher: { B: '#5a7a3a', H: '#6B4E0A', P: '#3a3020', E: '#e8e4da', S: '#d4a574', M: '#c0825a', X: '#8a7e70' },
 };
 
 function _colorizeSprite(templateFrames, agentType) {

@@ -2161,15 +2161,15 @@ def _build_agents(daemon: dict) -> list:
     # ── Researcher agents (partitioned or solo) ─────────────────
     # Detect which services are active
     _RESEARCHER_SERVICES = [
-        # (service_name, heartbeat_path, agent_id, display_name)
-        ("atlas-autoresearch-0", "/tmp/autoresearch-parent-0-heartbeat.json", "researcher-0", "Researcher A"),
-        ("atlas-autoresearch-1", "/tmp/autoresearch-parent-1-heartbeat.json", "researcher-1", "Researcher B"),
-        ("atlas-autoresearch",   "/tmp/autoresearch-parent-heartbeat.json",   "researcher",   "Researcher"),
-        ("atlas-research-daemon", "/tmp/research-daemon-heartbeat.json",      "researcher",   "Researcher"),
+        # (service_name, heartbeat_path, agent_id, display_name, agent_type)
+        ("atlas-autoresearch-0", "/tmp/autoresearch-parent-0-heartbeat.json", "researcher-0", "Atlas",  "atlas"),
+        ("atlas-autoresearch-1", "/tmp/autoresearch-parent-1-heartbeat.json", "researcher-1", "Nova",   "nova"),
+        ("atlas-autoresearch",   "/tmp/autoresearch-parent-heartbeat.json",   "researcher",   "Atlas",  "atlas"),
+        ("atlas-research-daemon", "/tmp/research-daemon-heartbeat.json",      "researcher",   "Atlas",  "atlas"),
     ]
 
     found_any = False
-    for svc_name, hb_path, agent_id, display_name in _RESEARCHER_SERVICES:
+    for svc_name, hb_path, agent_id, display_name, agent_type in _RESEARCHER_SERVICES:
         # Check if service is running
         svc_running = False
         try:
@@ -2256,19 +2256,19 @@ def _build_agents(daemon: dict) -> list:
         agents.append({
             "id": agent_id,
             "name": display_name,
-            "type": "researcher",
+            "type": agent_type,
             "status": status,
             "task": task,
             "experiments_done": experiments_done,
             "progress": progress,
         })
 
-    # Fallback: if nothing found, show a sleeping researcher
+    # Fallback: if nothing found, show a sleeping Atlas
     if not found_any:
         agents.append({
             "id": "researcher",
-            "name": "Researcher",
-            "type": "researcher",
+            "name": "Atlas",
+            "type": "atlas",
             "status": "sleeping",
             "task": "Engine offline",
             "experiments_done": experiments_done,
