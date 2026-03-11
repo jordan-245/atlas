@@ -39,8 +39,10 @@ sys.path.insert(0, str(PROJECT))
 HEARTBEAT_PATH   = Path("/tmp/principal-heartbeat.json")
 STOP_PATH        = Path("/tmp/principal-stop")
 DIRECTIVES_DIR   = Path("/tmp/directives")
+DIRECTIVES_PATH  = PROJECT / "research" / "directives.json"
 LOG_PATH         = PROJECT / "logs" / "principal.log"
 QUEUE_PATH       = PROJECT / "research" / "queue.json"
+STRAT_QUEUE_PATH = PROJECT / "research" / "strategy_queue.json"
 JOURNAL_PATH     = PROJECT / "research" / "journal.json"
 EXPERIMENTS_DIR  = PROJECT / "research" / "experiments"
 CANDIDATES_DIR   = PROJECT / "config" / "candidates"
@@ -235,8 +237,8 @@ def _recent_experiments(n: int = MAX_EXP_ROWS) -> list:
     results = []
     for f in files:
         data = _read_json(f, {})
-        queue_entry = data.get("queue_entry", {})
-        outputs     = data.get("outputs", {})
+        queue_entry = data.get("queue_entry") or {}
+        outputs     = data.get("outputs") or {}
         metrics     = (
             outputs.get("metrics")
             or outputs.get("best_metrics")
@@ -261,24 +263,24 @@ def gather_state() -> dict:
     """Collect full system state for the Director LLM."""
     logger.info("Gathering system state...")
 
-    research_hb = _read_heartbeat("research-daemon")
+    atlas_hb    = _read_heartbeat("autoresearch-parent-0")
+    nova_hb     = _read_heartbeat("autoresearch-parent-1")
     sage_hb     = _read_heartbeat("sage")
-    principal_hb = _read_heartbeat("principal")
 
     state = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "services": {
-            "atlas-research-daemon": {
-                "systemd": _service_status("atlas-research-daemon"),
-                "heartbeat": research_hb,
+            "atlas (partition 0)": {
+                "systemd": _service_status("atlas-autoresearch-0"),
+                "heartbeat": atlas_hb,
+            },
+            "nova (partition 1)": {
+                "systemd": _service_status("atlas-autoresearch-1"),
+                "heartbeat": nova_hb,
             },
             "sage": {
                 "systemd": _service_status("atlas-sage"),
                 "heartbeat": sage_hb,
-            },
-            "atlas-director": {
-                "systemd": _service_status("atlas-principal"),
-                "heartbeat": principal_hb,
             },
         },
         "queue": _queue_summary(),
@@ -286,13 +288,20 @@ def gather_state() -> dict:
         "candidates": _candidates_summary(),
         "recent_experiments": _recent_experiments(),
         "recent_journal": _recent_journal(),
+        "strategy_queue": _read_json(STRAT_QUEUE_PATH, {}),
+        "current_directives": _read_json(DIRECTIVES_PATH, {}),
     }
 
+    # Add strategy queue summary
+    sq = state["strategy_queue"]
+    active_strats = [e.get("name") if isinstance(e, dict) else e for e in sq.get("active", [])]
+    candidate_strats = [e.get("name") if isinstance(e, dict) else e for e in sq.get("candidates", [])]
+
     logger.info(
-        "State gathered: queue=%d, experiments=%d, candidates=%d",
-        state["queue"]["total"],
+        "State gathered: active_strategies=%d, candidates=%d, experiments=%d, queue=%d",
+        len(active_strats), len(candidate_strats),
         len(state["recent_experiments"]),
-        len(state["candidates"]),
+        state["queue"]["total"],
     )
     return state
 
