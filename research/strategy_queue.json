@@ -1,0 +1,13 @@
+{
+  "active": [
+    {"name": "mean_reversion",   "added_by": "manual", "since": "2026-02-26"},
+    {"name": "trend_following",  "added_by": "manual", "since": "2026-02-26"},
+    {"name": "opening_gap",      "added_by": "manual", "since": "2026-02-26"},
+    {"name": "connors_rsi2",     "added_by": "manual", "since": "2026-02-26"},
+    {"name": "momentum_breakout","added_by": "manual", "since": "2026-02-26"},
+    {"name": "short_term_mr",    "added_by": "manual", "since": "2026-02-26"},
+    {"name": "bb_squeeze",       "added_by": "manual", "since": "2026-02-26"}
+  ],
+  "candidates": [],
+  "rejected": []
+}
