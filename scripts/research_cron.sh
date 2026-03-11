@@ -26,9 +26,9 @@ LOG_FILE="$LOG_DIR/research-cron-$(date +%Y%m%d_%H%M%S).log"
 
 # ─── Configuration Profiles ─────────────────────────────────────────────────
 
-# Default: 2 hours, 2 workers, 30 tickers — gentle on shared VPS
+# Default: 2 hours, 6 workers, 30 tickers — use the cores, time-box the session
 MAX_RUNTIME=7200
-WORKERS=2
+WORKERS=6
 TOP_N=30
 MAX_FAILS=5
 PROFILE="default"
@@ -36,14 +36,14 @@ PROFILE="default"
 case "${1:-}" in
     --quick)
         MAX_RUNTIME=1800   # 30 min
-        WORKERS=2
+        WORKERS=6
         TOP_N=20
         MAX_FAILS=3
         PROFILE="quick"
         ;;
     --deep)
         MAX_RUNTIME=10800  # 3 hours
-        WORKERS=3
+        WORKERS=6
         TOP_N=50
         MAX_FAILS=8
         PROFILE="deep"
