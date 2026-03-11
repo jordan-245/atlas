@@ -51,8 +51,19 @@ def _save_broker_cache(market_id: str, acct, positions, orders):
         json.dump(data, f, indent=2, default=str)
 
 
-def _load_broker_cache(market_id: str, max_age_minutes: int = 60):
-    """Load cached broker data if fresh enough. Returns dict or None."""
+def _load_broker_cache(market_id: str, max_age_minutes: int = 60,
+                       allow_stale: bool = False):
+    """Load cached broker data. Returns dict or None.
+
+    Args:
+        market_id: Market to load cache for.
+        max_age_minutes: Prefer cache younger than this (default 60).
+        allow_stale: If True, return stale cache (any age) when no fresh
+                     cache exists. The returned dict will have _stale=True
+                     and _cache_age_minutes set to the actual age.
+                     This prevents positions from vanishing when the broker
+                     is temporarily offline.
+    """
     path = CACHE_DIR / f"broker_{market_id}.json"
     if not path.exists():
         return None
@@ -62,10 +73,13 @@ def _load_broker_cache(market_id: str, max_age_minutes: int = 60):
     try:
         ts = datetime.fromisoformat(data["timestamp"])
         age = (datetime.now() - ts).total_seconds() / 60
-        if age > max_age_minutes:
-            return None
         data["cache_age_minutes"] = round(age, 1)
-        return data
+        if age <= max_age_minutes:
+            return data
+        if allow_stale:
+            data["_stale"] = True
+            return data
+        return None
     except Exception:
         return None
 
@@ -137,11 +151,14 @@ def get_portfolio(config):
     # Load from per-market state file first, fall back to legacy
     market_id = config.get("market", "asx")
     per_market = PROJECT_ROOT / "brokers" / "state" / f"{market_id}.json"
+    live_market = PROJECT_ROOT / "brokers" / "state" / f"live_{market_id}.json"
     legacy = PROJECT_ROOT / "brokers" / "state" / "live_state.json"
 
     state = None
     if per_market.exists():
         state = safe_json(per_market, None)
+    if state is None and live_market.exists():
+        state = safe_json(live_market, None)
     if state is None and legacy.exists():
         state = safe_json(legacy, None)
 
@@ -2946,10 +2963,12 @@ def generate():
                     print(f"  {mid}: broker connected ({broker_name}), "
                           f"{len(positions)} positions")
                 else:
-                    # M1: try last-known-good cache
-                    cached = _load_broker_cache(mid)
+                    # M1: try last-known-good cache (allow stale as last resort
+                    # so positions don't vanish when broker is temporarily offline)
+                    cached = _load_broker_cache(mid, allow_stale=True)
                     if cached:
-                        broker_caches[mid] = {
+                        is_stale = cached.get("_stale", False)
+                        cache_entry = {
                             "acct": cached["acct"],
                             "positions": cached["positions"],
                             "ok": True,
@@ -2957,7 +2976,13 @@ def generate():
                             "_cached": True,
                             "_cache_age_minutes": cached.get("cache_age_minutes", 0),
                         }
-                        print(f"  {mid}: broker FAILED — using cached data "
+                        broker_caches[mid] = cache_entry
+                        # Share cached Moomoo data for cross-broker markets
+                        # (ASX/HK positions on the same Moomoo account)
+                        if broker_name == "moomoo" and moomoo_data is None:
+                            moomoo_data = cache_entry
+                        stale_tag = " (STALE)" if is_stale else ""
+                        print(f"  {mid}: broker FAILED — using cached data{stale_tag} "
                               f"({cached['cache_age_minutes']:.0f}m old, "
                               f"{len(cached['positions'])} positions)")
                     else:
@@ -2976,6 +3001,27 @@ def generate():
             if cfg.get("moomoo"):
                 broker_caches[mid] = moomoo_data
                 print(f"  {mid}: using shared moomoo data (cross-broker positions)")
+
+    # Fallback: markets with their own broker cache but no shared moomoo data.
+    # This covers the case where SP500 has no cache at all but ASX has an
+    # older cache from when Moomoo was last online with .AX positions.
+    for mid in markets:
+        if mid in broker_caches:
+            continue
+        cached = _load_broker_cache(mid, allow_stale=True)
+        if cached and cached.get("positions"):
+            cache_entry = {
+                "acct": cached["acct"],
+                "positions": cached["positions"],
+                "ok": True,
+                "orders": cached.get("orders", []),
+                "_cached": True,
+                "_cache_age_minutes": cached.get("cache_age_minutes", 0),
+            }
+            broker_caches[mid] = cache_entry
+            print(f"  {mid}: loaded own broker cache "
+                  f"({cached['cache_age_minutes']:.0f}m old, "
+                  f"{len(cached['positions'])} positions)")
 
     # ── Fetch exchange rates before generating market data so we can pass
     # them into generate_market() for equity curve FX rate tagging (Issue #3)
@@ -3013,10 +3059,12 @@ def generate():
     for mid, md in market_data.items():
         pf = md.get("portfolio", {})
         ccy = md.get("currency", "AUD")
-        # Only include markets with broker data in combined totals.
-        # Offline/paper markets (ASX paused, HK unfunded) would inflate the
-        # combined number with phantom capital that doesn't exist at the broker.
-        has_broker = md.get("data_source") in ("broker", "cached")
+        # Only include markets with real data in combined totals.
+        # Offline/paper markets with no positions (HK unfunded) would inflate
+        # the combined number with phantom capital that doesn't exist.
+        # Cross-broker markets (ASX positions on Moomoo) ARE included since
+        # they represent real positions with real P&L.
+        has_broker = md.get("data_source") in ("broker", "cached", "cross-broker")
         is_funded = md.get("funded", True)
         include_in_combined = has_broker and is_funded
         if include_in_combined:
@@ -3196,8 +3244,13 @@ def generate():
     for mid, md in market_data.items():
         pf = md.get("portfolio", {})
         label = f"{'🔴 LIVE' if md.get('trading_mode') == 'live' else '📝 PAPER'}"
+        n_atlas = pf.get('num_open', 0)
+        n_manual = md.get('manual_positions', {}).get('num_open', 0)
+        n_total = n_atlas + n_manual
+        pos_detail = f"{n_atlas} atlas + {n_manual} manual" if n_manual else f"{n_atlas} positions"
+        ds_tag = f" [{md.get('data_source', '?')}]" if md.get('data_source') not in ('broker',) else ""
         print(f"  {mid.upper():6s} {label}: ${pf.get('equity',0):,.2f} equity, "
-              f"{pf.get('num_open',0)} positions, "
+              f"{pos_detail}{ds_tag}, "
               f"v{md.get('config_version','?')}")
     print(f"  COMBINED (AUD): A${combined_broker_equity_aud:,.2f} equity, "
           f"A${combined_broker_cash_aud:,.2f} cash, "
