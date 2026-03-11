@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#111111" id="meta-theme-color">
 <title>Atlas Dashboard</title>
 <link rel="icon" href="favicon.ico" sizes="any">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
@@ -303,9 +304,8 @@ td:first-child .strat-tip .strat-tiptext::after,
 td:nth-child(2) .strat-tip .strat-tiptext::after {
   left: 20px; transform: none;
 }
-/* Allow tooltip overflow from table scroll containers */
-.table-scroll { overflow: visible !important; }
-.table-scroll { overflow-x: auto !important; }
+/* FIX 17: merged overflow rules — single declaration wins (allows tooltip overflow + x-scroll) */
+.table-scroll { overflow-x: auto; overflow-y: visible; }
 /* Activity feed tooltips appear below (items are near top of viewport) */
 .activity-strat .strat-tip .strat-tiptext {
   bottom: auto; top: calc(100% + 8px);
@@ -749,6 +749,10 @@ td:nth-child(2) .strat-tip .strat-tiptext::after {
 .mon-note:last-child { border-bottom: none; }
 .mon-note-time { font-family: var(--mono); font-size: 10px; color: var(--text-tertiary); }
 .mon-note-text { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+
+/* FIX 18: REMOVED unused legacy classes: research-hero (no base element exists in HTML),
+   insight-card base rules handled by stripe-refresh.css, queue-bar/bar-pass/bar-fail/bar-defer
+   removed from stripe-refresh.css. Only media-query references kept for forward-compat. */
 </style>
 <link rel="stylesheet" href="stripe-refresh.css">
 </head>
@@ -1003,15 +1007,7 @@ td:nth-child(2) .strat-tip .strat-tiptext::after {
     </div>
   </div>
 
-  <!-- Footer plus grid (Stripe-inspired) -->
-  <div class="plus-row" style="margin-top:24px">
-    <span class="plus">+</span><span class="plus">+</span><span class="plus">+</span>
-    <span class="accent-wrap"><canvas class="accent-canvas" id="accent-spiral" width="20" height="20"></canvas></span>
-    <span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span>
-  </div>
-  <div class="plus-row" style="margin-top:16px">
-    <span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span><span class="plus">+</span>
-  </div>
+  <!-- FIX 22: Removed trailing plus-row grid markers (visual noise at page bottom) -->
 
 </div>
 
@@ -1453,7 +1449,8 @@ function paintChart() {
     canvas.style.width = W + 'px'; canvas.style.height = totalH + 'px';
     ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, W, totalH);
-    ctx.fillStyle = '#635a4c';
+    var _isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+    ctx.fillStyle = _isDark ? '#555555' : '#8d8d8d';
     ctx.font = '13px Figtree, system-ui, sans-serif';
     ctx.textAlign = 'center';
     if (totalPts < 2) {
@@ -1589,6 +1586,14 @@ function paintChart() {
   // ── Clear ──
   ctx.clearRect(0, 0, W, totalH);
 
+  // FIX 1B: Theme-aware chart colors
+  var isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+  var gridLineColor = isDark ? 'rgba(234,234,234,0.07)' : 'rgba(30,30,30,0.12)';
+  var gridZeroColor = isDark ? 'rgba(234,234,234,0.18)' : 'rgba(30,30,30,0.30)';
+  var gridTextColor = isDark ? '#555555' : '#8d8d8d';
+  var gridZeroTextColor = isDark ? '#8d8d8d' : '#555555';
+  var panelLabelColor = isDark ? 'rgba(234,234,234,0.12)' : 'rgba(30,30,30,0.15)';
+
   // ── Grid ──
   ctx.font = '10px "JetBrains Mono", monospace';
   ctx.textAlign = 'right';
@@ -1601,12 +1606,12 @@ function paintChart() {
     var gy = yR(v);
     if (gy < mt || gy > mt + eqH) continue;
     var isZero = Math.abs(v) < retStep * 0.01;
-    ctx.strokeStyle = isZero ? 'rgba(99,90,76,0.4)' : 'rgba(46,40,32,0.35)';
+    ctx.strokeStyle = isZero ? gridZeroColor : gridLineColor;
     ctx.lineWidth = isZero ? 1.5 : 1;
     if (isZero) { ctx.setLineDash([4, 3]); } else { ctx.setLineDash([]); }
     ctx.beginPath(); ctx.moveTo(ml, gy); ctx.lineTo(W - mr, gy); ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = isZero ? '#a09585' : '#635a4c';
+    ctx.fillStyle = isZero ? gridZeroTextColor : gridTextColor;
     var label = (v > 0 ? '+' : '') + (retStep >= 1 ? v.toFixed(0) : v.toFixed(1)) + '%';
     ctx.fillText(label, ml - 5, gy);
   }
@@ -1617,7 +1622,7 @@ function paintChart() {
     if (ddStep < 0.5) ddStep = 0.5;
     for (var v = 0; v >= minDD; v -= ddStep) {
       var gy = yD(v);
-      ctx.strokeStyle = 'rgba(46,40,32,0.3)';
+      ctx.strokeStyle = gridLineColor;
       ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(ml, gy); ctx.lineTo(W - mr, gy); ctx.stroke();
       ctx.fillStyle = 'rgba(196,88,90,0.4)';
@@ -1626,14 +1631,14 @@ function paintChart() {
   }
 
   // X axis labels + vertical grid
-  ctx.fillStyle = '#635a4c';
+  ctx.fillStyle = gridTextColor;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   var xLabelY = showDrawdown ? (mt + eqH + gap + ddH + 5) : (totalH - axisH + 5);
   getTimeLabels(dates, cw).forEach(function(lbl) {
     var x = xS(lbl.idx);
     ctx.fillText(lbl.text, x, xLabelY);
-    ctx.strokeStyle = 'rgba(46,40,32,0.18)';
+    ctx.strokeStyle = gridLineColor;
     ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(x, mt); ctx.lineTo(x, mt + eqH); ctx.stroke();
     if (showDrawdown) {
@@ -1643,7 +1648,7 @@ function paintChart() {
 
   // ── Panel separator ──
   if (showDrawdown) {
-    ctx.strokeStyle = 'rgba(46,40,32,0.5)';
+    ctx.strokeStyle = isDark ? 'rgba(234,234,234,0.15)' : 'rgba(30,30,30,0.2)';
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(ml, mt + eqH + gap / 2);
@@ -1776,7 +1781,7 @@ function paintChart() {
   }
 
   // ── Panel labels ──
-  ctx.fillStyle = 'rgba(99,90,76,0.3)';
+  ctx.fillStyle = panelLabelColor;
   ctx.font = '600 8px "JetBrains Mono", monospace';
   ctx.textAlign = 'left'; ctx.textBaseline = 'top';
   ctx.fillText('RETURN %', ml + 4, mt + 3);
@@ -1886,7 +1891,11 @@ function render(d) {
   var modeLabel = document.getElementById('mode-label');
   var tradingMode = d.trading_mode || 'paper';
   modePill.style.display = 'flex';
-  if (tradingMode === 'live') {
+  if (tradingMode === 'research' || tradingMode === 'offline') {
+    modeDot.className = 'pulse-paper';
+    modeLabel.innerHTML = '<span class="mode-paper" style="color:var(--text-tertiary)">RESEARCH</span>';
+    modeLabel.title = 'Research-only mode — no live orders';
+  } else if (tradingMode === 'live') {
     modeDot.className = 'pulse-live';
     modeLabel.innerHTML = '<span class="mode-live">LIVE</span>';
     modeLabel.title = 'Real money — Moomoo broker';
@@ -2875,10 +2884,12 @@ function renderResearch(d) {
   // Update agents canvas (pass stats + leaderboard + pipeline for whiteboard)
   updateAgentFloor(agents, stats, lb, res.strategy_pipeline || res.pipeline || {});
 
-  // Tab badge — show active agent count or total experiments
+  // FIX 14: Research tab badge — experiment count (was ambiguous "4 ACTIVE")
   var badge = document.getElementById('research-tab-badge');
-  var activeAgents = agents.filter(function(a) { return a.status === 'typing' || a.status === 'reading'; });
-  if (badge) badge.textContent = activeAgents.length > 0 ? activeAgents.length + ' active' : stats.total_experiments + ' done';
+  if (badge) {
+    var expCount = (res.experiments || []).length || stats.total_experiments || 0;
+    badge.textContent = expCount > 0 ? expCount + ' exp' : '';
+  }
 
   // ── KPI Strip (4 metrics) ──
   var kh = '';
@@ -2893,15 +2904,19 @@ function renderResearch(d) {
   if (feed.length > 0) {
     var af = '';
     var feedRev = feed.slice().reverse();
-    feedRev.forEach(function(a) {
+    feedRev.forEach(function(a, idx) {
       var vc = a.verdict === 'pass' ? 'v-pass' : a.verdict === 'fail' ? 'v-fail' : a.verdict === 'promoted' ? 'v-promoted' : 'v-partial';
       var detail = '';
       if (a.sharpe != null) detail += 'Sharpe ' + a.sharpe.toFixed(2);
       if (a.win_rate_pct != null) detail += (detail ? ', ' : '') + 'WR ' + a.win_rate_pct.toFixed(0) + '%';
       if (a.total_trades) detail += (detail ? ', ' : '') + a.total_trades + ' trades';
-      af += '<div class="activity-item">';
+      // FIX 10: zebra striping for even items
+      var zebraClass = (idx % 2 === 1) ? ' activity-item-alt' : '';
+      // FIX 10: absolute date in tooltip title
+      var absDate = a.timestamp ? a.timestamp.replace('T', ' ').substring(0, 16) : '';
+      af += '<div class="activity-item' + zebraClass + '">';
       af += '<span class="activity-dot ' + vc + '"></span>';
-      af += '<span class="activity-time">' + ago(a.timestamp) + '</span>';
+      af += '<span class="activity-time" title="' + absDate + '">' + ago(a.timestamp) + '</span>';
       af += '<span class="activity-strat">' + strat(a.strategy || '') + '</span>';
       af += '<span class="research-badge badge-' + (a.verdict === 'pass' ? 'pass' : a.verdict === 'fail' ? 'fail' : a.verdict === 'promoted' ? 'promoted' : 'partial') + '">' + esc(a.verdict) + '</span>';
       af += '<span class="activity-detail">' + detail + '</span>';
@@ -2917,10 +2932,19 @@ function renderResearch(d) {
   if (discoveries.length > 0) {
     var dd = '';
     discoveries.forEach(function(d) {
-      var icon = d.type === 'pattern' ? '🔬' : d.type === 'improvement' ? '📈' : d.type === 'record' ? '⭐' : d.type === 'hypothesis' ? '💡' : '📋';
+      // FIX 12: styled text badges instead of emoji icons for consistency
+      var iconClass, iconText;
+      if (d.type === 'pattern') { iconClass = 'disc-icon-test'; iconText = '[~]'; }
+      else if (d.type === 'improvement') { iconClass = 'disc-icon-win'; iconText = '[+]'; }
+      else if (d.type === 'record') { iconClass = 'disc-icon-win'; iconText = '[+]'; }
+      else if (d.type === 'hypothesis') { iconClass = 'disc-icon-test'; iconText = '[~]'; }
+      else if (d.type === 'warning') { iconClass = 'disc-icon-warn'; iconText = '[!]'; }
+      else { iconClass = 'disc-icon-data'; iconText = '[·]'; }
+      // FIX 12: border color based on impact
       var impactCls = d.impact === 'high' ? '' : ' impact-medium';
-      dd += '<div class="discovery-item' + impactCls + '">';
-      dd += '<span class="discovery-icon">' + icon + '</span>';
+      var borderStyle = d.impact === 'high' ? ' style="border-left-color:var(--green)"' : '';
+      dd += '<div class="discovery-item' + impactCls + '"' + borderStyle + '>';
+      dd += '<span class="disc-icon ' + iconClass + '">' + iconText + '</span>';
       dd += '<div><div class="discovery-text">' + esc(d.text) + '</div>';
       if (d.detail) dd += '<div class="discovery-detail">' + esc(d.detail) + '</div>';
       dd += '</div></div>';
@@ -3236,6 +3260,8 @@ function initAgentFloor() {
 }
 
 function updateAgentFloor(agents, stats, leaderboard, strategyPipeline) {
+  // FIX 19: store latest data so applyTheme can re-render canvas on theme change
+  window._lastAgentData = agents;
   _agentFloor.agents = agents;
   _agentFloor.stats = stats || {};
   _agentFloor.leaderboard = leaderboard || [];
@@ -3259,25 +3285,40 @@ function updateAgentFloor(agents, stats, leaderboard, strategyPipeline) {
 function _drawProps(ctx, W, H, wallH, tc, frame, agents, stats, leaderboard, strategyPipeline) {
   // All props drawn with theme colors, positioned relative to canvas edges
 
-  // ── Server rack (left edge, against wall) ──
-  var rackX = 14, rackY = wallH - 38, rackW = 16, rackH = 38;
+  // FIX 7: Server rack — larger, more readable frame + bigger LED dots
+  var rackX = 10, rackY = wallH - 48, rackW = 24, rackH = 48;
   ctx.fillStyle = tc.surfaceRaised;
   ctx.fillRect(rackX, rackY, rackW, rackH);
   ctx.strokeStyle = tc.border;
-  ctx.lineWidth = 1;
+  ctx.lineWidth = 1.5;
   ctx.strokeRect(rackX, rackY, rackW, rackH);
-  for (var li = 0; li < 4; li++) {
+  // Unit dividers
+  ctx.globalAlpha = 0.4;
+  for (var ui = 1; ui < 5; ui++) {
+    ctx.beginPath(); ctx.moveTo(rackX, rackY + ui * 9); ctx.lineTo(rackX + rackW, rackY + ui * 9); ctx.stroke();
+  }
+  ctx.globalAlpha = 1.0;
+  // LEDs — bigger circles for readability
+  for (var li = 0; li < 5; li++) {
     var blinkOn = ((frame + li * 17) % 60) < 40;
+    var ledY = rackY + 5 + li * 9;
+    // Green status LED
+    ctx.beginPath();
+    ctx.arc(rackX + 6, ledY, 3, 0, Math.PI * 2);
     ctx.fillStyle = blinkOn ? tc.green : tc.border;
     ctx.globalAlpha = blinkOn ? 0.9 : 0.3;
-    ctx.fillRect(rackX + 3, rackY + 6 + li * 8, 3, 2);
+    ctx.fill();
+    // Blue activity LED
+    ctx.beginPath();
+    ctx.arc(rackX + 16, ledY, 3, 0, Math.PI * 2);
     ctx.fillStyle = ((frame + li * 23) % 80) < 50 ? tc.blue : tc.border;
-    ctx.fillRect(rackX + 9, rackY + 6 + li * 8, 3, 2);
+    ctx.fill();
   }
   ctx.globalAlpha = 1.0;
 
-  // ── Plant (right edge) ──
-  var plantX = W - 38, potY = wallH - 6, potW = 12, potH = 8;
+  // FIX 8: Plant anchored to floor (was floating at wallH boundary)
+  var plantX = W - 38, potW = 12, potH = 10;
+  var potY = H - potH - 3; // anchor to floor
   ctx.fillStyle = tc.amber; ctx.globalAlpha = 0.6;
   ctx.fillRect(plantX, potY, potW, potH);
   ctx.fillRect(plantX + 2, potY + potH, potW - 4, 3);
@@ -3704,13 +3745,14 @@ function _drawAgentAt(ctx, f, tc, agent, cx, baseY, animFrame) {
   }
 
   // Name label + progress
+  // FIX 5: Director label above desk to avoid colliding with org-chart connector lines
   ctx.fillStyle = tc.textTertiary;
   ctx.font = '10px "Inter", sans-serif';
   ctx.textAlign = 'center';
   var nameLabel = agent.name;
   if (prog.label) nameLabel += '  ' + prog.label;
   if (prog.cycle > 1) nameLabel += '  ↻' + prog.cycle;
-  var labelY = deskY + deskH + 14;
+  var labelY = (agent.type === 'principal') ? deskY - 18 : deskY + deskH + 14;
   ctx.fillText(nameLabel, cx, labelY);
 
   // Status dot
@@ -3795,11 +3837,14 @@ function drawAgentFloor() {
   _drawProps(ctx, W, H, wallH, tc, f.frame, f.agents, f.stats || {}, f.leaderboard || [], f.strategyPipeline || {});
 
   var agents = f.agents;
-  if (!agents.length) {
-    ctx.fillStyle = tc.textTertiary;
+  // FIX 20: Show loading state when no agent data yet
+  if (!agents || !agents.length) {
+    var isDark2 = document.documentElement.getAttribute('data-theme') !== 'light';
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = isDark2 ? '#555555' : '#8d8d8d';
     ctx.font = '12px "JetBrains Mono", monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('No agents active', W / 2, H / 2 + 10);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(f.inited ? 'No agents active' : 'Loading agents...', W / 2, H / 2);
     return;
   }
 
@@ -3827,9 +3872,10 @@ function drawAgentFloor() {
       if (team.length === 1) teamStartX = W / 2;
 
       ctx.save();
-      ctx.strokeStyle = tc.textTertiary;
-      ctx.globalAlpha = 0.45;
-      ctx.lineWidth = 1.5;
+      // FIX 6: stronger connector lines — higher opacity and wider stroke
+      ctx.strokeStyle = tc.textSecondary;
+      ctx.globalAlpha = 0.65;
+      ctx.lineWidth = 2;
 
       // Vertical line down from Director
       ctx.beginPath();
@@ -3927,6 +3973,14 @@ function _mcFmt(s) {
   return sec + 's';
 }
 
+// FIX 21: Clock dot colour differentiates proximity to open
+function clockDotColor(minutesUntilOpen) {
+  if (minutesUntilOpen <= 0) return 'var(--green)';
+  if (minutesUntilOpen <= 30) return 'var(--green)';
+  if (minutesUntilOpen <= 120) return 'var(--amber)';
+  return 'var(--text-tertiary)';
+}
+
 function _mcInit(marketIds) {
   var key = marketIds.slice().sort().join(',');
   if (key === _mcInited) return;
@@ -3960,13 +4014,16 @@ function _mcTick() {
 
     if (st.open) {
       dot.className = 'market-clock-dot mc-dot-open';
+      dot.style.background = '';
       time.textContent = _mcFmt(st.secs);
       time.style.color = 'var(--green)';
       lbl.textContent = 'to close';
       pill.className = 'market-clock mc-open';
     } else {
+      // FIX 21: dot colour based on time until open
+      var minutesUntilOpen = Math.round(st.secs / 60);
       dot.className = 'market-clock-dot';
-      dot.style.background = mk.color;
+      dot.style.background = clockDotColor(minutesUntilOpen);
       time.textContent = _mcFmt(st.secs);
       time.style.color = 'var(--text-secondary)';
       lbl.textContent = 'to open';
@@ -4030,14 +4087,28 @@ var _monitorData = null;
 var _monitorSort = 'health';
 var _monitorTagFilter = null;
 
+function renderMonitorOffline() {
+  var posEl = document.getElementById('monitor-positions');
+  if (posEl) posEl.innerHTML = '<div class="empty" style="padding:24px;text-align:center;color:var(--text-tertiary);font-family:var(--mono);font-size:12px">Monitor requires live API — running in static / offline mode</div>';
+  var cardsEl = document.getElementById('monitor-cards');
+  if (cardsEl) cardsEl.innerHTML = '';
+  var badge = document.getElementById('monitor-tab-badge');
+  if (badge) { badge.textContent = ''; badge.style.display = 'none'; }
+}
+
 function loadMonitor() {
+  if (window._monitorApiUnavailable) { renderMonitorOffline(); return; }
   fetch('/api/monitor?t=' + Date.now(), {credentials: 'same-origin'})
     .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(function(data) {
       _monitorData = data;
       renderMonitor(data);
     })
-    .catch(function(e) { console.error('Monitor load failed:', e); });
+    .catch(function(e) {
+      console.warn('Monitor API unavailable (static mode):', e.message);
+      window._monitorApiUnavailable = true;
+      renderMonitorOffline();
+    });
 }
 
 function monitorSort(by) {

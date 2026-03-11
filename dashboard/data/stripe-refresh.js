@@ -383,18 +383,15 @@
     var resolved = theme === 'auto' ? resolveAutoTheme() : theme;
     document.documentElement.setAttribute('data-theme', resolved);
 
-    // FIX 1A: Repaint equity chart with correct theme colors after theme change
+    // FIX 1A: Repaint chart so theme-aware colors are applied
     if (typeof paintChart === 'function') { setTimeout(paintChart, 50); }
 
-    // FIX 19: Repaint agent canvas on theme change
+    // FIX 19: Re-render agent canvas on theme change
     if (typeof updateAgentFloor === 'function' && window._lastAgentData) {
-      setTimeout(function() {
-        var d = window._lastAgentData;
-        updateAgentFloor(d.agents, d.stats, d.leaderboard, d.strategyPipeline);
-      }, 80);
+      setTimeout(function() { updateAgentFloor(window._lastAgentData); }, 80);
     }
 
-    // FIX 23: Update browser theme-color meta tag
+    // FIX 23: Update browser chrome colour
     var metaTheme = document.getElementById('meta-theme-color');
     if (metaTheme) { metaTheme.setAttribute('content', resolved === 'light' ? '#ffffff' : '#111111'); }
 
@@ -411,6 +408,13 @@
         var current = document.documentElement.getAttribute('data-theme');
         if (newResolved !== current) {
           document.documentElement.setAttribute('data-theme', newResolved);
+          // Also repaint on auto-switch
+          if (typeof paintChart === 'function') { setTimeout(paintChart, 50); }
+          if (typeof updateAgentFloor === 'function' && window._lastAgentData) {
+            setTimeout(function() { updateAgentFloor(window._lastAgentData); }, 80);
+          }
+          var mt = document.getElementById('meta-theme-color');
+          if (mt) { mt.setAttribute('content', newResolved === 'light' ? '#ffffff' : '#111111'); }
         }
       }, 60000); // check every minute
     }

@@ -5,6 +5,13 @@
  * Design language: flat, monochrome, tight-grid, no glow/bloom/warm tints.
  */
 
+/*
+ * FIX 16 — SPECIFICITY NOTE: Rules below use html[data-theme] .class or html body .class
+ * selectors to override the inline <style> block in index.html (which loads first).
+ * When adding new overrides: use the minimum specificity needed to win.
+ * Avoid !important except for layout-critical overrides.
+ */
+
 /* ── Phase 1: Tokens ────────────────────────────────────────────────────── */
 
 :root {
@@ -87,10 +94,23 @@ html[data-theme="light"] body {
   color: var(--text);
 }
 
-/* Header solid bg in light mode */
+/* FIX 4: Header solid bg in light mode — clearly distinct from dark mode */
 html[data-theme="light"] .header {
-  background: var(--bg);
+  background: #ffffff;
   border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+/* FIX 4: Status pills + theme toggle clearly visible in light mode */
+html[data-theme="light"] .status-pill {
+  background: rgba(30, 30, 30, 0.06);
+  border-color: rgba(30, 30, 30, 0.18);
+}
+html[data-theme="light"] .theme-btn { color: #555555; }
+html[data-theme="light"] .theme-btn.active {
+  background: rgba(30, 30, 30, 0.10);
+  color: #1e1e1e;
+  border-color: rgba(30, 30, 30, 0.20);
 }
 
 /* Grid overlay visibility — stronger lines in light */
@@ -696,10 +716,7 @@ html body .mon-health-fill {
   transition: width 1s cubic-bezier(0.19, 1, 0.22, 1);
 }
 
-/* ── Queue progress bar segments animate in ─────────────────────────── */
-html body .queue-bar > div {
-  transition: width 0.8s cubic-bezier(0.19, 1, 0.22, 1);
-}
+/* FIX 18: queue-bar > div was unused — removed animation */
 
 /* ── Logo hover shimmer ─────────────────────────────────────────────── */
 html body .logo {
@@ -1002,11 +1019,8 @@ html body .badge-queued {
   background: none;
 }
 
-html body .badge-deferred {
-  color: var(--amber);
-  border-color: rgba(212, 168, 74, 0.2);
-  background: none;
-}
+/* FIX 18: .badge-deferred was unused — removed */
+/* REMOVED: unused legacy class: badge-deferred */
 
 html body .badge-promoted {
   color: var(--green-bright);
@@ -1372,17 +1386,8 @@ html body .animate-in {
 
 /* ── Misc overrides ─────────────────────────────────────────────────────── */
 
-/* Queue bar — tighten radius */
-html body .queue-bar {
-  border-radius: 2px;
-}
-
-/* Progress bar — no box-shadow */
-html body .queue-bar .bar-pass,
-html body .queue-bar .bar-fail,
-html body .queue-bar .bar-defer {
-  box-shadow: none;
-}
+/* FIX 18: queue-bar / bar-pass / bar-fail / bar-defer not used in index.html — removed */
+/* REMOVED: unused legacy classes: queue-bar, bar-pass, bar-fail, bar-defer */
 
 /* Live dot — keep the dot but strip bloom */
 html body .live-dot {
@@ -1448,3 +1453,63 @@ html body .section-head:focus-visible {
   outline: 2px solid var(--blue);
   outline-offset: -2px;
 }
+
+/* ── FIX 9: Research KPI font-weight normalization ──────────────────────── */
+.rkpi-value { font-weight: 500; }
+
+/* ── FIX 11: Leaderboard bars visible in both themes ─────────────────────── */
+.lb-bar-wrap {
+  background: var(--surface-raised) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+}
+.lb-bar { min-width: 2px; }
+
+/* ── FIX 13: Mobile table overflow ──────────────────────────────────────── */
+@media (max-width: 700px) {
+  .table-scroll table { min-width: 480px; }
+  .table-scroll::after {
+    content: '← scroll for more →';
+    display: block;
+    text-align: center;
+    font-size: 10px;
+    color: var(--text-tertiary);
+    padding: 3px 0;
+    font-family: var(--mono);
+    letter-spacing: 0.05em;
+  }
+}
+
+/* ── FIX 15: Two-column layout aligned at top ────────────────────────────── */
+.positions-plan-grid { align-items: start; }
+.two-col { align-items: start; }
+@media (max-width: 900px) {
+  .positions-plan-grid { grid-template-columns: 1fr !important; }
+}
+
+/* ── FIX 10: Activity feed zebra striping ────────────────────────────────── */
+.activity-item-alt { background: rgba(255, 255, 255, 0.025); }
+html[data-theme="light"] .activity-item-alt { background: rgba(0, 0, 0, 0.025); }
+
+/* ── FIX 12: Discovery icon text badges ──────────────────────────────────── */
+.disc-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-xs);
+  flex-shrink: 0;
+  margin-top: 1px;
+  letter-spacing: 0;
+}
+.disc-icon-data  { background: var(--blue-dim);   color: var(--blue);   border: 1px solid rgba(107,159,255,0.2); }
+.disc-icon-win   { background: var(--green-dim);  color: var(--green);  border: 1px solid rgba(196,232,23,0.2);  }
+.disc-icon-warn  { background: var(--amber-dim);  color: var(--amber);  border: 1px solid rgba(212,168,74,0.2);  }
+.disc-icon-test  { background: var(--purple-dim); color: var(--purple); border: 1px solid rgba(176,138,230,0.2); }
+.disc-icon-trend { background: var(--orange-dim); color: var(--orange); border: 1px solid rgba(232,138,85,0.2);  }
+
