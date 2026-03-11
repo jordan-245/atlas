@@ -403,10 +403,12 @@ def claim_experiment(entry_id: str, agent_id: str = "atlas-research") -> Optiona
         if item["id"] == entry_id:
             if item["status"] not in ("queued", "claimed"):
                 return None
-            # Stale claim detection: if claimed > 6h ago, release it
+            # Stale claim detection: if claimed > 2h ago, release it.
+            # (Active zombie cleanup in research_daemon runs every 30 min; this
+            # passive check ensures ad-hoc callers also get stale-claim recovery.)
             if item["status"] == "claimed" and item.get("claimed_at"):
                 claimed_at = datetime.fromisoformat(item["claimed_at"])
-                if (datetime.now(timezone.utc) - claimed_at).total_seconds() < 6 * 3600:
+                if (datetime.now(timezone.utc) - claimed_at).total_seconds() < 2 * 3600:
                     return None  # Still actively claimed
             item["status"] = ExperimentStatus.CLAIMED
             item["claimed_by"] = agent_id

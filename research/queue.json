@@ -1343,14 +1343,14 @@
     },
     "estimated_runtime_min": 15,
     "priority": "P2",
-    "status": "claimed",
+    "status": "queued",
     "strategy_name": null,
     "params_override": null,
     "config_snapshot": null,
-    "claimed_by": "research-daemon",
-    "claimed_at": "2026-03-10T06:48:33.892160+00:00",
+    "claimed_by": null,
+    "claimed_at": null,
     "created_at": "2026-03-08T23:09:24.545314+00:00",
-    "updated_at": "2026-03-10T06:48:33.892170+00:00",
+    "updated_at": "2026-03-11T09:54:12.083034+00:00",
     "tags": [
       "wave5",
       "oos",
@@ -1359,7 +1359,7 @@
     "depends_on": [
       "wave5_full_reopt"
     ],
-    "notes": "Promotion candidate if passes. Compare to current v2.2 OOS baseline.\n[auto-deferred] Dependency failed: ['wave5_full_reopt']"
+    "notes": "Promotion candidate if passes. Compare to current v2.2 OOS baseline.\n[auto-deferred] Dependency failed: ['wave5_full_reopt']\n[zombie_reset 2026-03-11] Was claimed for >24h with no completion. Reset to queued."
   },
   {
     "id": "wave5_mr_profit_sweep",
@@ -1821,17 +1821,17 @@
     },
     "estimated_runtime_min": 5,
     "priority": "P2",
-    "status": "claimed",
+    "status": "queued",
     "strategy_name": "bb_squeeze",
     "params_override": null,
     "config_snapshot": null,
-    "claimed_by": "research-daemon",
-    "claimed_at": "2026-03-10T08:32:05.712486+00:00",
+    "claimed_by": null,
+    "claimed_at": null,
     "created_at": "2026-03-10T08:32:05.673600+00:00",
-    "updated_at": "2026-03-10T08:32:05.712502+00:00",
+    "updated_at": "2026-03-11T09:54:12.083034+00:00",
     "tags": [],
     "depends_on": [],
-    "notes": ""
+    "notes": "\n[zombie_reset 2026-03-11] Was claimed for >24h with no completion. Reset to queued."
   },
   {
     "id": "20260310_183205_1eac79",
@@ -1899,17 +1899,17 @@
     },
     "estimated_runtime_min": 5,
     "priority": "P2",
-    "status": "running",
+    "status": "queued",
     "strategy_name": "mtf_momentum",
     "params_override": null,
     "config_snapshot": null,
-    "claimed_by": "research-daemon",
-    "claimed_at": "2026-03-10T08:44:47.225483+00:00",
+    "claimed_by": null,
+    "claimed_at": null,
     "created_at": "2026-03-10T08:32:05.673664+00:00",
-    "updated_at": "2026-03-10T08:44:47.649984+00:00",
+    "updated_at": "2026-03-11T09:56:58.480774+00:00",
     "tags": [],
     "depends_on": [],
-    "notes": ""
+    "notes": "\n[zombie_reset 2026-03-11] Claimed for 25.2h with no completion \u2014 reset to queued."
   },
   {
     "id": "20260310_183205_800b5b",
@@ -2029,17 +2029,17 @@
     },
     "estimated_runtime_min": 5,
     "priority": "P2",
-    "status": "running",
+    "status": "queued",
     "strategy_name": "mtf_momentum",
     "params_override": null,
     "config_snapshot": null,
-    "claimed_by": "research-daemon",
-    "claimed_at": "2026-03-10T08:58:01.169511+00:00",
+    "claimed_by": null,
+    "claimed_at": null,
     "created_at": "2026-03-10T08:58:01.074985+00:00",
-    "updated_at": "2026-03-10T08:58:01.366602+00:00",
+    "updated_at": "2026-03-11T09:56:58.777261+00:00",
     "tags": [],
     "depends_on": [],
-    "notes": ""
+    "notes": "\n[zombie_reset 2026-03-11] Claimed for 25.0h with no completion \u2014 reset to queued."
   },
   {
     "id": "20260310_185801_9e1d01",
@@ -2159,17 +2159,17 @@
     },
     "estimated_runtime_min": 5,
     "priority": "P2",
-    "status": "claimed",
+    "status": "queued",
     "strategy_name": "mtf_momentum",
     "params_override": null,
     "config_snapshot": null,
-    "claimed_by": "research-daemon",
-    "claimed_at": "2026-03-10T09:14:33.086833+00:00",
+    "claimed_by": null,
+    "claimed_at": null,
     "created_at": "2026-03-10T08:58:04.406799+00:00",
-    "updated_at": "2026-03-10T09:14:33.086842+00:00",
+    "updated_at": "2026-03-11T09:54:12.083034+00:00",
     "tags": [],
     "depends_on": [],
-    "notes": ""
+    "notes": "\n[zombie_reset 2026-03-11] Was claimed for >24h with no completion. Reset to queued."
   },
   {
     "id": "20260310_185804_c5b707",
@@ -3295,10 +3295,11 @@
     "priority": "P1",
     "hypothesis": "Solo passed Sharpe 0.45 \u2014 combined test is promotion blocker",
     "params_override": {},
-    "status": "claimed",
+    "status": "failed",
     "created_at": "2026-03-11T05:53:09.270732+00:00",
     "claimed_by": "atlas",
-    "claimed_at": "2026-03-11T07:31:33.112130+00:00"
+    "claimed_at": "2026-03-11T07:31:33.112130+00:00",
+    "updated_at": "2026-03-11T09:10:48.004922+00:00"
   },
   {
     "id": "director_trend_following_combined_20260311",
@@ -3308,10 +3309,10 @@
     "priority": "P1",
     "hypothesis": "trend_following with best observed Sharpe 0.5795 (ar-20260311_152317) clears the solo pass threshold (\u22650.3). Combined portfolio test will determine whether it holds Sharpe \u22650.3 with \u226550 trades and max_dd \u226410% alongside MR and OG in a live-weight portfolio \u2014 required by RULE-1 before any promotion consideration.",
     "params_override": {},
-    "status": "queued",
+    "status": "claimed",
     "created_at": "2026-03-11T07:35:37.269535+00:00",
-    "claimed_by": null,
-    "claimed_at": null
+    "claimed_by": "nova",
+    "claimed_at": "2026-03-11T09:16:42.606263+00:00"
   },
   {
     "id": "director_mean_reversion_control_20260311",
@@ -3323,6 +3324,19 @@
     "params_override": {},
     "status": "queued",
     "created_at": "2026-03-11T07:35:37.307960+00:00",
+    "claimed_by": null,
+    "claimed_at": null
+  },
+  {
+    "id": "director_mean_reversion_combined_20260311",
+    "strategy_name": "mean_reversion",
+    "method": "combined_portfolio_test",
+    "category": "active",
+    "priority": "P1",
+    "hypothesis": "mean_reversion annealing crossed the solo threshold: Sharpe trajectory 0.2043\u21920.2375\u21920.2525\u21920.2734\u21920.3564. Combined test will determine if this marginal solo pass (0.3564 vs 0.30 threshold) holds under position contention with trend_following and opening_gap. Solo was borderline \u2014 combined outcome is uncertain and must be run before any promotion discussion.",
+    "params_override": {},
+    "status": "queued",
+    "created_at": "2026-03-11T08:43:40.239276+00:00",
     "claimed_by": null,
     "claimed_at": null
   }
