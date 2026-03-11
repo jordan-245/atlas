@@ -2872,8 +2872,8 @@ function renderResearch(d) {
   var agents = res.agents || [];
   var discoveries = res.discoveries || [];
 
-  // Update agents canvas (pass stats + leaderboard for whiteboard)
-  updateAgentFloor(agents, stats, lb);
+  // Update agents canvas (pass stats + leaderboard + pipeline for whiteboard)
+  updateAgentFloor(agents, stats, lb, res.strategy_pipeline || res.pipeline || {});
 
   // Tab badge — show active agent count or total experiments
   var badge = document.getElementById('research-tab-badge');
@@ -3173,6 +3173,8 @@ var _AGENT_COLORS = {
   job:        { B: '#3a5a7a', H: '#4a3020', P: '#3a3020', E: '#e8e4da', S: '#c8a080', M: '#b08060', X: '#8a7e70' },
   // Sweep agent — amber shirt
   sweep:      { B: '#7a6a3a', H: '#5a3010', P: '#3a3020', E: '#e8e4da', S: '#d4a574', M: '#c0825a', X: '#8a7e70' },
+  // Sage — teal shirt, grey hair, neutral skin (the long-cycle promotion agent)
+  sage:       { B: '#3a7a7a', H: '#8a8a8a', P: '#2a3040', E: '#f0e8d0', S: '#c8a080', M: '#b08060', X: '#6a7a7a' },
   // Fallback
   researcher: { B: '#5a7a3a', H: '#6B4E0A', P: '#3a3020', E: '#e8e4da', S: '#d4a574', M: '#c0825a', X: '#8a7e70' },
 };
@@ -3231,17 +3233,18 @@ function initAgentFloor() {
   tick();
 }
 
-function updateAgentFloor(agents, stats, leaderboard) {
+function updateAgentFloor(agents, stats, leaderboard, strategyPipeline) {
   _agentFloor.agents = agents;
   _agentFloor.stats = stats || {};
   _agentFloor.leaderboard = leaderboard || [];
+  _agentFloor.strategyPipeline = strategyPipeline || {};
   if (!_agentFloor.inited) initAgentFloor();
   // Force resize when agents update (tab may have just become visible)
   setTimeout(_resizeAgentCanvas, 50);
 }
 
 // ── Room Props ──────────────────────────────────────────────────
-function _drawProps(ctx, W, H, wallH, tc, frame, agents, stats, leaderboard) {
+function _drawProps(ctx, W, H, wallH, tc, frame, agents, stats, leaderboard, strategyPipeline) {
   // All props drawn with theme colors, positioned relative to canvas edges
 
   // ── Server rack (left edge, against wall) ──
@@ -3447,6 +3450,57 @@ function _drawProps(ctx, W, H, wallH, tc, frame, agents, stats, leaderboard) {
       ctx.globalAlpha = 1.0;
     }
   });
+
+  // ── Strategy Pipeline row ──────────────────────────────────────
+  // Shows lifecycle stage counts from research.strategy_pipeline
+  var pipeline = strategyPipeline || {};
+  var pipelineStages = ['untested','screen','quick','solo','optimize','combined','oos','promote'];
+  var pipelineLabels = ['?','SCR','QCK','SLO','OPT','CMB','OOS','PRO'];
+  var pipelineColors = [tc.textTertiary, tc.textTertiary, tc.amber, tc.amber, tc.blue, tc.blue, tc.green, tc.green];
+  var anyPipeline = pipelineStages.some(function(s) { return pipeline[s] > 0; });
+  if (anyPipeline) {
+    var pipeY = wbY + wbH - 12;
+    if (pipeY > wbY + 18) {
+      // Divider
+      ctx.strokeStyle = tc.border;
+      ctx.globalAlpha = 0.3;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(wbX + wbPad, pipeY - 6);
+      ctx.lineTo(wbX + wbW - wbPad, pipeY - 6);
+      ctx.stroke();
+      ctx.globalAlpha = 1.0;
+
+      // "PIPELINE" label
+      ctx.font = '6px "JetBrains Mono", monospace';
+      ctx.fillStyle = tc.textTertiary;
+      ctx.globalAlpha = 0.5;
+      ctx.textAlign = 'left';
+      ctx.fillText('PIPELINE', wbX + wbPad, pipeY);
+      ctx.globalAlpha = 1.0;
+
+      // Stage badges: label + count
+      var px = wbX + wbPad + 46;
+      var stageSpacing = Math.min(38, (wbW - wbPad * 2 - 50) / pipelineStages.length);
+      for (var si = 0; si < pipelineStages.length; si++) {
+        var stageName = pipelineStages[si];
+        var stageVal = pipeline[stageName] || 0;
+        var stageLabel = pipelineLabels[si];
+        var stageColor = pipelineColors[si];
+        var bx2 = px + si * stageSpacing;
+        if (bx2 + stageSpacing > wbX + wbW - wbPad) break;
+
+        ctx.font = '6px "JetBrains Mono", monospace';
+        ctx.fillStyle = stageVal > 0 ? stageColor : tc.textTertiary;
+        ctx.globalAlpha = stageVal > 0 ? 0.8 : 0.2;
+        ctx.textAlign = 'center';
+        ctx.fillText(stageLabel, bx2, pipeY - 4);
+        ctx.fillText(stageVal, bx2, pipeY + 2);
+        ctx.globalAlpha = 1.0;
+      }
+      ctx.textAlign = 'left';
+    }
+  }
 }
 
 function drawAgentFloor() {
@@ -3506,7 +3560,7 @@ function drawAgentFloor() {
   ctx.globalAlpha = 1.0;
 
   // ── Props (placed at fixed positions relative to canvas) ──
-  _drawProps(ctx, W, H, wallH, tc, f.frame, f.agents, f.stats || {}, f.leaderboard || []);
+  _drawProps(ctx, W, H, wallH, tc, f.frame, f.agents, f.stats || {}, f.leaderboard || [], f.strategyPipeline || {});
 
   var agents = f.agents;
   if (!agents.length) {

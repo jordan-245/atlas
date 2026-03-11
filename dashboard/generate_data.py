@@ -2117,6 +2117,7 @@ def generate_research_data() -> dict:
         "daemon": daemon,
         "leaderboard": leaderboard,
         "pipeline": pipeline,
+        "strategy_pipeline": pipeline,  # alias for dashboard canvas
         "patterns": patterns,
         "hypotheses": hypotheses,
         "activity_feed": activity_feed,
@@ -2166,6 +2167,7 @@ def _build_agents(daemon: dict) -> list:
         ("atlas-autoresearch-1", "/tmp/autoresearch-parent-1-heartbeat.json", "researcher-1", "Nova",   "nova"),
         ("atlas-autoresearch",   "/tmp/autoresearch-parent-heartbeat.json",   "researcher",   "Atlas",  "atlas"),
         ("atlas-research-daemon", "/tmp/research-daemon-heartbeat.json",      "researcher",   "Atlas",  "atlas"),
+        ("atlas-sage",            "/tmp/sage-heartbeat.json",                 "sage",         "Sage",   "sage"),
     ]
 
     found_any = False
