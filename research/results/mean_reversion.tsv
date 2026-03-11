@@ -6,3 +6,7 @@ timestamp	sharpe	trades	max_dd_pct	pf	cagr_pct	params_changed	status	description
 2026-03-10T10:26:47	-1.5209	130	2.86	1.8279	1.92	rsi_period=7	keep	rsi_period: 10→7
 2026-03-10T10:27:41	-2.0685	92	2.64	1.8431	1.46	rsi_oversold=30	discard	rsi_oversold: 35→30
 2026-03-10T10:28:31	-2.3070	63	1.71	2.5332	1.54	rsi_oversold=25	discard	rsi_oversold: 35→25
+2026-03-11T07:25:26	0.1506	273	4.76	1.8151	6.41	zscore_lookback=7	keep	zscore lookback 10→7: even faster
+2026-03-11T07:25:50	0.1142	121	3.70	2.6701	5.82	zscore_lookback=10	discard	zscore_lookback: 20→10
+2026-03-11T07:25:50	0.2350	189	5.51	2.4443	7.71	zscore_lookback=15	discard	zscore_lookback: 20→15
+2026-03-11T07:25:50	0.2324	229	5.34	2.0283	7.66	zscore_lookback=30	discard	zscore_lookback: 20→30
