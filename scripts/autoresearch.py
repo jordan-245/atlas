@@ -43,7 +43,11 @@ def parse_args():
 
 # ─── Configuration ───────────────────────────────────────────────────────────
 
-ALL_STRATEGIES = [
+# Dynamic strategy queue — autoresearch reads active strategies from here each cycle
+QUEUE_PATH = PROJECT / "research" / "strategy_queue.json"
+
+# Fallback strategy list used when QUEUE_PATH is missing or unreadable
+_FALLBACK_STRATEGIES = [
     "mean_reversion",
     "trend_following",
     "opening_gap",
@@ -52,6 +56,25 @@ ALL_STRATEGIES = [
     "short_term_mr",
     "bb_squeeze",
 ]
+
+
+def load_strategies_from_queue() -> list[str]:
+    """Load active strategy names from research/strategy_queue.json.
+
+    Reads the 'active' array and returns names in order.
+    Falls back to _FALLBACK_STRATEGIES if the file is missing, empty, or invalid.
+    """
+    try:
+        data = json.loads(QUEUE_PATH.read_text())
+        active = [s["name"] for s in data.get("active", []) if s.get("name")]
+        if active:
+            return active
+        logger.warning("QUEUE: No active strategies in %s — using fallback", QUEUE_PATH)
+    except FileNotFoundError:
+        logger.warning("QUEUE: %s not found — using fallback strategies", QUEUE_PATH)
+    except Exception as e:
+        logger.error("QUEUE: Failed to load %s: %s — using fallback", QUEUE_PATH, e)
+    return list(_FALLBACK_STRATEGIES)
 
 SWEEP_TOP_N = 50
 SWEEP_WORKERS = max(1, os.cpu_count() - 2)
@@ -421,12 +444,13 @@ def main():
     PARTITION = args.partition
 
     # Configure partition-specific paths
+    _all = load_strategies_from_queue()
     if PARTITION is not None:
         PARTITION_TAG = f"-{PARTITION}"
-        STRATEGIES = [s for i, s in enumerate(ALL_STRATEGIES) if i % 2 == PARTITION]
+        STRATEGIES = [s for i, s in enumerate(_all) if i % 2 == PARTITION]
     else:
         PARTITION_TAG = ""
-        STRATEGIES = list(ALL_STRATEGIES)
+        STRATEGIES = list(_all)
 
     LOG_PATH = Path(f"/tmp/autoresearch{PARTITION_TAG}.log")
     HEARTBEAT_PATH = Path(f"/tmp/autoresearch-parent{PARTITION_TAG}-heartbeat.json")
@@ -468,6 +492,15 @@ def main():
         cycle += 1
         rotate_log()
         logger.info("════════════════════ Cycle %d ════════════════════", cycle)
+
+        # Re-read queue each cycle — picks up strategies added/removed at runtime
+        _all = load_strategies_from_queue()
+        if PARTITION is not None:
+            STRATEGIES = [s for i, s in enumerate(_all) if i % 2 == PARTITION]
+        else:
+            STRATEGIES = list(_all)
+        logger.info("Strategies this cycle: %s", ", ".join(STRATEGIES))
+
         write_heartbeat("cycle_start", "", cycle)
 
         t0 = time.time()
