@@ -119,3 +119,116 @@ timestamp	sharpe	trades	max_dd_pct	pf	cagr_pct	params_changed	status	description
 2026-03-11T23:08:21	-1.6160	42	4.91	1.6329	1.07		keep	baseline
 2026-03-11T23:18:55	-1.4426	65	6.57	1.2631	0.77	rsi_period=7	keep	rsi_period: 14→7
 2026-03-11T23:30:22	0.1869	210	11.44	1.7547	7.02		keep	baseline
+2026-03-11T23:40:57	0.3528	172	7.10	2.5614	9.78	rsi_period=10	keep	rsi_period: 7→10 (best of 4)
+2026-03-11T23:40:57	-1.0022	91	5.25	1.3550	1.37	rsi_period=21	discard	rsi_period: 7→21
+2026-03-11T23:40:57	0.4059	141	3.91	3.2471	10.85	rsi_period=14	discard	rsi_period: 7→14
+2026-03-11T23:40:57	0.2550	221	8.93	1.8995	8.17	rsi_period=5	discard	rsi_period: 7→5
+2026-03-11T23:41:12	-1.4927	50	2.80	1.6994	1.31	rsi_oversold=20	discard	rsi_oversold: 35→20
+2026-03-11T23:41:12	-0.9108	103	4.70	1.3394	1.59	rsi_oversold=25	discard	rsi_oversold: 35→25
+2026-03-11T23:41:12	0.3357	154	5.58	2.8354	9.63	rsi_oversold=30	discard	rsi_oversold: 35→30
+2026-03-11T23:41:12	0.1925	206	11.61	1.7904	7.09	rsi_oversold=40	discard	rsi_oversold: 35→40
+2026-03-11T23:41:26	0.2630	185	8.27	2.1583	8.31	zscore_lookback=15	discard	zscore_lookback: 30→15
+2026-03-11T23:41:26	0.1926	133	4.06	2.5384	7.08	zscore_lookback=10	discard	zscore_lookback: 30→10
+2026-03-11T23:41:26	0.2700	191	13.55	2.1367	8.38	zscore_lookback=20	discard	zscore_lookback: 30→20
+2026-03-11T23:41:41	-0.7700	128	5.78	1.3432	1.93	zscore_entry=-2.5	discard	zscore_entry: -2.0→-2.5
+2026-03-11T23:41:41	-0.5005	250	12.93	1.1936	2.24	zscore_entry=-1.0	discard	zscore_entry: -2.0→-1.0
+2026-03-11T23:41:41	0.3246	221	7.99	2.0771	9.43	zscore_entry=-1.5	discard	zscore_entry: -2.0→-1.5
+2026-03-11T23:41:55	0.2623	168	8.43	2.2775	7.89	atr_period=7	discard	atr_period: 20→7
+2026-03-11T23:41:55	0.3277	170	7.91	2.4975	9.44	atr_period=14	discard	atr_period: 20→14
+2026-03-11T23:41:55	0.3188	171	8.19	2.4103	9.07	atr_period=10	discard	atr_period: 20→10
+2026-03-11T23:42:10	0.2339	159	6.27	2.5656	7.33	atr_stop_mult=2.0	discard	atr_stop_mult: 1.5→2.0
+2026-03-11T23:42:10	-0.0414	137	3.78	2.5859	4.43	atr_stop_mult=3.0	discard	atr_stop_mult: 1.5→3.0
+2026-03-11T23:42:10	0.1322	145	3.38	2.7167	5.87	atr_stop_mult=2.5	discard	atr_stop_mult: 1.5→2.5
+2026-03-12T02:30:24	0.3526	173	7.10	2.5345	9.78		keep	baseline
+2026-03-12T02:41:47	0.4097	142	3.91	3.2250	10.90	rsi_period=14	keep	rsi_period: 10→14 (best of 4)
+2026-03-12T02:41:47	-1.0022	91	5.25	1.3550	1.37	rsi_period=21	discard	rsi_period: 10→21
+2026-03-12T02:41:47	0.2550	221	8.93	1.8995	8.17	rsi_period=5	discard	rsi_period: 10→5
+2026-03-12T02:41:47	0.1764	212	11.44	1.7164	6.85	rsi_period=7	discard	rsi_period: 10→7
+2026-03-12T02:42:05	-1.3507	48	3.29	1.6837	1.38	rsi_oversold=25	discard	rsi_oversold: 35→25
+2026-03-12T02:42:05	-3.3545	13	0.78	3.3910	0.82	rsi_oversold=20	discard	rsi_oversold: 35→20
+2026-03-12T02:42:05	-1.0370	103	6.50	1.2252	1.08	rsi_oversold=30	discard	rsi_oversold: 35→30
+2026-03-12T02:42:05	0.3488	176	8.55	2.4260	9.72	rsi_oversold=40	discard	rsi_oversold: 35→40
+2026-03-12T02:42:19	0.1512	72	3.26	3.7761	6.44	zscore_lookback=10	discard	zscore_lookback: 30→10
+2026-03-12T02:42:19	0.2072	127	4.73	2.4593	7.31	zscore_lookback=15	discard	zscore_lookback: 30→15
+2026-03-12T02:42:19	0.2817	149	6.87	2.4531	8.55	zscore_lookback=20	discard	zscore_lookback: 30→20
+2026-03-12T02:42:36	-0.9594	96	5.59	1.4174	1.76	zscore_entry=-2.5	discard	zscore_entry: -2.0→-2.5
+2026-03-12T02:42:36	0.3261	177	7.62	2.3849	9.45	zscore_entry=-1.5	discard	zscore_entry: -2.0→-1.5
+2026-03-12T02:42:36	0.3121	212	7.19	2.0700	9.23	zscore_entry=-1.0	discard	zscore_entry: -2.0→-1.0
+2026-03-12T02:42:51	0.3882	140	3.57	3.1480	10.01	atr_period=10	discard	atr_period: 20→10
+2026-03-12T02:42:51	0.3936	140	3.56	3.1550	10.38	atr_period=14	discard	atr_period: 20→14
+2026-03-12T02:42:51	0.3510	137	3.52	3.0989	9.27	atr_period=7	discard	atr_period: 20→7
+2026-03-12T02:43:09	0.1356	121	3.33	3.1158	5.91	atr_stop_mult=2.5	discard	atr_stop_mult: 1.5→2.5
+2026-03-12T02:43:09	-0.0076	113	3.24	3.5346	4.69	atr_stop_mult=3.0	discard	atr_stop_mult: 1.5→3.0
+2026-03-12T02:43:09	0.2535	129	3.74	3.1306	7.58	atr_stop_mult=2.0	discard	atr_stop_mult: 1.5→2.0
+2026-03-12T02:58:18	0.2601	139	2.91	3.1545	7.44		keep	baseline
+2026-03-12T02:58:35	0.0949	215	6.50	1.8565	5.53	rsi_period=5	discard	rsi_period: 14→5
+2026-03-12T02:58:35	0.0433	208	8.49	1.7291	4.92	rsi_period=7	discard	rsi_period: 14→7
+2026-03-12T02:58:35	0.2284	168	4.25	2.6651	7.10	rsi_period=10	discard	rsi_period: 14→10
+2026-03-12T02:58:35	-1.7964	83	4.20	1.2170	0.58	rsi_period=21	discard	rsi_period: 14→21
+2026-03-12T02:58:50	-5.4250	11	0.88	3.8418	0.52	rsi_oversold=20	discard	rsi_oversold: 35→20
+2026-03-12T02:58:50	-1.7338	95	4.48	1.1830	0.60	rsi_oversold=30	discard	rsi_oversold: 35→30
+2026-03-12T02:58:50	-2.4686	43	2.28	1.5472	0.72	rsi_oversold=25	discard	rsi_oversold: 35→25
+2026-03-12T02:58:50	0.2076	172	5.75	2.4437	6.87	rsi_oversold=40	discard	rsi_oversold: 35→40
+2026-03-12T02:59:16	0.2601	139	2.91	3.1545	7.44		keep	baseline
+2026-03-12T02:59:34	0.2284	168	4.25	2.6651	7.10	rsi_period=10	discard	rsi_period: 14→10
+2026-03-12T02:59:34	0.0433	208	8.49	1.7291	4.92	rsi_period=7	discard	rsi_period: 14→7
+2026-03-12T02:59:34	-1.7964	83	4.20	1.2170	0.58	rsi_period=21	discard	rsi_period: 14→21
+2026-03-12T02:59:34	0.0949	215	6.50	1.8565	5.53	rsi_period=5	discard	rsi_period: 14→5
+2026-03-12T02:59:52	-1.7338	95	4.48	1.1830	0.60	rsi_oversold=30	discard	rsi_oversold: 35→30
+2026-03-12T02:59:52	-5.4250	11	0.88	3.8418	0.52	rsi_oversold=20	discard	rsi_oversold: 35→20
+2026-03-12T02:59:52	-2.4686	43	2.28	1.5472	0.72	rsi_oversold=25	discard	rsi_oversold: 35→25
+2026-03-12T02:59:52	0.2076	172	5.75	2.4437	6.87	rsi_oversold=40	discard	rsi_oversold: 35→40
+2026-03-12T03:00:24	0.2601	139	2.91	3.1545	7.44		keep	baseline
+2026-03-12T03:00:41	-1.7964	83	4.20	1.2170	0.58	rsi_period=21	discard	rsi_period: 14→21
+2026-03-12T03:00:41	0.0433	208	8.49	1.7291	4.92	rsi_period=7	discard	rsi_period: 14→7
+2026-03-12T03:00:41	0.2284	168	4.25	2.6651	7.10	rsi_period=10	discard	rsi_period: 14→10
+2026-03-12T03:00:41	0.0949	215	6.50	1.8565	5.53	rsi_period=5	discard	rsi_period: 14→5
+2026-03-12T03:00:58	-5.4250	11	0.88	3.8418	0.52	rsi_oversold=20	discard	rsi_oversold: 35→20
+2026-03-12T03:00:58	-2.4686	43	2.28	1.5472	0.72	rsi_oversold=25	discard	rsi_oversold: 35→25
+2026-03-12T03:00:58	-1.7338	95	4.48	1.1830	0.60	rsi_oversold=30	discard	rsi_oversold: 35→30
+2026-03-12T03:00:58	0.2076	172	5.75	2.4437	6.87	rsi_oversold=40	discard	rsi_oversold: 35→40
+2026-03-12T03:01:24	0.2601	139	2.91	3.1545	7.44		keep	baseline
+2026-03-12T03:01:42	-1.7964	83	4.20	1.2170	0.58	rsi_period=21	discard	rsi_period: 14→21
+2026-03-12T03:01:42	0.0949	215	6.50	1.8565	5.53	rsi_period=5	discard	rsi_period: 14→5
+2026-03-12T03:01:42	0.2284	168	4.25	2.6651	7.10	rsi_period=10	discard	rsi_period: 14→10
+2026-03-12T03:01:42	0.0433	208	8.49	1.7291	4.92	rsi_period=7	discard	rsi_period: 14→7
+2026-03-12T03:01:58	-5.4250	11	0.88	3.8418	0.52	rsi_oversold=20	discard	rsi_oversold: 35→20
+2026-03-12T03:01:58	-2.4686	43	2.28	1.5472	0.72	rsi_oversold=25	discard	rsi_oversold: 35→25
+2026-03-12T03:01:58	-1.7338	95	4.48	1.1830	0.60	rsi_oversold=30	discard	rsi_oversold: 35→30
+2026-03-12T03:01:58	0.2076	172	5.75	2.4437	6.87	rsi_oversold=40	discard	rsi_oversold: 35→40
+2026-03-12T03:02:44	0.2601	139	2.91	3.1545	7.44		keep	baseline
+2026-03-12T03:03:02	-1.7964	83	4.20	1.2170	0.58	rsi_period=21	discard	rsi_period: 14→21
+2026-03-12T03:03:02	0.0949	215	6.50	1.8565	5.53	rsi_period=5	discard	rsi_period: 14→5
+2026-03-12T03:03:02	0.2284	168	4.25	2.6651	7.10	rsi_period=10	discard	rsi_period: 14→10
+2026-03-12T03:03:02	0.0433	208	8.49	1.7291	4.92	rsi_period=7	discard	rsi_period: 14→7
+2026-03-12T03:03:19	-2.4686	43	2.28	1.5472	0.72	rsi_oversold=25	discard	rsi_oversold: 35→25
+2026-03-12T03:03:19	-5.4250	11	0.88	3.8418	0.52	rsi_oversold=20	discard	rsi_oversold: 35→20
+2026-03-12T03:03:19	-1.7338	95	4.48	1.1830	0.60	rsi_oversold=30	discard	rsi_oversold: 35→30
+2026-03-12T03:03:19	0.2076	172	5.75	2.4437	6.87	rsi_oversold=40	discard	rsi_oversold: 35→40
+2026-03-12T03:03:42	0.2601	139	2.91	3.1545	7.44		keep	baseline
+2026-03-12T03:03:58	-1.7964	83	4.20	1.2170	0.58	rsi_period=21	discard	rsi_period: 14→21
+2026-03-12T03:03:58	0.0433	208	8.49	1.7291	4.92	rsi_period=7	discard	rsi_period: 14→7
+2026-03-12T03:03:58	0.2284	168	4.25	2.6651	7.10	rsi_period=10	discard	rsi_period: 14→10
+2026-03-12T03:03:58	0.0949	215	6.50	1.8565	5.53	rsi_period=5	discard	rsi_period: 14→5
+2026-03-12T03:04:15	-2.4686	43	2.28	1.5472	0.72	rsi_oversold=25	discard	rsi_oversold: 35→25
+2026-03-12T03:04:15	-5.4250	11	0.88	3.8418	0.52	rsi_oversold=20	discard	rsi_oversold: 35→20
+2026-03-12T03:04:15	-1.7338	95	4.48	1.1830	0.60	rsi_oversold=30	discard	rsi_oversold: 35→30
+2026-03-12T03:04:15	0.2076	172	5.75	2.4437	6.87	rsi_oversold=40	discard	rsi_oversold: 35→40
+2026-03-12T03:06:47	0.2601	139	2.91	3.1545	7.44		keep	baseline
+2026-03-12T03:07:03	-1.7964	83	4.20	1.2170	0.58	rsi_period=21	discard	rsi_period: 14→21
+2026-03-12T03:07:03	0.0949	215	6.50	1.8565	5.53	rsi_period=5	discard	rsi_period: 14→5
+2026-03-12T03:07:03	0.2284	168	4.25	2.6651	7.10	rsi_period=10	discard	rsi_period: 14→10
+2026-03-12T03:07:03	0.0433	208	8.49	1.7291	4.92	rsi_period=7	discard	rsi_period: 14→7
+2026-03-12T03:07:20	-2.4686	43	2.28	1.5472	0.72	rsi_oversold=25	discard	rsi_oversold: 35→25
+2026-03-12T03:07:20	-5.4250	11	0.88	3.8418	0.52	rsi_oversold=20	discard	rsi_oversold: 35→20
+2026-03-12T03:07:20	-1.7338	95	4.48	1.1830	0.60	rsi_oversold=30	discard	rsi_oversold: 35→30
+2026-03-12T03:07:20	0.2076	172	5.75	2.4437	6.87	rsi_oversold=40	discard	rsi_oversold: 35→40
+2026-03-12T03:11:00	0.2601	139	2.91	3.1545	7.44		keep	baseline
+2026-03-12T03:11:19	0.0949	215	6.50	1.8565	5.53	rsi_period=5	discard	rsi_period: 14→5
+2026-03-12T03:11:19	0.2284	168	4.25	2.6651	7.10	rsi_period=10	discard	rsi_period: 14→10
+2026-03-12T03:11:19	-1.7964	83	4.20	1.2170	0.58	rsi_period=21	discard	rsi_period: 14→21
+2026-03-12T03:11:19	0.0433	208	8.49	1.7291	4.92	rsi_period=7	discard	rsi_period: 14→7
+2026-03-12T03:11:35	-5.4250	11	0.88	3.8418	0.52	rsi_oversold=20	discard	rsi_oversold: 35→20
+2026-03-12T03:11:35	-2.4686	43	2.28	1.5472	0.72	rsi_oversold=25	discard	rsi_oversold: 35→25
+2026-03-12T03:11:35	-1.7338	95	4.48	1.1830	0.60	rsi_oversold=30	discard	rsi_oversold: 35→30
+2026-03-12T03:11:35	0.2076	172	5.75	2.4437	6.87	rsi_oversold=40	discard	rsi_oversold: 35→40

@@ -55,6 +55,16 @@ from research.loop import (
 
 logger = logging.getLogger("autoresearch.sweep")
 
+# Brain — structured research memory (real-time updates)
+from research.brain.writer import (
+    update_strategy,
+    record_param_result,
+    record_experiment,
+    SweepSession,
+    update_state,
+    rebuild_all_indexes,
+)
+
 # ─── Parameter Grids ─────────────────────────────────────────────────────────
 
 # Each strategy has a grid of parameters to sweep.
@@ -825,6 +835,31 @@ def _sweep_strategy_parallel(
                     len(candidates),
                 )
 
+                # Brain: record kept result
+                try:
+                    _delta = best["verdict"]["delta_sharpe"]
+                    _new_s = best["metrics"]["sharpe"]
+                    update_strategy(
+                        session.strategy, best["metrics"], merged,
+                        description=f"{param_name}={best_value}",
+                    )
+                    record_param_result(
+                        session.strategy, param_name, best_value,
+                        current_value, True, _delta, _new_s,
+                    )
+                    record_experiment(
+                        f"ar-{time.strftime('%Y%m%d_%H%M%S')}",
+                        session.strategy, param_name, best_value,
+                        current_value, True, best["metrics"], _delta,
+                    )
+                    if _brain_session:
+                        _brain_session.add_result(
+                            session.strategy, param_name, best_value,
+                            True, _delta, _new_s,
+                        )
+                except Exception as _be:
+                    logger.warning("Brain write failed: %s", _be)
+
                 # Log discards
                 for r in results:
                     if r is not best:
@@ -834,6 +869,16 @@ def _sweep_strategy_parallel(
                             "discard",
                             f"{param_name}: {current_value}→{r['value']}",
                         )
+                        # Brain: record discarded params
+                        try:
+                            record_param_result(
+                                session.strategy, param_name, r["value"],
+                                current_value, False,
+                                r["verdict"]["delta_sharpe"],
+                                r["metrics"].get("sharpe", 0),
+                            )
+                        except Exception:
+                            pass
             else:
                 # All failed — log discards
                 consecutive_param_fails += 1
@@ -844,6 +889,16 @@ def _sweep_strategy_parallel(
                         "discard",
                         f"{param_name}: {current_value}→{r['value']}",
                     )
+                    # Brain: record discarded params
+                    try:
+                        record_param_result(
+                            session.strategy, param_name, r["value"],
+                            current_value, False,
+                            r["verdict"]["delta_sharpe"],
+                            r["metrics"].get("sharpe", 0),
+                        )
+                    except Exception:
+                        pass
                 logger.info(
                     "❌ No improvement for %s (%d values tried)",
                     param_name, len(results),
@@ -861,6 +916,10 @@ def _sweep_strategy_parallel(
         "experiments_kept": total_kept,
         "improvements": improvements,
     }
+
+
+# Module-level brain session — set by run_sweep, read by sweep_strategy
+_brain_session: Optional[SweepSession] = None
 
 
 def run_sweep(
@@ -888,11 +947,15 @@ def run_sweep(
         workers:               Parallel backtest workers (1 = sequential).
         max_runtime:           Max seconds to run (0 = unlimited).
     """
+    global _brain_session
     strategy_list = strategies or STRATEGY_ORDER
     session_start = time.time()
     total_experiments = 0
     total_kept = 0
     cycle_num = 0
+
+    # Create brain sweep session
+    _brain_session = SweepSession()
     deadline = (session_start + max_runtime) if max_runtime > 0 else 0
 
     # Clean up stale claims from crashed previous sessions before starting.
@@ -1002,6 +1065,22 @@ def run_sweep(
 
         # Between cycles: log leaderboard
         logger.info(leaderboard(market))
+
+    # Flush brain session + rebuild indexes
+    try:
+        runtime = time.time() - session_start
+        if _brain_session:
+            _brain_session.flush(runtime_s=runtime)
+        update_state(
+            last_sweep_session=_brain_session.session_id if _brain_session else "?",
+            last_sweep_runtime_s=round(runtime, 1),
+            total_experiments=total_experiments,
+            total_kept=total_kept,
+        )
+        rebuild_all_indexes()
+        logger.info("Brain indexes rebuilt.")
+    except Exception as e:
+        logger.warning("Brain flush failed: %s", e)
 
     # Final heartbeat — no stop notification here (parent handles it)
     _write_heartbeat(

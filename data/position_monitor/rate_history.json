@@ -11,10 +11,6 @@
   ],
   "wti": [
     {
-      "t": "2026-03-08T12:00:06",
-      "v": 90.9
-    },
-    {
       "t": "2026-03-08T16:00:06",
       "v": 90.9
     },
@@ -81,13 +77,13 @@
     {
       "t": "2026-03-12T08:00:06",
       "v": 88.41
+    },
+    {
+      "t": "2026-03-12T12:00:05",
+      "v": 93.55
     }
   ],
   "brent": [
-    {
-      "t": "2026-03-08T12:00:06",
-      "v": 92.69
-    },
     {
       "t": "2026-03-08T16:00:06",
       "v": 92.69
@@ -155,13 +151,13 @@
     {
       "t": "2026-03-12T08:00:06",
       "v": 90.26
+    },
+    {
+      "t": "2026-03-12T12:00:05",
+      "v": 94.31
     }
   ],
   "gold": [
-    {
-      "t": "2026-03-08T12:00:06",
-      "v": 5146.1
-    },
     {
       "t": "2026-03-08T16:00:06",
       "v": 5158.7
@@ -229,13 +225,13 @@
     {
       "t": "2026-03-12T08:00:06",
       "v": 5183.9
+    },
+    {
+      "t": "2026-03-12T12:00:05",
+      "v": 5177.2
     }
   ],
   "vix": [
-    {
-      "t": "2026-03-08T12:00:06",
-      "v": 29.49
-    },
     {
       "t": "2026-03-08T16:00:06",
       "v": 29.49
@@ -303,14 +299,18 @@
     {
       "t": "2026-03-12T08:00:06",
       "v": 24.23
+    },
+    {
+      "t": "2026-03-12T12:00:05",
+      "v": 24.23
     }
   ],
   "last_escalation_event": {
-    "timestamp": "2026-03-12T04:06:50",
-    "description": "Three ships in Strait of Hormuz hit by unknown projectiles \u2014 active multi-vessel targeting continues, Hormuz kinetic campaign ongoing",
+    "timestamp": "2026-03-12T12:05:22",
+    "description": "Israel launches new strikes on Hezbollah targets in Lebanon \u2014 Hezbollah/Lebanon Mediterranean front active, multi-zone conflict confirmed",
     "source": "BBC"
   },
-  "hours_since_escalation": 3.9,
+  "hours_since_escalation": 0.0,
   "escalation_gap_status": "active",
   "vlcc_3cycle_trend": "rising"
 }

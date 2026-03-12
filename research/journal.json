@@ -175,7 +175,15 @@
         }
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.7182,
+      "cagr_pct": 9.3208,
+      "max_drawdown_pct": -8.1556,
+      "total_trades": -249,
+      "profit_factor": 0.213,
+      "win_rate_pct": 4.57,
+      "sortino": 1.0367
+    },
     "learnings": [
       "Optimization improved Sharpe from -0.45 to +0.27 \u2014 significant improvement",
       "Post-optimization: 697 trades, 63% WR, PF 1.17, CAGR 7.6%",
@@ -349,7 +357,15 @@
         }
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 1.2981,
+      "cagr_pct": 11.8928,
+      "max_drawdown_pct": -10.8003,
+      "total_trades": 26,
+      "profit_factor": 0.2945,
+      "win_rate_pct": 3.25,
+      "sortino": 1.6667
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 0,
@@ -482,7 +498,14 @@
       "win_rate_pct": 45.0,
       "profit_factor": 0.74
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -0.0028,
+      "cagr_pct": -0.003,
+      "max_drawdown_pct": -27.3524,
+      "profit_factor": -0.0019,
+      "win_rate_pct": -0.03,
+      "sortino": 2.11
+    },
     "learnings": [
       "BB Squeeze is viable: 322 trades, 45% WR, PF 0.74 with default params",
       "Clearly unprofitable untuned (Sharpe -1.68, CAGR -12.3%) but signal generates enough trades",
@@ -769,7 +792,15 @@
         "enabled": false
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -0.0158,
+      "cagr_pct": 10.0547,
+      "max_drawdown_pct": 6.5642,
+      "total_trades": 443,
+      "profit_factor": 1.3848,
+      "win_rate_pct": 57.56,
+      "sortino": 0.8508
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 0,
@@ -869,7 +900,15 @@
       "variant_name": "SMA200 on",
       "variant_value": true
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.2648,
+      "cagr_pct": 11.6579,
+      "max_drawdown_pct": 5.3324,
+      "total_trades": 270,
+      "profit_factor": 1.6613,
+      "win_rate_pct": 58.89,
+      "sortino": 1.2013
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 0,
@@ -927,7 +966,14 @@
       "win_rate_pct": 44.2,
       "profit_factor": 1.24
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.0002,
+      "cagr_pct": 0.0007,
+      "max_drawdown_pct": -11.6027,
+      "profit_factor": -0.0038,
+      "win_rate_pct": -0.02,
+      "sortino": 0.1444
+    },
     "learnings": [
       "Sector rotation is now functional \u2014 generates 251 trades vs 0 previously",
       "PF 1.24 suggests alpha signal exists but untuned parameters drag Sharpe negative",
@@ -1161,7 +1207,15 @@
         }
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.5364,
+      "cagr_pct": 6.364,
+      "max_drawdown_pct": 1.0774,
+      "total_trades": -14,
+      "profit_factor": 0.2319,
+      "win_rate_pct": 0.08,
+      "sortino": 0.6986
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 0,
@@ -1407,7 +1461,15 @@
       "variant_name": "baseline (0.5x \u2014 current)",
       "variant_value": 0.5
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -1.8721,
+      "cagr_pct": 1.0161,
+      "max_drawdown_pct": 4.539,
+      "total_trades": 100,
+      "profit_factor": 1.1416,
+      "win_rate_pct": 52.0,
+      "sortino": -1.6324
+    },
     "learnings": [
       "INFRASTRUCTURE FAILURE: All 3 volume variants produced near-identical results (116/117/111 trades)",
       "filter_test sets s_cfg['volume_min_ratio'] but strategies read from s_cfg['volume']['min_ratio'] (nested path)",
@@ -1536,7 +1598,15 @@
       },
       "param_value": 10
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -2.362,
+      "cagr_pct": -6.0749,
+      "max_drawdown_pct": -2.7795,
+      "total_trades": -180,
+      "profit_factor": -0.2864,
+      "win_rate_pct": 0.43,
+      "sortino": -3.3243
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 0,
@@ -1679,7 +1749,15 @@
       "variant_name": "baseline (no TOM filter)",
       "variant_value": false
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -1.8721,
+      "cagr_pct": 1.0161,
+      "max_drawdown_pct": 4.539,
+      "total_trades": 100,
+      "profit_factor": 1.1416,
+      "win_rate_pct": 52.0,
+      "sortino": -1.6324
+    },
     "learnings": [
       "INFRASTRUCTURE FAILURE: All 3 TOM variants produced near-identical results (116/77/115 trades)",
       "filter_test sets s_cfg['turn_of_month'] but no strategy reads this parameter",
@@ -1775,7 +1853,14 @@
       "max_drawdown_pct": 6.86,
       "edge_p_value": 0.27
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -0.0043,
+      "cagr_pct": -0.0029,
+      "max_drawdown_pct": 0.0002,
+      "total_trades": -249,
+      "profit_factor": -0.0037,
+      "sortino": 3.1036
+    },
     "learnings": [
       "ConnorsRSI2 generates 249 trades with 57% WR \u2014 signal quality decent",
       "But PF=0.78: losses larger than wins. ATR(3.0x) stop gives wide risk while SMA(5) exit captures small gains",
@@ -1938,7 +2023,15 @@
       "variant_name": "TOM boost (confidence +0.05 in window)",
       "variant_value": "boost"
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -1.2479,
+      "cagr_pct": 2.8708,
+      "max_drawdown_pct": 2.5751,
+      "total_trades": 115,
+      "profit_factor": 1.4003,
+      "win_rate_pct": 52.17,
+      "sortino": -0.9537
+    },
     "learnings": [
       "INFRASTRUCTURE FAILURE: All 3 TOM variants produced near-identical results (116/77/115 trades)",
       "filter_test sets s_cfg['turn_of_month'] but no strategy reads this parameter",
@@ -1994,7 +2087,15 @@
       "variant_name": "1.0x avg",
       "variant_value": 1.0
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -1.6481,
+      "cagr_pct": 1.3606,
+      "max_drawdown_pct": 4.5115,
+      "total_trades": 117,
+      "profit_factor": 1.1572,
+      "win_rate_pct": 50.43,
+      "sortino": -1.5647
+    },
     "learnings": [
       "INFRASTRUCTURE FAILURE: All 3 volume variants produced near-identical results (116/117/111 trades)",
       "filter_test sets s_cfg['volume_min_ratio'] but strategies read from s_cfg['volume']['min_ratio'] (nested path)",
@@ -2059,7 +2160,15 @@
         "total_trades": 0
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -1.6155,
+      "cagr_pct": -6.307,
+      "max_drawdown_pct": -0.8563,
+      "total_trades": -120,
+      "profit_factor": -0.5229,
+      "win_rate_pct": -7.4,
+      "sortino": -2.335
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 0,
@@ -2124,7 +2233,15 @@
         "total_trades": 0
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -1.6155,
+      "cagr_pct": -6.307,
+      "max_drawdown_pct": -0.8563,
+      "total_trades": -120,
+      "profit_factor": -0.5229,
+      "win_rate_pct": -7.4,
+      "sortino": -2.335
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 0,
@@ -2226,7 +2343,15 @@
         "total_trades": 0
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -1.6155,
+      "cagr_pct": -6.307,
+      "max_drawdown_pct": -0.8563,
+      "total_trades": -120,
+      "profit_factor": -0.5229,
+      "win_rate_pct": -7.4,
+      "sortino": -2.335
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 0,
@@ -2285,7 +2410,15 @@
         "total_trades": -2
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -1.2347,
+      "cagr_pct": -5.1012,
+      "max_drawdown_pct": -1.2659,
+      "total_trades": -122,
+      "profit_factor": -0.3866,
+      "win_rate_pct": -6.47,
+      "sortino": -1.7837
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 0,
@@ -2349,7 +2482,15 @@
         "total_trades": -1
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.229,
+      "cagr_pct": 20.8118,
+      "max_drawdown_pct": 0.3399,
+      "total_trades": -135,
+      "profit_factor": 2.4295,
+      "win_rate_pct": -8.57,
+      "sortino": 10.9611
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 0,
@@ -2414,7 +2555,15 @@
         "total_trades": 0
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.2265,
+      "cagr_pct": 20.7212,
+      "max_drawdown_pct": -0.0229,
+      "total_trades": -134,
+      "profit_factor": 2.0237,
+      "win_rate_pct": -10.07,
+      "sortino": 9.736
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 0,
@@ -2457,7 +2606,15 @@
         }
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.1288,
+      "cagr_pct": 0.7197,
+      "max_drawdown_pct": -2.2844,
+      "total_trades": -3,
+      "profit_factor": 0.0545,
+      "win_rate_pct": 1.19,
+      "sortino": 0.1139
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 186.6,
@@ -2521,7 +2678,15 @@
         "total_trades": -1
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.229,
+      "cagr_pct": 20.8118,
+      "max_drawdown_pct": 0.3399,
+      "total_trades": -135,
+      "profit_factor": 2.4295,
+      "win_rate_pct": -8.57,
+      "sortino": 10.9611
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 0,
@@ -2580,7 +2745,15 @@
         "total_trades": 0
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.2265,
+      "cagr_pct": 20.7212,
+      "max_drawdown_pct": -0.0229,
+      "total_trades": -134,
+      "profit_factor": 2.0237,
+      "win_rate_pct": -10.07,
+      "sortino": 9.736
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 0,
@@ -2644,7 +2817,15 @@
         "total_trades": 8
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.2613,
+      "cagr_pct": 23.779,
+      "max_drawdown_pct": -0.2456,
+      "total_trades": -126,
+      "profit_factor": 2.9273,
+      "win_rate_pct": -5.44,
+      "sortino": 12.8754
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 0,
@@ -2708,7 +2889,15 @@
         "total_trades": 8
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.2613,
+      "cagr_pct": 23.779,
+      "max_drawdown_pct": -0.2456,
+      "total_trades": -126,
+      "profit_factor": 2.9273,
+      "win_rate_pct": -5.44,
+      "sortino": 12.8754
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 0,
@@ -2727,7 +2916,15 @@
       "sharpe_improvement": 0.0025,
       "trades": 100
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.229,
+      "cagr_pct": -7.0856,
+      "max_drawdown_pct": -4.0291,
+      "total_trades": -235,
+      "profit_factor": -1.618,
+      "win_rate_pct": -59.57,
+      "sortino": -0.5575
+    },
     "learnings": [
       "IBS filter is redundant with RSI+vol in combined mode \u2014 adds no alpha",
       "IBS < 0.15 crashes performance (kills 10% of trades, all good ones)",
@@ -2750,7 +2947,15 @@
       "sharpe_improvement": 0.0,
       "trades": 101
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.2265,
+      "cagr_pct": -7.0856,
+      "max_drawdown_pct": -4.0291,
+      "total_trades": -235,
+      "profit_factor": -1.618,
+      "win_rate_pct": -59.57,
+      "sortino": -0.5575
+    },
     "learnings": [
       "Volume min_ratio filter has zero effect on MR \u2014 never triggers",
       "MR signals naturally occur on high-vol days (oversold conditions correlate with volume spikes)",
@@ -2773,7 +2978,15 @@
       "profit_factor": 0.8265,
       "trades": 0
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.1288,
+      "cagr_pct": 2.1846,
+      "max_drawdown_pct": -6.8513,
+      "total_trades": -141,
+      "profit_factor": 0.0545,
+      "win_rate_pct": -54.61,
+      "sortino": 2.4316
+    },
     "learnings": [
       "Triple RSI (RSI + streak + acceleration) fails on SP500 solo \u2014 too restrictive",
       "Sharpe -2.12 is beyond salvage via optimization",
@@ -2796,7 +3009,15 @@
       "sharpe_improvement": 0.0,
       "trades": 101
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.2265,
+      "cagr_pct": -7.0856,
+      "max_drawdown_pct": -4.0291,
+      "total_trades": -235,
+      "profit_factor": -1.618,
+      "win_rate_pct": -59.57,
+      "sortino": -0.5575
+    },
     "learnings": [
       "RSI(14) is clearly optimal for MR on SP500 \u2014 confirmed empirically",
       "Shorter RSI periods increase trade count but destroy quality (more false positives)",
@@ -2822,7 +3043,15 @@
       "max_dd_pct": 3.78,
       "trades": 109
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.2613,
+      "cagr_pct": 23.7744,
+      "max_drawdown_pct": -4.0291,
+      "total_trades": -235,
+      "profit_factor": -1.618,
+      "win_rate_pct": -59.57,
+      "sortino": -0.5575
+    },
     "learnings": [
       "max_hold=5 beats max_hold=10: Sharpe +0.035, CAGR +3.1pp, PF 4.55 vs 3.64",
       "MR trades resolve quickly \u2014 5-day hold captures most reversion, longer holds add noise",
@@ -2941,7 +3170,15 @@
         }
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.2324,
+      "cagr_pct": 1.0761,
+      "max_drawdown_pct": -1.7519,
+      "total_trades": 10,
+      "profit_factor": 0.0527,
+      "win_rate_pct": 1.49,
+      "sortino": 0.2479
+    },
     "learnings": [
       "Relaxing IBS from 0.3 to 0.5 slightly improved Sharpe (-2.08\u2192-1.85) and PF (0.85\u21920.90)",
       "Trade count stable at 280 (vs 270) \u2014 relaxation adds few extra signals",
@@ -2990,7 +3227,15 @@
       },
       "param_value": 7
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -2.4806,
+      "cagr_pct": -6.7199,
+      "max_drawdown_pct": -2.6417,
+      "total_trades": -167,
+      "profit_factor": -0.5847,
+      "win_rate_pct": -8.1,
+      "sortino": -3.256
+    },
     "learnings": [
       "LBR-style strength exit (sell when close > yesterday's high) applied to MR: Sharpe -2.10, 68 trades",
       "Dramatic trade count reduction (101\u219268) \u2014 exit triggers too early, cutting profitable trades short",
@@ -3040,7 +3285,15 @@
       },
       "param_value": 3.5
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 2.7904,
+      "cagr_pct": 151.1995,
+      "max_drawdown_pct": -3.3275,
+      "total_trades": -21,
+      "profit_factor": 3.5387,
+      "win_rate_pct": 2.89,
+      "sortino": 83.8992
+    },
     "learnings": [
       "Band multiplier sweep (1.5x-4.0x): band_mult=3.5 produces anomalously high PF (4.38) with Sharpe 0.71",
       "Likely overfitting: $19K PnL on 249 trades smells like a few lucky outsized wins",
@@ -3091,7 +3344,15 @@
       },
       "param_value": 0.4
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.8749,
+      "cagr_pct": 3.2027,
+      "max_drawdown_pct": -2.264,
+      "total_trades": 12,
+      "profit_factor": 0.2195,
+      "win_rate_pct": 4.26,
+      "sortino": 1.1104
+    },
     "learnings": [
       "IBS threshold sweep (0.1-0.6): no value produces significant edge (all p>0.25)",
       "Best Sharpe at IBS=0.4 (-1.21) with highest WR (62.4%) but PF only 1.07",
@@ -3149,7 +3410,9 @@
       "wr": 0.5565,
       "total_pnl": 3397.9
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.1453
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 0,
@@ -3199,7 +3462,15 @@
       "variant_name": "pools_off",
       "variant_value": false
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.015,
+      "cagr_pct": 29.5155,
+      "max_drawdown_pct": 3.8115,
+      "total_trades": 101,
+      "profit_factor": 3.7734,
+      "win_rate_pct": 51.49,
+      "sortino": 11.3567
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 0,
@@ -3258,7 +3529,15 @@
         "total_trades": -4
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.2376,
+      "cagr_pct": 22.4241,
+      "max_drawdown_pct": -0.8658,
+      "total_trades": -138,
+      "profit_factor": 2.7421,
+      "win_rate_pct": -8.02,
+      "sortino": 12.9799
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 0,
@@ -3317,7 +3596,15 @@
         "total_trades": -2
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 1.7111,
+      "cagr_pct": 28.6476,
+      "max_drawdown_pct": -1.2466,
+      "total_trades": 22,
+      "profit_factor": 2.5156,
+      "win_rate_pct": -0.72,
+      "sortino": 13.2228
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 0,
@@ -3376,7 +3663,15 @@
         "total_trades": 0
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 6.7676,
+      "cagr_pct": 28.4889,
+      "max_drawdown_pct": 3.5979,
+      "total_trades": 92,
+      "profit_factor": -24.6061,
+      "win_rate_pct": -37.4,
+      "sortino": 35.6738
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 0,
@@ -3564,7 +3859,15 @@
         }
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -1.723,
+      "cagr_pct": 1.9657,
+      "max_drawdown_pct": -8.1565,
+      "total_trades": -271,
+      "profit_factor": -0.0085,
+      "win_rate_pct": -2.06,
+      "sortino": -1.9676
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 128.7,
@@ -3608,7 +3911,15 @@
         }
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.6283,
+      "cagr_pct": 13.0856,
+      "max_drawdown_pct": -23.9285,
+      "total_trades": -248,
+      "profit_factor": 0.4614,
+      "win_rate_pct": 11.73,
+      "sortino": 0.8187
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 299.5,
@@ -3652,7 +3963,15 @@
         }
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -1.0702,
+      "cagr_pct": -0.3621,
+      "max_drawdown_pct": -10.3926,
+      "total_trades": -673,
+      "profit_factor": -0.0806,
+      "win_rate_pct": -3.25,
+      "sortino": -1.6258
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 311.6,
@@ -3740,7 +4059,15 @@
         }
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -1.723,
+      "cagr_pct": 1.9657,
+      "max_drawdown_pct": -8.1565,
+      "total_trades": -271,
+      "profit_factor": -0.0085,
+      "win_rate_pct": -2.06,
+      "sortino": -1.9676
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 134.9,
@@ -3784,7 +4111,15 @@
         }
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.8384,
+      "cagr_pct": 41.384,
+      "max_drawdown_pct": -8.8032,
+      "total_trades": -155,
+      "profit_factor": 1.8093,
+      "win_rate_pct": -0.66,
+      "sortino": 28.4115
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 673.9,
@@ -3828,7 +4163,15 @@
         }
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -0.755,
+      "cagr_pct": 3.6538,
+      "max_drawdown_pct": -8.5731,
+      "total_trades": -134,
+      "profit_factor": 0.2921,
+      "win_rate_pct": 4.34,
+      "sortino": -1.1241
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 280.7,
@@ -3872,7 +4215,15 @@
         }
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 2.0753,
+      "cagr_pct": 53.9147,
+      "max_drawdown_pct": -17.3573,
+      "total_trades": -98,
+      "profit_factor": 4.2086,
+      "win_rate_pct": 2.29,
+      "sortino": 29.7788
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 654.7,
@@ -3916,7 +4267,15 @@
         }
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.8384,
+      "cagr_pct": 41.384,
+      "max_drawdown_pct": -8.8032,
+      "total_trades": -155,
+      "profit_factor": 1.8093,
+      "win_rate_pct": -0.66,
+      "sortino": 28.4115
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 691.0,
@@ -3960,7 +4319,15 @@
         }
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -0.755,
+      "cagr_pct": 3.6538,
+      "max_drawdown_pct": -8.5731,
+      "total_trades": -134,
+      "profit_factor": 0.2921,
+      "win_rate_pct": 4.34,
+      "sortino": -1.1241
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 280.8,
@@ -4004,7 +4371,15 @@
         }
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.2883,
+      "cagr_pct": 1.4767,
+      "max_drawdown_pct": 1.9728,
+      "total_trades": 424,
+      "profit_factor": 0.1331,
+      "win_rate_pct": 1.07,
+      "sortino": -0.1357
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 457.8,
@@ -4048,7 +4423,15 @@
         }
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 2.0753,
+      "cagr_pct": 53.9147,
+      "max_drawdown_pct": -17.3573,
+      "total_trades": -98,
+      "profit_factor": 4.2086,
+      "win_rate_pct": 2.29,
+      "sortino": 29.7788
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 643.8,
@@ -4092,7 +4475,15 @@
         }
       }
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.8384,
+      "cagr_pct": 41.384,
+      "max_drawdown_pct": -8.8032,
+      "total_trades": -155,
+      "profit_factor": 1.8093,
+      "win_rate_pct": -0.66,
+      "sortino": 28.4115
+    },
     "learnings": [],
     "promoted": false,
     "runtime_s": 670.8,
@@ -4113,7 +4504,15 @@
       "total_trades": 332,
       "profit_factor": 1.5555
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -0.4403,
+      "cagr_pct": -3.0204,
+      "max_drawdown_pct": 2.8693,
+      "total_trades": 97,
+      "profit_factor": -0.0625,
+      "win_rate_pct": -59.57,
+      "sortino": -0.5575
+    },
     "learnings": [
       "autoresearch: keep \u2014 Disable SMA200 filter \u2014 trade in all conditions"
     ],
@@ -4136,7 +4535,15 @@
       "total_trades": 164,
       "profit_factor": 2.1074
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -0.4686,
+      "cagr_pct": -3.1615,
+      "max_drawdown_pct": -0.8291,
+      "total_trades": -71,
+      "profit_factor": 0.4894,
+      "win_rate_pct": -59.57,
+      "sortino": -0.5575
+    },
     "learnings": [
       "autoresearch: keep \u2014 zscore_lookback: 20\u219210"
     ],
@@ -4159,7 +4566,15 @@
       "total_trades": 340,
       "profit_factor": 1.5177
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -0.4569,
+      "cagr_pct": -3.1079,
+      "max_drawdown_pct": 1.9409,
+      "total_trades": 105,
+      "profit_factor": -0.1003,
+      "win_rate_pct": -59.57,
+      "sortino": -0.5575
+    },
     "learnings": [
       "autoresearch: keep \u2014 zscore_entry: -2.0\u2192-1.0"
     ],
@@ -4182,7 +4597,15 @@
       "total_trades": 297,
       "profit_factor": 1.2285
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.5222,
+      "cagr_pct": 1.367,
+      "max_drawdown_pct": 6.4161,
+      "total_trades": 220,
+      "profit_factor": 0.0855,
+      "win_rate_pct": -53.25,
+      "sortino": 1.417
+    },
     "learnings": [
       "autoresearch: keep \u2014 atr_stop=1.8 (between 1.5 and 2.0)"
     ],
@@ -4205,7 +4628,15 @@
       "total_trades": 388,
       "profit_factor": 1.3335
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -0.3019,
+      "cagr_pct": -1.8092,
+      "max_drawdown_pct": 8.0754,
+      "total_trades": 153,
+      "profit_factor": -0.2845,
+      "win_rate_pct": -59.57,
+      "sortino": -0.5575
+    },
     "learnings": [
       "autoresearch: keep \u2014 atr_stop_mult: 2.5\u21921.5"
     ],
@@ -4228,7 +4659,15 @@
       "total_trades": 360,
       "profit_factor": 1.4439
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -0.2139,
+      "cagr_pct": -0.4956,
+      "max_drawdown_pct": 7.7089,
+      "total_trades": 125,
+      "profit_factor": -0.1741,
+      "win_rate_pct": -59.57,
+      "sortino": -0.5575
+    },
     "learnings": [
       "autoresearch: keep \u2014 max_hold_days: 10\u219220"
     ],
@@ -4251,7 +4690,15 @@
       "total_trades": 294,
       "profit_factor": 1.2698
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.5508,
+      "cagr_pct": 1.6413,
+      "max_drawdown_pct": 3.976,
+      "total_trades": 217,
+      "profit_factor": 0.1268,
+      "win_rate_pct": -53.25,
+      "sortino": 1.417
+    },
     "learnings": [
       "autoresearch: keep \u2014 atr_stop=1.9 (just below 2.0)"
     ],
@@ -4274,7 +4721,15 @@
       "total_trades": 292,
       "profit_factor": 5.5283
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 1.6598,
+      "cagr_pct": 38.0228,
+      "max_drawdown_pct": 6.0336,
+      "total_trades": 215,
+      "profit_factor": 4.3853,
+      "win_rate_pct": -53.25,
+      "sortino": 1.417
+    },
     "learnings": [
       "autoresearch: keep \u2014 fast_ma: 25\u219250"
     ],
@@ -4297,7 +4752,15 @@
       "total_trades": 352,
       "profit_factor": 1.6403
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -0.1601,
+      "cagr_pct": 0.4796,
+      "max_drawdown_pct": 4.9879,
+      "total_trades": 117,
+      "profit_factor": 0.0223,
+      "win_rate_pct": -59.57,
+      "sortino": -0.5575
+    },
     "learnings": [
       "autoresearch: keep \u2014 Asymmetric risk: 1.5x stop, 3x target"
     ],
@@ -4320,7 +4783,15 @@
       "total_trades": 293,
       "profit_factor": 5.5804
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 1.6706,
+      "cagr_pct": 38.3585,
+      "max_drawdown_pct": 6.0652,
+      "total_trades": 216,
+      "profit_factor": 4.4374,
+      "win_rate_pct": -53.25,
+      "sortino": 1.417
+    },
     "learnings": [
       "autoresearch: keep \u2014 atr_period: 14\u219220"
     ],
@@ -4343,7 +4814,15 @@
       "total_trades": 290,
       "profit_factor": 1.406
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.8445,
+      "cagr_pct": 2.8534,
+      "max_drawdown_pct": 5.6276,
+      "total_trades": 213,
+      "profit_factor": 0.263,
+      "win_rate_pct": -53.25,
+      "sortino": 1.417
+    },
     "learnings": [
       "autoresearch: keep \u2014 trail=2.8 (between 2.5 and 3.0)"
     ],
@@ -4366,7 +4845,15 @@
       "total_trades": 332,
       "profit_factor": 1.8107
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -0.1069,
+      "cagr_pct": 1.394,
+      "max_drawdown_pct": 3.0831,
+      "total_trades": 97,
+      "profit_factor": 0.1927,
+      "win_rate_pct": -59.57,
+      "sortino": -0.5575
+    },
     "learnings": [
       "autoresearch: keep \u2014 RSI period 8 \u2014 between grid points"
     ],
@@ -4389,7 +4876,15 @@
       "total_trades": 273,
       "profit_factor": 1.8151
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -0.2305,
+      "cagr_pct": -0.6734,
+      "max_drawdown_pct": 0.7284,
+      "total_trades": 38,
+      "profit_factor": 0.1971,
+      "win_rate_pct": -59.57,
+      "sortino": -0.5575
+    },
     "learnings": [
       "autoresearch: keep \u2014 zscore lookback 10\u21927: even faster"
     ],
@@ -4412,7 +4907,15 @@
       "total_trades": 293,
       "profit_factor": 4.402
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 1.5468,
+      "cagr_pct": 26.9854,
+      "max_drawdown_pct": 6.9417,
+      "total_trades": 216,
+      "profit_factor": 3.259,
+      "win_rate_pct": -53.25,
+      "sortino": 1.417
+    },
     "learnings": [
       "autoresearch: keep \u2014 fast_ma: 25\u219250"
     ],
@@ -4435,7 +4938,15 @@
       "total_trades": 237,
       "profit_factor": 4.3526
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 1.562,
+      "cagr_pct": 20.2154,
+      "max_drawdown_pct": 4.1406,
+      "total_trades": 160,
+      "profit_factor": 3.2096,
+      "win_rate_pct": -53.25,
+      "sortino": 1.417
+    },
     "learnings": [
       "autoresearch: keep \u2014 slow_ma: 175\u219220"
     ],
@@ -4458,7 +4969,15 @@
       "total_trades": 219,
       "profit_factor": 5.0686
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 1.5802,
+      "cagr_pct": 21.3362,
+      "max_drawdown_pct": 2.7856,
+      "total_trades": 142,
+      "profit_factor": 3.9256,
+      "win_rate_pct": -53.25,
+      "sortino": 1.417
+    },
     "learnings": [
       "autoresearch: keep \u2014 pullback_pct: 0.05\u21920.06"
     ],
@@ -4481,7 +5000,15 @@
       "total_trades": 221,
       "profit_factor": 5.3174
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 1.5939,
+      "cagr_pct": 22.5002,
+      "max_drawdown_pct": 2.4543,
+      "total_trades": 144,
+      "profit_factor": 4.1744,
+      "win_rate_pct": -53.25,
+      "sortino": 1.417
+    },
     "learnings": [
       "autoresearch: keep \u2014 atr_period: 14\u219210"
     ],
@@ -4504,7 +5031,15 @@
       "total_trades": 228,
       "profit_factor": 6.6877
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 1.7529,
+      "cagr_pct": 46.3422,
+      "max_drawdown_pct": 3.2714,
+      "total_trades": 151,
+      "profit_factor": 5.5447,
+      "win_rate_pct": -53.25,
+      "sortino": 1.417
+    },
     "learnings": [
       "autoresearch: keep \u2014 atr_stop_mult: 1.9\u21921.5"
     ],
@@ -4527,7 +5062,15 @@
       "total_trades": 195,
       "profit_factor": 2.05
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -0.1768,
+      "cagr_pct": 0.1791,
+      "max_drawdown_pct": 3.5193,
+      "total_trades": -40,
+      "profit_factor": 0.432,
+      "win_rate_pct": -59.57,
+      "sortino": -0.5575
+    },
     "learnings": [
       "autoresearch: keep \u2014 rsi_period: 8\u219214"
     ],
@@ -4550,7 +5093,15 @@
       "total_trades": 210,
       "profit_factor": 2.1063
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -0.1436,
+      "cagr_pct": 0.6471,
+      "max_drawdown_pct": 2.5696,
+      "total_trades": -25,
+      "profit_factor": 0.4883,
+      "win_rate_pct": -59.57,
+      "sortino": -0.5575
+    },
     "learnings": [
       "autoresearch: keep \u2014 zscore_lookback: 20\u219230"
     ],
@@ -4573,7 +5124,15 @@
       "total_trades": 209,
       "profit_factor": 2.1624
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -0.1286,
+      "cagr_pct": 1.0378,
+      "max_drawdown_pct": 2.4673,
+      "total_trades": -26,
+      "profit_factor": 0.5444,
+      "win_rate_pct": -59.57,
+      "sortino": -0.5575
+    },
     "learnings": [
       "autoresearch: keep \u2014 atr_period: 14\u219220"
     ],
@@ -4596,7 +5155,15 @@
       "total_trades": 227,
       "profit_factor": 2.2094
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -0.1077,
+      "cagr_pct": 1.3284,
+      "max_drawdown_pct": 2.5396,
+      "total_trades": -8,
+      "profit_factor": 0.5914,
+      "win_rate_pct": -59.57,
+      "sortino": -0.5575
+    },
     "learnings": [
       "autoresearch: keep \u2014 profit_target_atr_mult: 3.0\u21921.5"
     ],
@@ -4619,7 +5186,15 @@
       "total_trades": 202,
       "profit_factor": 2.49
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -0.0247,
+      "cagr_pct": 2.8024,
+      "max_drawdown_pct": -0.2009,
+      "total_trades": -33,
+      "profit_factor": 0.872,
+      "win_rate_pct": -59.57,
+      "sortino": -0.5575
+    },
     "learnings": [
       "autoresearch: keep \u2014 max_hold_days: 10\u219220"
     ],
@@ -4642,7 +5217,15 @@
       "total_trades": 159,
       "profit_factor": 2.7543
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -0.0549,
+      "cagr_pct": 2.3108,
+      "max_drawdown_pct": -0.0733,
+      "total_trades": -76,
+      "profit_factor": 1.1363,
+      "win_rate_pct": -59.57,
+      "sortino": -0.5575
+    },
     "learnings": [
       "autoresearch: keep \u2014 rsi_period: 14\u219210"
     ],
@@ -4665,7 +5248,15 @@
       "total_trades": 170,
       "profit_factor": 2.8637
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -0.0089,
+      "cagr_pct": 3.1692,
+      "max_drawdown_pct": -0.867,
+      "total_trades": -65,
+      "profit_factor": 1.2457,
+      "win_rate_pct": -59.57,
+      "sortino": -0.5575
+    },
     "learnings": [
       "autoresearch: keep \u2014 zscore_lookback: 30\u219220"
     ],
@@ -4688,7 +5279,15 @@
       "total_trades": 155,
       "profit_factor": 2.3698
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -0.1413,
+      "cagr_pct": 0.858,
+      "max_drawdown_pct": 2.8065,
+      "total_trades": -80,
+      "profit_factor": 0.7518,
+      "win_rate_pct": -59.57,
+      "sortino": -0.5575
+    },
     "learnings": [
       "autoresearch: keep \u2014 rsi_period: 10\u219214"
     ],
@@ -4734,7 +5333,15 @@
       "total_trades": 159,
       "profit_factor": 3.0199
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -0.0184,
+      "cagr_pct": 2.8527,
+      "max_drawdown_pct": -0.006,
+      "total_trades": -76,
+      "profit_factor": 1.4019,
+      "win_rate_pct": -59.57,
+      "sortino": -0.5575
+    },
     "learnings": [
       "autoresearch: keep \u2014 zscore_lookback: 20\u219230"
     ],
@@ -4757,7 +5364,13 @@
       "total_trades": 524,
       "profit_factor": 5.6703
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.2998,
+      "cagr_pct": 34.8405,
+      "max_drawdown_pct": 3.5453,
+      "total_trades": 302,
+      "profit_factor": 2.4061
+    },
     "learnings": [
       "autoresearch: keep \u2014 ibs_threshold: None\u21921.0"
     ],
@@ -4780,7 +5393,15 @@
       "total_trades": 143,
       "profit_factor": 3.0888
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.0027,
+      "cagr_pct": 3.1827,
+      "max_drawdown_pct": 0.4952,
+      "total_trades": -92,
+      "profit_factor": 1.4708,
+      "win_rate_pct": -59.57,
+      "sortino": -0.5575
+    },
     "learnings": [
       "autoresearch: keep \u2014 profit_target_atr_mult: 1.5\u21922.5"
     ],
@@ -4803,7 +5424,15 @@
       "total_trades": 141,
       "profit_factor": 3.2471
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 0.0248,
+      "cagr_pct": 3.764,
+      "max_drawdown_pct": -0.1226,
+      "total_trades": -94,
+      "profit_factor": 1.6291,
+      "win_rate_pct": -59.57,
+      "sortino": -0.5575
+    },
     "learnings": [
       "autoresearch: keep \u2014 ibs_max: 1.0\u21920.7"
     ],
@@ -4826,7 +5455,15 @@
       "total_trades": 294,
       "profit_factor": 3.2344
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 1.6534,
+      "cagr_pct": 47.0192,
+      "max_drawdown_pct": 0.8948,
+      "total_trades": -48,
+      "profit_factor": 2.2767,
+      "win_rate_pct": -48.54,
+      "sortino": 1.3454
+    },
     "learnings": [
       "autoresearch: keep \u2014 atr_stop_mult: 2.0\u21921.5"
     ],
@@ -4849,7 +5486,15 @@
       "total_trades": 370,
       "profit_factor": 3.1771
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 1.6859,
+      "cagr_pct": 49.5016,
+      "max_drawdown_pct": 2.399,
+      "total_trades": 28,
+      "profit_factor": 2.2194,
+      "win_rate_pct": -48.54,
+      "sortino": 1.3454
+    },
     "learnings": [
       "autoresearch: keep \u2014 max_hold_days: 15\u219210"
     ],
@@ -4872,7 +5517,15 @@
       "total_trades": 362,
       "profit_factor": 5.4312
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 2.0982,
+      "cagr_pct": 74.5463,
+      "max_drawdown_pct": -8.3597,
+      "total_trades": 40,
+      "profit_factor": 4.6893,
+      "win_rate_pct": -45.03,
+      "sortino": 2.11
+    },
     "learnings": [
       "autoresearch: keep \u2014 bb_std: 2.5\u21921.5"
     ],
@@ -4895,7 +5548,15 @@
       "total_trades": 331,
       "profit_factor": 7.8184
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": 2.1631,
+      "cagr_pct": 81.0386,
+      "max_drawdown_pct": -17.6793,
+      "total_trades": 9,
+      "profit_factor": 7.0765,
+      "win_rate_pct": -45.03,
+      "sortino": 2.11
+    },
     "learnings": [
       "autoresearch: keep \u2014 atr_stop_mult: 1.2\u21922.0"
     ],
@@ -4918,12 +5579,172 @@
       "total_trades": 65,
       "profit_factor": 1.2631
     },
-    "delta_vs_baseline": {},
+    "delta_vs_baseline": {
+      "sharpe": -1.8237,
+      "cagr_pct": -6.3189,
+      "max_drawdown_pct": 2.5397,
+      "total_trades": -170,
+      "profit_factor": -0.3549,
+      "win_rate_pct": -59.57,
+      "sortino": -0.5575
+    },
     "learnings": [
       "autoresearch: keep \u2014 rsi_period: 14\u21927"
     ],
     "promoted": false,
     "runtime_s": 2.2,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260312_094057",
+    "timestamp": "2026-03-11T23:40:57.008494+00:00",
+    "market": "sp500",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "rsi_period: 7\u219210",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.3528,
+      "cagr_pct": 9.7772,
+      "max_drawdown_pct": 7.1027,
+      "total_trades": 172,
+      "profit_factor": 2.5614
+    },
+    "delta_vs_baseline": {
+      "sharpe": -0.0283,
+      "cagr_pct": 2.6916,
+      "max_drawdown_pct": 3.0736,
+      "total_trades": -63,
+      "profit_factor": 0.9434,
+      "win_rate_pct": -59.57,
+      "sortino": -0.5575
+    },
+    "learnings": [
+      "autoresearch: keep \u2014 rsi_period: 7\u219210"
+    ],
+    "promoted": false,
+    "runtime_s": 13.4,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260312_101555",
+    "timestamp": "2026-03-12T00:15:55.570908+00:00",
+    "market": "sp500",
+    "category": "autoresearch",
+    "strategy": "adx_trend_pullback",
+    "hypothesis": "adx_period: None\u21927",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.4934,
+      "cagr_pct": 12.9157,
+      "max_drawdown_pct": 6.4268,
+      "total_trades": 390,
+      "profit_factor": 2.0156
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 adx_period: None\u21927"
+    ],
+    "promoted": false,
+    "runtime_s": 54.2,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260312_104004",
+    "timestamp": "2026-03-12T00:40:04.182896+00:00",
+    "market": "sp500",
+    "category": "autoresearch",
+    "strategy": "adx_trend_pullback",
+    "hypothesis": "atr_stop_mult: None\u21921.5",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.5793,
+      "cagr_pct": 13.0561,
+      "max_drawdown_pct": 8.0715,
+      "total_trades": 395,
+      "profit_factor": 1.7584
+    },
+    "delta_vs_baseline": {
+      "sharpe": 0.0859,
+      "cagr_pct": 0.1404,
+      "max_drawdown_pct": 1.6447,
+      "total_trades": 5,
+      "profit_factor": -0.2572
+    },
+    "learnings": [
+      "autoresearch: keep \u2014 atr_stop_mult: None\u21921.5"
+    ],
+    "promoted": false,
+    "runtime_s": 55.9,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260312_110553",
+    "timestamp": "2026-03-12T01:05:53.213451+00:00",
+    "market": "sp500",
+    "category": "autoresearch",
+    "strategy": "consecutive_down_days",
+    "hypothesis": "sma200_filter: None\u2192False",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.5775,
+      "cagr_pct": 83.836,
+      "max_drawdown_pct": 8.4658,
+      "total_trades": 1388,
+      "profit_factor": 5.9187
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 sma200_filter: None\u2192False"
+    ],
+    "promoted": false,
+    "runtime_s": 49.4,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260312_124147",
+    "timestamp": "2026-03-12T02:41:47.910361+00:00",
+    "market": "sp500",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "rsi_period: 10\u219214",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.4097,
+      "cagr_pct": 10.8992,
+      "max_drawdown_pct": 3.9065,
+      "total_trades": 142,
+      "profit_factor": 3.225
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 rsi_period: 10\u219214"
+    ],
+    "promoted": false,
+    "runtime_s": 14.9,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260312_125928",
+    "timestamp": "2026-03-12T02:59:28.587433+00:00",
+    "market": "sp500",
+    "category": "autoresearch",
+    "strategy": "opening_gap",
+    "hypothesis": "vol_surge_threshold: 1.2\u21921.5",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.1237,
+      "cagr_pct": 5.9869,
+      "max_drawdown_pct": 4.1868,
+      "total_trades": 106,
+      "profit_factor": 3.4958
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 vol_surge_threshold: 1.2\u21921.5"
+    ],
+    "promoted": false,
+    "runtime_s": 13.9,
     "agent_id": "autoresearch"
   }
 ]
