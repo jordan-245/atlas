@@ -159,6 +159,41 @@ OOS: Sharpe 1.23, 108 trades | Perturbation: 0/10 negative | Walk-forward: 76% p
 6. ⏸️ max_hold=5 for MR: failed OOS, needs more evidence
 7. ⏸️ Volume 1.5x filter: needs combined-mode retest (fix infra bug first)
 
+8. ✅ risk_per_trade=0.35%: PROMOTED (3/4 OOS tests pass, see Task #121)
+9. ✅ Regime tagging: trades tagged bull/neutral/bear for analysis (Task #84)
+
+---
+
+## 5b. Capital Scaling Analysis (Task #89)
+
+| Starting Equity | Sharpe | CAGR | MaxDD | Trades | PF | Calmar |
+|-----------------|--------|------|-------|--------|----|--------|
+| $2,000 | 0.36 | 12.1% | 6.8% | 229 | 2.99 | 1.78 |
+| $4,000 | -0.98 | 1.7% | 4.4% | 271 | 1.26 | 0.38 |
+| $10,000 | -0.89 | 1.7% | 6.2% | 285 | 1.22 | 0.27 |
+| $25,000 | -1.02 | 1.1% | 7.2% | 287 | 1.13 | 0.15 |
+| $50,000 | -1.07 | 0.9% | 7.5% | 288 | 1.11 | 0.12 |
+
+**Key insight:** Edge scales INVERSELY with capital at $4K-$50K (at 0.50% risk).
+Lower equity → fewer trades → only highest-quality entries → better risk metrics.
+Trend following drives all profit; mean reversion net negative at all levels.
+Bull regime profitable at all levels; neutral/bear drag performance.
+
+## 5c. Risk Per Trade OOS Validation (Task #121)
+
+**Finding:** 0.35% risk dramatically outperforms 0.50% (Sharpe 0.26 vs -0.98).
+**Promoted:** Yes, 3/4 OOS tests passed.
+
+| Test | Result | 0.35% | 0.50% |
+|------|--------|-------|-------|
+| Multi-offset (5 offsets) | ✅ PASS | Median Sharpe 0.24, Std 0.02 | Median -1.21, Std 0.64 |
+| Time-split OOS | ✅ PASS | OOS Sharpe 0.63 | OOS Sharpe -0.76 |
+| Perturbation (7 values) | ❌ FAIL | Smooth at 0.35% but cliff at 0.40% | — |
+| Alt window (2020+) | ✅ PASS | Sharpe 0.29 | Sharpe -1.09 |
+
+**Warning:** Sharp cliff at 0.37%→0.40% (Sharpe drops 1.8). Do not increase above 0.37%.
+The cliff likely reflects a position sizing threshold where sub-optimal entries start getting funded.
+
 ---
 
 ## 6. Infrastructure Issues
