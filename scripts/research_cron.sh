@@ -88,7 +88,7 @@ echo "  Workers: $WORKERS, Top-N: $TOP_N, Max runtime: $((MAX_RUNTIME / 60))min"
 # nice -n 15: low CPU scheduling priority (yields to trading crons)
 # ionice -c 2 -n 7: best-effort I/O with low priority
 nice -n 15 ionice -c 2 -n 7 \
-    python3 research/sweep.py \
+    python3 -u research/sweep.py \
         --market sp500 \
         --top-n "$TOP_N" \
         --workers "$WORKERS" \
@@ -96,9 +96,9 @@ nice -n 15 ionice -c 2 -n 7 \
         --max-runtime "$MAX_RUNTIME" \
         --cycles 0 \
         --log-file "$LOG_FILE" \
-    2>&1 | tail -50
+    2>&1
 
-EXIT_CODE=${PIPESTATUS[0]}
+EXIT_CODE=$?
 
 # ─── Summary ─────────────────────────────────────────────────────────────────
 

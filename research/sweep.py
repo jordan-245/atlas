@@ -1093,16 +1093,24 @@ def main():
     )
     args = parser.parse_args()
 
-    # Logging
-    handlers = [logging.StreamHandler(sys.stdout)]
-    if args.log_file:
-        handlers.append(logging.FileHandler(args.log_file))
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    # Logging — force-configure the root logger.
+    # Cannot use basicConfig() because module-level imports (e.g. strategy_evaluator)
+    # may have already called setup_logging(), making basicConfig() a silent no-op.
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    fmt = logging.Formatter(
+        "%(asctime)s [%(name)s] %(levelname)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
-        handlers=handlers,
     )
+    # Clear any handlers set by imported modules (e.g. utils.logging_config)
+    root.handlers.clear()
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setFormatter(fmt)
+    root.addHandler(stdout_handler)
+    if args.log_file:
+        file_handler = logging.FileHandler(args.log_file)
+        file_handler.setFormatter(fmt)
+        root.addHandler(file_handler)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("matplotlib").setLevel(logging.WARNING)
 

@@ -232,3 +232,4 @@ timestamp	sharpe	trades	max_dd_pct	pf	cagr_pct	params_changed	status	description
 2026-03-12T03:11:35	-2.4686	43	2.28	1.5472	0.72	rsi_oversold=25	discard	rsi_oversold: 35→25
 2026-03-12T03:11:35	-1.7338	95	4.48	1.1830	0.60	rsi_oversold=30	discard	rsi_oversold: 35→30
 2026-03-12T03:11:35	0.2076	172	5.75	2.4437	6.87	rsi_oversold=40	discard	rsi_oversold: 35→40
+2026-03-12T04:36:27	0.2601	139	2.91	3.1545	7.44		keep	baseline
