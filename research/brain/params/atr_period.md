@@ -1,0 +1,9 @@
+# atr_period
+
+> Parameter tested across strategies. Shows what values work and where.
+
+| Date | Strategy | Change | Result | Sharpe Δ | New Sharpe |
+|------|----------|--------|--------|----------|------------|
+| 2026-03-12 05:31 | mean_reversion | 20 → 10 | ❌ discard | -0.0296 | 0.2305 |
+| 2026-03-12 05:31 | mean_reversion | 20 → 7 | ❌ discard | -0.0684 | 0.1917 |
+| 2026-03-12 05:31 | mean_reversion | 20 → 14 | ❌ discard | +0.0071 | 0.2672 |
