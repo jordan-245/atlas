@@ -125,3 +125,12 @@ filter_test sets `s_cfg[filter_param] = value` but many strategy params are nest
 
 ### 35. Double-multiplication bug in Telegram promotion formatter
 `run_backtest()` returns `cagr_pct`, `max_drawdown_pct`, `win_rate_pct` already in percent form (e.g. 38.14 = 38.14%). The Telegram formatter in `send_promotion_request()` had a single `_PCT_METRICS` set that treated ALL percent-related metrics as decimals and multiplied by 100 — producing 3814% CAGR. **Fix:** Split into `_DECIMAL_PCT` (needs ×100) and `_ALREADY_PCT` (display as-is). **Rule:** When a metric name includes `_pct`, the value is already in percent — never multiply again.
+
+### 15. Strategy correlation clusters invalidate naive diversification
+Mean_reversion, connors_rsi2, and opening_gap are 0.94-0.95 correlated on daily returns — they're essentially one bet. Allocating independently to each (as the optimizer naively does) concentrates ~58% of capital in one correlated cluster. Always cluster strategies by correlation FIRST, then allocate across clusters.
+
+### 16. Solo backtests at $4K equity with Moomoo fees produce useless Sharpe ratios
+Fee drag at low equity destroys strategy performance metrics. The same strategy can show Sharpe -3.67 at $4K/Moomoo and Sharpe +0.23 at $25K/$0 commission. Always run portfolio optimization analysis at $0 commission (Alpaca mode) with realistic equity to get comparable cross-strategy metrics.
+
+### 17. Infrastructure blockers masquerade as research failures
+8 infra blockers contaminated 15+ experiments in the weekly report. Always verify whether a failing experiment is a hypothesis failure or an infrastructure failure before drawing conclusions. Key tells: identical results across variants (test harness not varying the param), confidence filtering killing all signals, wrong default config paths.
