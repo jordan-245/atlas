@@ -180,6 +180,8 @@ body::after {
 .card:nth-child(3) { animation-delay: 0.12s; }
 .card:nth-child(4) { animation-delay: 0.16s; }
 .card:nth-child(5) { animation-delay: 0.20s; }
+/* After first render, disable fadeIn so data refreshes don't flash */
+.cards-loaded .card { opacity: 1; animation: none; }
 .card:hover { border-color: var(--border-glow); }
 .card::before { display: none; }
 /* Accent glow on first card (equity) */
@@ -1024,6 +1026,8 @@ function switchMarket(m) {
   });
   var shell = document.querySelector('.shell');
   if (shell) shell.setAttribute('data-market', m);
+  // Force chart and render refresh on market switch
+  _lastChartKey = '';
   if (_rawData) render(buildView(_rawData, m));
 }
 
@@ -1314,8 +1318,15 @@ function checkTableOverflow() {
 // ── Equity Chart (Canvas) ──
 var chartState = { bt: [], live: [], startEq: 5000, range: 'all' };
 var chartPoints = []; // populated by paintChart for hover lookup
+var _lastChartKey = '';  // skip repaint when data unchanged
 
 function drawEquityChart(benchCurve, liveCurve, startEq, benchTicker) {
+  // Skip chart rebuild if data hasn't changed
+  var chartKey = (liveCurve.length || 0) + ':' + (benchCurve.length || 0) + ':' +
+    (liveCurve.length ? liveCurve[liveCurve.length - 1].equity : 0);
+  if (chartKey === _lastChartKey && document.getElementById('eq-canvas')) return;
+  _lastChartKey = chartKey;
+
   var el = document.getElementById('equity-chart');
   if (!benchCurve.length && !liveCurve.length) {
     el.innerHTML = '<div class="empty">No equity data available yet — chart builds as trading days accumulate</div>';
@@ -1982,7 +1993,7 @@ function render(d) {
         parts.push('<span class="' + cls(val) + '">' + (val >= 0 ? '+' : '-') + sym + Math.abs(val).toFixed(2) + '</span>');
       });
       var posInfo = (p.num_open || 0) + ' positions · ' + exposurePct.toFixed(0) + '% deployed';
-      var sub = (parts.length > 0 ? parts.join(' · ') + ' · ' : '') + posInfo + (risk.halted ? ' · <span style="color:var(--red);font-weight:600">HALTED</span>' : '');
+      var sub = (parts.length > 0 ? parts.join(' · ') + ' · ' : '') + posInfo;
       // Display: use view currency
       var viewCcy = getViewCurrency();
       var dispSym = CURRENCY_SYMBOLS[viewCcy] || '$';
@@ -2005,7 +2016,12 @@ function render(d) {
     ch += '<div class="card-value ' + c.c + '">' + c.value + '</div>';
     ch += '<div class="card-sub">' + c.sub + '</div></div>';
   });
-  document.getElementById('cards').innerHTML = ch;
+  var cardsEl = document.getElementById('cards');
+  cardsEl.innerHTML = ch;
+  // After first render, mark container so subsequent refreshes skip fadeIn
+  if (!cardsEl.classList.contains('cards-loaded')) {
+    setTimeout(function() { cardsEl.classList.add('cards-loaded'); }, 500);
+  }
   if (typeof _initCardIcons === 'function') _initCardIcons();
 
   // P&L inline summary
@@ -4200,6 +4216,7 @@ function _mcTick() {
 setInterval(_mcTick, 1000);
 
 // ── Load ──
+var _lastDataTs = null;  // skip render when backend data hasn't changed
 function load() {
   fetch('data/dashboard-data.json?t=' + Date.now(), {credentials: 'same-origin'})
     .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
@@ -4209,9 +4226,44 @@ function load() {
         console.error('Invalid dashboard data shape', data);
         return;
       }
+      // Skip full DOM rebuild if backend timestamp is identical
+      var ts = data.timestamp || '';
+      if (ts === _lastDataTs && _rawData) {
+        var el = document.getElementById('updated');
+        if (el) el.textContent = 'Updated ' + ago(ts);
+        return;
+      }
+      _lastDataTs = ts;
       _rawData = data;
       buildMarketSelector(data);
       render(buildView(data, _currentMarket));
+      // Re-apply cached live quotes so positions don't flash stale prices
+      if (window._cachedLiveQuotes) {
+        setTimeout(function() {
+          var rows = document.querySelectorAll('#tbl-pos tbody tr[data-ticker]');
+          rows.forEach(function(row) {
+            var ticker = row.getAttribute('data-ticker');
+            var q = window._cachedLiveQuotes[ticker];
+            if (!q || !q.price) return;
+            var entry = parseFloat(row.getAttribute('data-entry')) || 0;
+            var shares = parseFloat(row.getAttribute('data-shares')) || 0;
+            var pc = row.querySelector('.live-price');
+            var pl = row.querySelector('.live-pnl');
+            if (pc) {
+              pc.setAttribute('data-v', q.price);
+              pc.innerHTML = q.price.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) + '<span class="live-dot" title="Live price"></span>';
+            }
+            if (pl && entry > 0 && shares > 0) {
+              var pnl = (q.price - entry) * shares;
+              var pp = ((q.price - entry) / entry) * 100;
+              pl.setAttribute('data-v', pnl);
+              pl.className = 'mono live-pnl ' + (pnl > 0.005 ? 'green' : pnl < -0.005 ? 'red' : '');
+              pl.innerHTML = pnl.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) +
+                ' <span style="font-size:10px;opacity:0.7">' + (pp >= 0 ? '+' : '') + pp.toFixed(2) + '%</span>';
+            }
+          });
+        }, 50);
+      }
     })
     .catch(function(e) {
       console.error('Load failed:', e);
@@ -5057,6 +5109,8 @@ switchTab = function(tab) {
         updateIndices(data.quotes);
         updateTodayPnl(data.quotes);
         updateLiveIndicator(data);
+        // Expose for re-application after full render
+        window._cachedLiveQuotes = data.quotes;
         // Clear error indicator on success
         var errEl = document.getElementById('live-price-error');
         if (errEl) errEl.remove();
@@ -5104,8 +5158,8 @@ switchTab = function(tab) {
     if (_lastLiveUpdate) updateLiveIndicator({ticker_count: Object.keys(_liveQuotes).length});
   }, 1000);
 
-  // ── Start after a short delay (let main data load first) ──
-  setTimeout(startLivePoll, 2000);
+  // ── Start staggered from main data poll (avoid simultaneous DOM updates) ──
+  setTimeout(startLivePoll, 5000);
 
 })();
 </script>
