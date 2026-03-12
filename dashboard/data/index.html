@@ -3032,6 +3032,38 @@ function renderResearch(d) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// CENTRAL ANIMATION COORDINATOR
+// Single rAF loop drives all canvas animations. Each system
+// registers a tick callback with a target fps. Pauses when
+// tab is hidden. Replaces 14 independent rAF loops.
+// ═══════════════════════════════════════════════════════════════
+var _animSystems = []; // [{id, fn, fps, lastT}]
+var _animRunning = false;
+
+function _animRegister(id, fn, fps) {
+  _animSystems.push({ id: id, fn: fn, fps: fps || 60, lastT: 0, interval: 1000 / (fps || 60) });
+  if (!_animRunning) {
+    _animRunning = true;
+    requestAnimationFrame(_animTick);
+  }
+}
+
+function _animTick(now) {
+  if (document.hidden) {
+    requestAnimationFrame(_animTick);
+    return;
+  }
+  for (var i = 0; i < _animSystems.length; i++) {
+    var sys = _animSystems[i];
+    if (now - sys.lastT >= sys.interval) {
+      sys.lastT = now - ((now - sys.lastT) % sys.interval);
+      sys.fn(now);
+    }
+  }
+  requestAnimationFrame(_animTick);
+}
+
+// ═══════════════════════════════════════════════════════════════
 // PIXEL AGENT FLOOR — Canvas-based character visualization
 // ═══════════════════════════════════════════════════════════════
 
@@ -3292,19 +3324,23 @@ function initAgentFloor() {
   _agentFloor.canvas = canvas;
   _agentFloor.ctx = canvas.getContext('2d');
   _agentFloor.inited = true;
+  // Off-screen canvas for static content (wall, floor, whiteboard, props)
+  _agentFloor.staticCanvas = document.createElement('canvas');
+  _agentFloor.staticCtx = _agentFloor.staticCanvas.getContext('2d');
+  _agentFloor.staticDirty = true; // needs initial draw
 
   _resizeAgentCanvas();
-  window.addEventListener('resize', _resizeAgentCanvas);
+  window.addEventListener('resize', function() {
+    _resizeAgentCanvas();
+    _agentFloor.staticDirty = true; // resize invalidates cache
+  });
 
-  // Start animation loop
-  function tick() {
-    _agentFloor.frame++;
-    // Re-check canvas size each frame (handles tab switch)
+  // Register with central animation coordinator (30fps for pixel art)
+  _animRegister('agentFloor', function() {
     if (_agentFloor.canvas.width === 0) _resizeAgentCanvas();
+    _agentFloor.frame++;
     drawAgentFloor();
-    _agentFloor.animId = requestAnimationFrame(tick);
-  }
-  tick();
+  }, 30);
 }
 
 function updateAgentFloor(agents, stats, leaderboard, strategyPipeline) {
@@ -3325,28 +3361,61 @@ function updateAgentFloor(agents, stats, leaderboard, strategyPipeline) {
     }
   }
   if (!_agentFloor.inited) initAgentFloor();
+  // Data changed — invalidate static cache
+  _agentFloor.staticDirty = true;
   // Force resize when agents update (tab may have just become visible)
   setTimeout(_resizeAgentCanvas, 50);
 }
 
 // ── Room Props ──────────────────────────────────────────────────
-function _drawProps(ctx, W, H, wallH, tc, frame, agents, stats, leaderboard, strategyPipeline, isActive, isSleeping) {
-  // All props drawn with theme colors, positioned relative to canvas edges
-
-  // FIX 7: Server rack — larger, more readable frame + bigger LED dots
+// Static props — cached to off-screen canvas, only redrawn on data change
+function _drawPropsStatic(ctx, W, H, wallH, tc, agents, stats, leaderboard, strategyPipeline, isActive, isSleeping) {
+  // Server rack frame (no LEDs — those are dynamic)
   var rackX = 10, rackY = wallH - 48, rackW = 24, rackH = 48;
   ctx.fillStyle = tc.surfaceRaised;
   ctx.fillRect(rackX, rackY, rackW, rackH);
   ctx.strokeStyle = tc.border;
   ctx.lineWidth = 1.5;
   ctx.strokeRect(rackX, rackY, rackW, rackH);
-  // Unit dividers
   ctx.globalAlpha = 0.4;
   for (var ui = 1; ui < 5; ui++) {
     ctx.beginPath(); ctx.moveTo(rackX, rackY + ui * 9); ctx.lineTo(rackX + rackW, rackY + ui * 9); ctx.stroke();
   }
   ctx.globalAlpha = 1.0;
-  // LEDs — active: blinking green+blue. Idle: dim red standby.
+
+  // Plant (static position — no sway in static layer)
+  var plantX = W - 38, potW = 12, potH = 10;
+  var potY = H - potH - 3;
+  ctx.fillStyle = tc.amber; ctx.globalAlpha = isSleeping ? 0.25 : 0.6;
+  ctx.fillRect(plantX, potY, potW, potH);
+  ctx.fillRect(plantX + 2, potY + potH, potW - 4, 3);
+  ctx.globalAlpha = 1.0;
+  ctx.fillStyle = tc.green; ctx.globalAlpha = isSleeping ? 0.25 : 0.7;
+  var leafCx = plantX + potW / 2;
+  ctx.fillRect(leafCx - 5, potY - 10, 4, 4);
+  ctx.fillRect(leafCx + 2, potY - 12, 4, 4);
+  ctx.fillRect(leafCx - 1, potY - 7, 4, 4);
+  ctx.globalAlpha = isSleeping ? 0.15 : 0.5;
+  ctx.fillRect(leafCx, potY - 5, 2, 7);
+  ctx.globalAlpha = 1.0;
+
+  // Coffee mug (static body — no steam)
+  var mugX = W - 90, mugY = H - 20;
+  if (W > 500) {
+    ctx.fillStyle = tc.surfaceRaised;
+    ctx.globalAlpha = isSleeping ? 0.4 : 1.0;
+    ctx.fillRect(mugX, mugY, 7, 9);
+    ctx.strokeStyle = tc.border; ctx.lineWidth = 1;
+    ctx.strokeRect(mugX, mugY, 7, 9);
+    ctx.beginPath(); ctx.arc(mugX + 9, mugY + 4, 3, -Math.PI/2, Math.PI/2); ctx.stroke();
+    ctx.globalAlpha = 1.0;
+  }
+}
+
+// Dynamic props — redrawn every frame (blinking LEDs, steam, plant sway)
+function _drawPropsDynamic(ctx, W, H, wallH, tc, frame, isActive, isSleeping) {
+  // Server rack LEDs
+  var rackX = 10, rackY = wallH - 48;
   for (var li = 0; li < 5; li++) {
     var ledY = rackY + 5 + li * 9;
     if (isActive) {
@@ -3361,7 +3430,6 @@ function _drawProps(ctx, W, H, wallH, tc, frame, agents, stats, leaderboard, str
       ctx.fillStyle = ((frame + li * 23) % 80) < 50 ? tc.blue : tc.border;
       ctx.fill();
     } else {
-      // Standby: single dim amber LED, no blinking
       ctx.beginPath();
       ctx.arc(rackX + 6, ledY, 2, 0, Math.PI * 2);
       ctx.fillStyle = isSleeping ? tc.red : tc.amber;
@@ -3376,43 +3444,31 @@ function _drawProps(ctx, W, H, wallH, tc, frame, agents, stats, leaderboard, str
   }
   ctx.globalAlpha = 1.0;
 
-  // FIX 8: Plant anchored to floor (was floating at wallH boundary)
-  var plantX = W - 38, potW = 12, potH = 10;
-  var potY = H - potH - 3; // anchor to floor
-  ctx.fillStyle = tc.amber; ctx.globalAlpha = isSleeping ? 0.25 : 0.6;
-  ctx.fillRect(plantX, potY, potW, potH);
-  ctx.fillRect(plantX + 2, potY + potH, potW - 4, 3);
-  ctx.globalAlpha = 1.0;
-  ctx.fillStyle = tc.green; ctx.globalAlpha = isSleeping ? 0.25 : 0.7;
-  var leafCx = plantX + potW / 2;
-  var sway = isActive ? Math.sin(frame * 0.02) * 1.5 : 0; // No sway when idle
-  ctx.fillRect(leafCx - 5 + sway, potY - 10, 4, 4);
-  ctx.fillRect(leafCx + 2 - sway, potY - 12, 4, 4);
-  ctx.fillRect(leafCx - 1, potY - 7, 4, 4);
-  ctx.globalAlpha = isSleeping ? 0.15 : 0.5;
-  ctx.fillRect(leafCx, potY - 5, 2, 7);
-  ctx.globalAlpha = 1.0;
-
-  // ── Coffee mug (right floor) — no steam when idle ──
-  var mugX = W - 90, mugY = H - 20;
-  if (W > 500) {
-    ctx.fillStyle = tc.surfaceRaised;
-    ctx.globalAlpha = isSleeping ? 0.4 : 1.0;
-    ctx.fillRect(mugX, mugY, 7, 9);
-    ctx.strokeStyle = tc.border; ctx.lineWidth = 1;
-    ctx.strokeRect(mugX, mugY, 7, 9);
-    ctx.beginPath(); ctx.arc(mugX + 9, mugY + 4, 3, -Math.PI/2, Math.PI/2); ctx.stroke();
+  // Plant sway (only when active)
+  if (isActive) {
+    var plantX = W - 38, potW = 12, potH = 10;
+    var potY = H - potH - 3;
+    var leafCx2 = plantX + potW / 2;
+    var sway = Math.sin(frame * 0.02) * 1.5;
+    ctx.fillStyle = tc.green; ctx.globalAlpha = 0.7;
+    ctx.fillRect(leafCx2 - 5 + sway, potY - 10, 4, 4);
+    ctx.fillRect(leafCx2 + 2 - sway, potY - 12, 4, 4);
     ctx.globalAlpha = 1.0;
-    // Steam only when active
-    if (isActive) {
-      ctx.globalAlpha = 0.2 + Math.sin(frame * 0.05) * 0.1;
-      ctx.fillStyle = tc.textTertiary;
-      ctx.fillRect(mugX + 2, mugY - 4 - Math.sin(frame * 0.03) * 2, 1, 3);
-      ctx.fillRect(mugX + 4, mugY - 5 - Math.cos(frame * 0.04) * 2, 1, 3);
-      ctx.globalAlpha = 1.0;
-    }
   }
 
+  // Coffee steam (only when active)
+  var mugX = W - 90, mugY = H - 20;
+  if (W > 500 && isActive) {
+    ctx.globalAlpha = 0.2 + Math.sin(frame * 0.05) * 0.1;
+    ctx.fillStyle = tc.textTertiary;
+    ctx.fillRect(mugX + 2, mugY - 4 - Math.sin(frame * 0.03) * 2, 1, 3);
+    ctx.fillRect(mugX + 4, mugY - 5 - Math.cos(frame * 0.04) * 2, 1, 3);
+    ctx.globalAlpha = 1.0;
+  }
+}
+
+// Whiteboard — drawn to static cache (only redrawn on data change)
+function _drawWhiteboard(ctx, W, H, wallH, tc, agents, stats, leaderboard, strategyPipeline, isActive, isSleeping) {
   // ════════════════════════════════════════════════════════════════
   // ── WHITEBOARD (center of wall — the main feature) ──
   // ════════════════════════════════════════════════════════════════
@@ -3538,7 +3594,7 @@ function _drawProps(ctx, W, H, wallH, tc, frame, agents, stats, leaderboard, str
     var dotX = lx;
     if (activeAgent) {
       ctx.fillStyle = tc.green;
-      ctx.globalAlpha = 0.6 + Math.sin(frame * 0.1 + idx) * 0.3;
+      ctx.globalAlpha = 0.85; // Static glow in cached layer
       ctx.beginPath();
       ctx.arc(dotX + 3, ly + 4, 3, 0, Math.PI * 2);
       ctx.fill();
@@ -4081,63 +4137,77 @@ function drawAgentFloor() {
   });
 
   // ── Background: wall + floor ──
-  // Wall takes up more space now for bigger whiteboard
   var wallPct = (H > 350) ? 0.42 : 0.50;
   var wallH = Math.round(H * wallPct);
 
-  // Wall — subtle gradient (dimmer when idle)
-  var wallGrad = ctx.createLinearGradient(0, 0, 0, wallH);
-  wallGrad.addColorStop(0, tc.surfaceRaised);
-  wallGrad.addColorStop(1, tc.surfaceHover);
-  ctx.fillStyle = wallGrad;
-  ctx.fillRect(0, 0, W, wallH);
+  // ── Static layer (cached off-screen canvas) ──
+  // Redrawn only on data change, resize, or theme switch
+  if (f.staticDirty || !f.staticCanvas.width) {
+    var sc = f.staticCanvas;
+    var sctx = f.staticCtx;
+    var dpr = window.devicePixelRatio || 1;
+    sc.width = f.canvas.width;
+    sc.height = f.canvas.height;
+    sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    sctx.imageSmoothingEnabled = false;
 
-  // Baseboard line
-  ctx.fillStyle = tc.border;
-  ctx.fillRect(0, wallH - 1, W, 2);
+    // Wall gradient
+    var wallGrad = sctx.createLinearGradient(0, 0, 0, wallH);
+    wallGrad.addColorStop(0, tc.surfaceRaised);
+    wallGrad.addColorStop(1, tc.surfaceHover);
+    sctx.fillStyle = wallGrad;
+    sctx.fillRect(0, 0, W, wallH);
 
-  // Floor — warm wood-plank effect
-  ctx.fillStyle = tc.surfaceHover;
-  ctx.fillRect(0, wallH, W, H - wallH);
+    // Baseboard
+    sctx.fillStyle = tc.border;
+    sctx.fillRect(0, wallH - 1, W, 2);
 
-  // ── Idle room dimming: dark overlay on floor area ──
-  if (isSleeping) {
-    ctx.fillStyle = '#000000';
-    ctx.globalAlpha = 0.35;
-    ctx.fillRect(0, wallH, W, H - wallH);
-    // Dim the wall too but less
-    ctx.globalAlpha = 0.2;
-    ctx.fillRect(0, 0, W, wallH);
-    ctx.globalAlpha = 1.0;
-  }
+    // Floor
+    sctx.fillStyle = tc.surfaceHover;
+    sctx.fillRect(0, wallH, W, H - wallH);
 
-  // Plank lines (horizontal, subtle)
-  var plankH = 12;
-  ctx.strokeStyle = tc.border;
-  ctx.globalAlpha = 0.25;
-  ctx.lineWidth = 1;
-  for (var py = wallH + plankH; py < H; py += plankH) {
-    ctx.beginPath();
-    ctx.moveTo(0, py);
-    ctx.lineTo(W, py);
-    ctx.stroke();
-  }
-  // Vertical plank seams (staggered)
-  var plankW = 80;
-  for (var pr = 0; pr < Math.ceil((H - wallH) / plankH); pr++) {
-    var seam_y = wallH + pr * plankH;
-    var offset = (pr % 2) * (plankW / 2);
-    for (var sx = offset; sx < W; sx += plankW) {
-      ctx.beginPath();
-      ctx.moveTo(sx, seam_y);
-      ctx.lineTo(sx, seam_y + plankH);
-      ctx.stroke();
+    // Idle dimming
+    if (isSleeping) {
+      sctx.fillStyle = '#000000';
+      sctx.globalAlpha = 0.35;
+      sctx.fillRect(0, wallH, W, H - wallH);
+      sctx.globalAlpha = 0.2;
+      sctx.fillRect(0, 0, W, wallH);
+      sctx.globalAlpha = 1.0;
     }
-  }
-  ctx.globalAlpha = 1.0;
 
-  // ── Props (placed at fixed positions relative to canvas) ──
-  _drawProps(ctx, W, H, wallH, tc, f.frame, agents, f.stats || {}, f.leaderboard || [], f.strategyPipeline || {}, isActive, isSleeping);
+    // Plank lines
+    var plankH = 12;
+    sctx.strokeStyle = tc.border;
+    sctx.globalAlpha = 0.25;
+    sctx.lineWidth = 1;
+    for (var py = wallH + plankH; py < H; py += plankH) {
+      sctx.beginPath(); sctx.moveTo(0, py); sctx.lineTo(W, py); sctx.stroke();
+    }
+    var plankW = 80;
+    for (var pr = 0; pr < Math.ceil((H - wallH) / plankH); pr++) {
+      var seam_y = wallH + pr * plankH;
+      var offset = (pr % 2) * (plankW / 2);
+      for (var sx = offset; sx < W; sx += plankW) {
+        sctx.beginPath(); sctx.moveTo(sx, seam_y); sctx.lineTo(sx, seam_y + plankH); sctx.stroke();
+      }
+    }
+    sctx.globalAlpha = 1.0;
+
+    // Static props (rack frame, plant, mug body)
+    _drawPropsStatic(sctx, W, H, wallH, tc, agents, f.stats || {}, f.leaderboard || [], f.strategyPipeline || {}, isActive, isSleeping);
+
+    // Whiteboard (entirely static)
+    _drawWhiteboard(sctx, W, H, wallH, tc, agents, f.stats || {}, f.leaderboard || [], f.strategyPipeline || {}, isActive, isSleeping);
+
+    f.staticDirty = false;
+  }
+
+  // Blit cached static layer
+  ctx.drawImage(f.staticCanvas, 0, 0, f.canvas.width, f.canvas.height, 0, 0, W, H);
+
+  // ── Dynamic props (LEDs, steam, sway — redrawn every frame) ──
+  _drawPropsDynamic(ctx, W, H, wallH, tc, f.frame, isActive, isSleeping);
 
   // ── Ceiling light effect — illuminates when active, off when idle ──
   if (isActive) {
@@ -4960,14 +5030,13 @@ switchTab = function(tab) {
     build();
   }
 
-  function frame(){
-    if(document.hidden){requestAnimationFrame(frame);return;}
-    // Frame skip for ~30fps (skip odd frames)
-    if(frameN % 2 !== 0){frameN++;requestAnimationFrame(frame);return;}
+  // Pre-compute fade overlay
+  var fadeA=35+(TRAIL-1)/(100-1)*(3-35);
+  var fadeStr='rgba(13,12,10,'+(fadeA/255).toFixed(4)+')';
 
-    // Trail fade — semi-transparent overlay preserves traces
-    var fadeA=35+(TRAIL-1)/(100-1)*(3-35);
-    ctx.fillStyle='rgba(13,12,10,'+(fadeA/255).toFixed(4)+')';
+  function frameTick(){
+    // Trail fade
+    ctx.fillStyle=fadeStr;
     ctx.fillRect(0,0,W,H);
 
     frameN++;
@@ -4982,7 +5051,6 @@ switchTab = function(tab) {
       p.y+=Math.sin(angle)*spd;
       p.age++;
 
-      // Wrap at edges (reset prev to avoid cross-screen lines)
       var m=30;
       if(p.x<-m){p.x+=W+m*2;p.px=p.x;}
       if(p.x>W+m){p.x-=W+m*2;p.px=p.x;}
@@ -5001,15 +5069,12 @@ switchTab = function(tab) {
 
       if(p.fresh){p.fresh=false;continue;}
 
-      // Bell-curve lifecycle opacity — thin at birth/death
       var lr=p.age/p.maxAge;
       var alpha=Math.sin(lr*Math.PI)*0.05;
       if(alpha<0.003) continue;
 
-      // Bell-curve stroke weight
       var sw=0.2+Math.sin(lr*Math.PI)*0.5;
 
-      // Color with subtle positional tinting
       var c=C[p.ci];
       var xs=(p.x/W-0.5)*20;
       var ys=(p.y/H-0.5)*14;
@@ -5024,14 +5089,12 @@ switchTab = function(tab) {
       ctx.lineTo(p.x,p.y);
       ctx.stroke();
     }
-
-    requestAnimationFrame(frame);
   }
 
   var _rt;
   window.addEventListener('resize',function(){clearTimeout(_rt);_rt=setTimeout(resize,120);});
   resize();
-  requestAnimationFrame(frame);
+  _animRegister('flowField', frameTick, 30);
 })();
 </script>
 
@@ -5439,11 +5502,7 @@ switchTab = function(tab) {
       ctx.beginPath(); ctx.arc(dx, dy, 1.8, 0, Math.PI * 2); ctx.fill();
     }
 
-    function loop(t) {
-      if (!document.hidden) draw(t);
-      requestAnimationFrame(loop);
-    }
-    requestAnimationFrame(loop);
+    _animRegister('globe', function(t) { draw(t); }, 30);
   }
 
   // ── Card icon animations ───────────────────────────────────
@@ -5471,15 +5530,11 @@ switchTab = function(tab) {
     });
     if (Object.keys(canvases).length === 0) return;
 
-    function tick(t) {
-      if (!document.hidden) {
-        Object.keys(icons).forEach(function(k) {
-          if (canvases[k]) icons[k](canvases[k].ctx, 18, 18, t);
-        });
-      }
-      _cardAnimId = requestAnimationFrame(tick);
-    }
-    _cardAnimId = requestAnimationFrame(tick);
+    _animRegister('cardIcons', function(t) {
+      Object.keys(icons).forEach(function(k) {
+        if (canvases[k]) icons[k](canvases[k].ctx, 18, 18, t);
+      });
+    }, 24);
   };
 
   // ── Equity: pulsing concentric rings ───────────────────────
@@ -5615,146 +5670,112 @@ switchTab = function(tab) {
       return { ctx: ctx, w: w, h: h };
     }
 
-    // 1. Dot grid — pulsing dots like Stripe's Art_background SVG circles
+    // Collect all accent canvases
     var dg = setup('accent-dotgrid', 48, 10);
-    if (dg) {
-      var cols = 8, rows = 2, dx = 6, dy = 5;
-      (function loopDG(t) {
-        if (hidden) return requestAnimationFrame(loopDG);
+    var pl = setup('accent-pulse', 32, 10);
+    var wv = setup('accent-wave', 40, 10);
+    var ob = setup('accent-orbit', 14, 14);
+    var br = setup('accent-bars', 36, 10);
+    var sp = setup('accent-spiral', 20, 20);
+
+    // Single tick function for all accents — registered at 12fps (decorative)
+    _animRegister('accents', function(t) {
+      // 1. Dot grid
+      if (dg) {
+        var cols = 8, rows2 = 2, ddx = 6, ddy = 5;
         dg.ctx.clearRect(0, 0, dg.w, dg.h);
-        for (var r = 0; r < rows; r++) {
+        for (var r = 0; r < rows2; r++) {
           for (var c2 = 0; c2 < cols; c2++) {
-            var x = c2 * dx + 3, y = r * dy + 2.5;
+            var x = c2 * ddx + 3, y = r * ddy + 2.5;
             var phase = (c2 + r * cols) * 0.4 + t * 0.001;
             var a = 0.25 + Math.sin(phase) * 0.2;
             dg.ctx.fillStyle = 'rgba(138,126,112,' + a.toFixed(2) + ')';
             dg.ctx.beginPath(); dg.ctx.arc(x, y, 0.8, 0, Math.PI * 2); dg.ctx.fill();
           }
         }
-        requestAnimationFrame(loopDG);
-      })(0);
-    }
-
-    // 2. Pulse — horizontal heartbeat/signal line
-    var pl = setup('accent-pulse', 32, 10);
-    if (pl) {
-      (function loopPL(t) {
-        if (hidden) return requestAnimationFrame(loopPL);
+      }
+      // 2. Pulse
+      if (pl) {
         pl.ctx.clearRect(0, 0, pl.w, pl.h);
         pl.ctx.strokeStyle = 'rgba(127,184,88,0.6)';
         pl.ctx.lineWidth = 0.8;
         pl.ctx.beginPath();
-        for (var x = 0; x < pl.w; x++) {
-          var phase = (x * 0.3) - t * 0.003;
-          var y = pl.h / 2;
-          // Spike at center
-          var spike = Math.exp(-Math.pow((x - pl.w / 2 + (t * 0.02 % pl.w)) % pl.w - pl.w / 2, 2) / 8);
-          y -= spike * 3.5;
-          x === 0 ? pl.ctx.moveTo(x, y) : pl.ctx.lineTo(x, y);
+        for (var px = 0; px < pl.w; px++) {
+          var py = pl.h / 2;
+          var spike = Math.exp(-Math.pow((px - pl.w / 2 + (t * 0.02 % pl.w)) % pl.w - pl.w / 2, 2) / 8);
+          py -= spike * 3.5;
+          px === 0 ? pl.ctx.moveTo(px, py) : pl.ctx.lineTo(px, py);
         }
         pl.ctx.stroke();
-        requestAnimationFrame(loopPL);
-      })(0);
-    }
-
-    // 3. Wave — dual sine (like benchmark comparison)
-    var wv = setup('accent-wave', 40, 10);
-    if (wv) {
-      (function loopWV(t) {
-        if (hidden) return requestAnimationFrame(loopWV);
+      }
+      // 3. Wave
+      if (wv) {
         wv.ctx.clearRect(0, 0, wv.w, wv.h);
         var mid = wv.h / 2;
-        // Line 1 — amber
         wv.ctx.strokeStyle = 'rgba(212,168,74,0.5)';
         wv.ctx.lineWidth = 0.7;
         wv.ctx.beginPath();
-        for (var x = 0; x < wv.w; x++) {
-          var y = mid + Math.sin(x * 0.18 + t * 0.0015) * 3;
-          x === 0 ? wv.ctx.moveTo(x, y) : wv.ctx.lineTo(x, y);
+        for (var wx = 0; wx < wv.w; wx++) {
+          var wy = mid + Math.sin(wx * 0.18 + t * 0.0015) * 3;
+          wx === 0 ? wv.ctx.moveTo(wx, wy) : wv.ctx.lineTo(wx, wy);
         }
         wv.ctx.stroke();
-        // Line 2 — blue
         wv.ctx.strokeStyle = 'rgba(90,147,192,0.4)';
         wv.ctx.beginPath();
-        for (var x2 = 0; x2 < wv.w; x2++) {
-          var y2 = mid + Math.sin(x2 * 0.15 + t * 0.001 + 1.5) * 2;
-          x2 === 0 ? wv.ctx.moveTo(x2, y2) : wv.ctx.lineTo(x2, y2);
+        for (var wx2 = 0; wx2 < wv.w; wx2++) {
+          var wy2 = mid + Math.sin(wx2 * 0.15 + t * 0.001 + 1.5) * 2;
+          wx2 === 0 ? wv.ctx.moveTo(wx2, wy2) : wv.ctx.lineTo(wx2, wy2);
         }
         wv.ctx.stroke();
-        requestAnimationFrame(loopWV);
-      })(0);
-    }
-
-    // 4. Orbit — tiny dot orbiting a center point
-    var ob = setup('accent-orbit', 14, 14);
-    if (ob) {
-      (function loopOB(t) {
-        if (hidden) return requestAnimationFrame(loopOB);
+      }
+      // 4. Orbit
+      if (ob) {
         ob.ctx.clearRect(0, 0, ob.w, ob.h);
-        var cx = ob.w / 2, cy = ob.h / 2;
-        // Ring
+        var ocx = ob.w / 2, ocy = ob.h / 2;
         ob.ctx.strokeStyle = 'rgba(138,126,112,0.3)';
         ob.ctx.lineWidth = 0.5;
-        ob.ctx.beginPath(); ob.ctx.arc(cx, cy, 5, 0, Math.PI * 2); ob.ctx.stroke();
-        // Center dot
+        ob.ctx.beginPath(); ob.ctx.arc(ocx, ocy, 5, 0, Math.PI * 2); ob.ctx.stroke();
         ob.ctx.fillStyle = 'rgba(212,168,74,0.5)';
-        ob.ctx.beginPath(); ob.ctx.arc(cx, cy, 1, 0, Math.PI * 2); ob.ctx.fill();
-        // Orbiting dot
-        var a = t * 0.0015;
-        var ox = cx + Math.cos(a) * 5, oy = cy + Math.sin(a) * 5;
+        ob.ctx.beginPath(); ob.ctx.arc(ocx, ocy, 1, 0, Math.PI * 2); ob.ctx.fill();
+        var oa = t * 0.0015;
+        var ox = ocx + Math.cos(oa) * 5, oy = ocy + Math.sin(oa) * 5;
         ob.ctx.fillStyle = 'rgba(127,184,88,0.7)';
         ob.ctx.beginPath(); ob.ctx.arc(ox, oy, 1.2, 0, Math.PI * 2); ob.ctx.fill();
-        requestAnimationFrame(loopOB);
-      })(0);
-    }
-
-    // 5. Bars — animated mini bar chart
-    var br = setup('accent-bars', 36, 10);
-    if (br) {
-      (function loopBR(t) {
-        if (hidden) return requestAnimationFrame(loopBR);
+      }
+      // 5. Bars
+      if (br) {
         br.ctx.clearRect(0, 0, br.w, br.h);
-        var barW = 2.5, gap = 1.5, n = 8;
-        for (var i = 0; i < n; i++) {
-          var x = i * (barW + gap) + 2;
-          var h2 = 2 + Math.abs(Math.sin(i * 0.7 + t * 0.002)) * 6;
-          var green = i < 5 ? true : false;
-          br.ctx.fillStyle = green ? 'rgba(127,184,88,0.5)' : 'rgba(208,88,88,0.5)';
-          br.ctx.fillRect(x, br.h - h2, barW, h2);
+        var barW2 = 2.5, gap = 1.5, n = 8;
+        for (var bi = 0; bi < n; bi++) {
+          var bx = bi * (barW2 + gap) + 2;
+          var bh = 2 + Math.abs(Math.sin(bi * 0.7 + t * 0.002)) * 6;
+          br.ctx.fillStyle = bi < 5 ? 'rgba(127,184,88,0.5)' : 'rgba(208,88,88,0.5)';
+          br.ctx.fillRect(bx, br.h - bh, barW2, bh);
         }
-        requestAnimationFrame(loopBR);
-      })(0);
-    }
-
-    // 6. Spiral — tiny rotating Stripe Art-style spirograph
-    var sp = setup('accent-spiral', 20, 20);
-    if (sp) {
-      (function loopSP(t) {
-        if (hidden) return requestAnimationFrame(loopSP);
+      }
+      // 6. Spiral
+      if (sp) {
         sp.ctx.clearRect(0, 0, sp.w, sp.h);
-        var cx = sp.w / 2, cy = sp.h / 2;
+        var scx = sp.w / 2, scy = sp.h / 2;
         var rot = t * 0.0003;
         sp.ctx.strokeStyle = 'rgba(138,126,112,0.35)';
         sp.ctx.lineWidth = 0.4;
-        // Draw spirograph arms
         for (var arm = 0; arm < 6; arm++) {
-          var a = rot + arm * Math.PI / 3;
+          var sa = rot + arm * Math.PI / 3;
           sp.ctx.beginPath();
           for (var p = 0; p < 30; p++) {
             var r1 = 3, r2 = 5 + Math.sin(t * 0.001 + arm) * 1;
-            var angle = a + p * 0.22;
-            var x = cx + Math.cos(angle) * (r1 + (r2 - r1) * p / 30);
-            var y = cy + Math.sin(angle) * (r1 + (r2 - r1) * p / 30);
-            p === 0 ? sp.ctx.moveTo(x, y) : sp.ctx.lineTo(x, y);
+            var angle = sa + p * 0.22;
+            var sx = scx + Math.cos(angle) * (r1 + (r2 - r1) * p / 30);
+            var sy = scy + Math.sin(angle) * (r1 + (r2 - r1) * p / 30);
+            p === 0 ? sp.ctx.moveTo(sx, sy) : sp.ctx.lineTo(sx, sy);
           }
           sp.ctx.stroke();
         }
-        // Center dot
         sp.ctx.fillStyle = 'rgba(212,168,74,0.4)';
-        sp.ctx.beginPath(); sp.ctx.arc(cx, cy, 1, 0, Math.PI * 2); sp.ctx.fill();
-        requestAnimationFrame(loopSP);
-      })(0);
-    }
+        sp.ctx.beginPath(); sp.ctx.arc(scx, scy, 1, 0, Math.PI * 2); sp.ctx.fill();
+      }
+    }, 12);
   }
 
   // Boot
