@@ -65,6 +65,105 @@ from research.brain.writer import (
     rebuild_all_indexes,
 )
 
+# ─── Grid Expansion (jitter around current best) ────────────────────────────
+
+import random
+
+def expand_grid(
+    base_grid: Dict[str, list],
+    current_best: Dict[str, Any],
+    n_jitter: int = 3,
+    rng_seed: Optional[int] = None,
+) -> Dict[str, list]:
+    """Expand a fixed parameter grid with jittered values around the current best.
+
+    For each param in the grid, if the current best is already one of the grid
+    values, adds `n_jitter` nearby values (±10-30% of the step size between
+    grid values). This prevents the sweep from stalling when the grid is exhausted.
+
+    Rules:
+    - Boolean params: no expansion (only True/False)
+    - String params: no expansion (categorical, no interpolation)
+    - Integer params: jitter by ±1, ±2 of the current value, clamped to valid range
+    - Float params: jitter by ±10-30% of the grid step size
+    - Never produces duplicates of existing grid values
+    - Values are rounded to match the precision of the grid
+
+    Args:
+        base_grid:    Original PARAM_GRIDS entry for a strategy.
+        current_best: Current best params dict.
+        n_jitter:     Number of jittered values to add per param.
+        rng_seed:     Random seed for reproducibility (None = random).
+
+    Returns:
+        New grid dict with expanded value lists.
+    """
+    rng = random.Random(rng_seed)
+    expanded = {}
+
+    for param, values in base_grid.items():
+        # Skip booleans and strings — no meaningful jitter
+        if all(isinstance(v, bool) for v in values):
+            expanded[param] = list(values)
+            continue
+        if any(isinstance(v, str) for v in values):
+            expanded[param] = list(values)
+            continue
+
+        current = current_best.get(param)
+        numeric_values = [v for v in values if isinstance(v, (int, float)) and not isinstance(v, bool)]
+        if not numeric_values or current is None:
+            expanded[param] = list(values)
+            continue
+
+        # Determine if this is an int or float param
+        is_int = all(isinstance(v, int) for v in numeric_values)
+        sorted_vals = sorted(set(numeric_values))
+
+        # Calculate typical step size
+        if len(sorted_vals) >= 2:
+            steps = [sorted_vals[i+1] - sorted_vals[i] for i in range(len(sorted_vals)-1)]
+            avg_step = sum(steps) / len(steps)
+        else:
+            avg_step = abs(sorted_vals[0]) * 0.2 if sorted_vals[0] != 0 else 1.0
+
+        # Determine bounds (allow 1 step beyond grid edges)
+        lo = sorted_vals[0] - avg_step
+        hi = sorted_vals[-1] + avg_step
+
+        # For params that must be positive (stop mult, periods, etc.)
+        if all(v > 0 for v in sorted_vals):
+            lo = max(lo, avg_step * 0.25)  # don't go below ~quarter step
+
+        # Generate jittered values around the current best
+        jittered = set()
+        attempts = 0
+        while len(jittered) < n_jitter and attempts < n_jitter * 10:
+            attempts += 1
+            # Random offset: ±(0.3 to 1.0) × avg_step
+            offset = rng.uniform(-1.0, 1.0) * avg_step
+            new_val = current + offset
+            new_val = max(lo, min(hi, new_val))
+
+            if is_int:
+                new_val = int(round(new_val))
+            else:
+                # Match precision of grid values
+                decimal_places = max(
+                    len(str(v).split('.')[-1]) if '.' in str(v) else 0
+                    for v in numeric_values
+                )
+                new_val = round(new_val, max(decimal_places, 2))
+
+            # Skip if it's already in the base grid or already jittered
+            if new_val not in values and new_val not in jittered:
+                jittered.add(new_val)
+
+        expanded[param] = list(values) + sorted(jittered)
+
+    return expanded
+
+
 # ─── Parameter Grids ─────────────────────────────────────────────────────────
 
 # Each strategy has a grid of parameters to sweep.
@@ -935,10 +1034,28 @@ def run_sweep(
                 logger.info("Max runtime reached mid-cycle — stopping.")
                 break
 
-            grid = PARAM_GRIDS.get(strategy_name, {})
-            if not grid:
+            base_grid = PARAM_GRIDS.get(strategy_name, {})
+            if not base_grid:
                 logger.info("No param grid for %s — skipping.", strategy_name)
                 continue
+
+            # Expand grid with jittered values around current best
+            # (prevents stalling when the fixed grid is exhausted)
+            try:
+                current_best_params = load_best(strategy_name, market).get("params", {})
+            except Exception:
+                current_best_params = {}
+            if current_best_params:
+                grid = expand_grid(base_grid, current_best_params, n_jitter=3)
+                n_base = sum(len(v) for v in base_grid.values())
+                n_expanded = sum(len(v) for v in grid.values())
+                if n_expanded > n_base:
+                    logger.info(
+                        "Grid expanded: %d → %d values (+%d jittered around best)",
+                        n_base, n_expanded, n_expanded - n_base,
+                    )
+            else:
+                grid = base_grid
 
             logger.info("--- Strategy: %s ---", strategy_name)
             _write_heartbeat(

@@ -481,7 +481,9 @@ def get_historical_bars(
     result = {}
     try:
         from brokers.alpaca.mapper import to_atlas
-        for symbol, bars in (barset or {}).items():
+        # BarSet is a pydantic model with .data dict, not a dict itself
+        barset_data = getattr(barset, 'data', None) or (barset if isinstance(barset, dict) else {})
+        for symbol, bars in barset_data.items():
             atlas_ticker = to_atlas(symbol)
             if not bars:
                 continue
