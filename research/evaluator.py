@@ -201,13 +201,27 @@ class ExperimentEvaluator:
                 "partial", experiment_id, passing, failing, criteria_results
             )
 
-        return {
+        # Compute DSR as informational metric on every evaluation
+        sharpe_val = self._resolve_metric(metrics, "sharpe")
+        dsr_info = None
+        if sharpe_val is not None and sharpe_val != 0:
+            try:
+                dsr_info = self.deflated_sharpe_ratio(
+                    observed_sr=sharpe_val, n_strategies=29, T_months=60,
+                )
+            except Exception:
+                pass  # DSR is informational — never block on failure
+
+        result = {
             "verdict": verdict,
             "criteria_results": criteria_results,
             "failing_criteria": failing,
             "passing_criteria": passing,
             "rationale": rationale,
         }
+        if dsr_info is not None:
+            result["dsr"] = dsr_info
+        return result
 
     def _build_rationale(
         self,
@@ -610,9 +624,9 @@ class ExperimentEvaluator:
 
         next_stage = self.get_next_stage(current_stage)
 
-        # Special case: oos is final stage — return promote signal
+        # Special case: oos is final stage — return promote signal with DSR check
         if current_stage == "oos":
-            return {
+            promote_result = {
                 "action": "promote",
                 "experiment_id": experiment_id,
                 "strategy_name": strategy_name,
@@ -623,6 +637,22 @@ class ExperimentEvaluator:
                 ),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
+            # Add DSR warning if optimized params contain a Sharpe value
+            if optimized_params and "sharpe" in optimized_params:
+                try:
+                    dsr = self.deflated_sharpe_ratio(
+                        optimized_params["sharpe"], n_strategies=29, T_months=60,
+                    )
+                    promote_result["dsr"] = dsr
+                    if not dsr["is_significant"]:
+                        promote_result["dsr_warning"] = (
+                            f"⚠️ DSR: Sharpe {dsr['observed_sr']:.2f} is NOT statistically "
+                            f"significant after testing 29 strategies (p={dsr['dsr_pvalue']:.3f}). "
+                            f"Expected max SR by chance alone: {dsr['expected_max_sr']:.2f}."
+                        )
+                except Exception:
+                    pass
+            return promote_result
 
         if next_stage is None:
             return None

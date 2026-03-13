@@ -121,6 +121,9 @@ PARAM_GRIDS: Dict[str, Dict[str, list]] = {
         "atr_stop_mult": [1.5, 2.0, 2.5, 3.0],
         "max_hold_days": [5, 10, 15, 20],
         "sma200_filter": [True, False],
+        "signal_mode": ["raw", "risk_adjusted", "idiosyncratic"],
+        "momentum_lookback": [126, 252],
+        "momentum_skip": [0, 21, 42],
     },
     "short_term_mr": {
         "rsi_period": [2, 3, 4, 5],

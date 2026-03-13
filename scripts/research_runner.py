@@ -647,7 +647,7 @@ def _run_filter_test(entry: dict) -> dict:
     # Detect engine-level params (vix_filter, regime_filter, tom_filter, etc.)
     # These go on the top-level config, not per-strategy.
     # TOM (Turn-of-Month) is treated as an engine-level scheduling filter.
-    _ENGINE_LEVEL_PARAMS = {'vix_filter', 'regime_filter', 'fee_aware_filter', 'tom_filter', 'turn_of_month', 'macro_regime'}
+    _ENGINE_LEVEL_PARAMS = {'vix_filter', 'regime_filter', 'fee_aware_filter', 'tom_filter', 'turn_of_month', 'macro_regime', 'vol_scaling'}
     is_engine_param = filter_param in _ENGINE_LEVEL_PARAMS
 
     # Detect dotted-path params (e.g. "strategies.mean_reversion.breadth.enabled").
