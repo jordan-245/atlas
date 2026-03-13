@@ -2439,8 +2439,25 @@ def _build_agents(daemon: dict) -> list:
             if ed and ed > experiments_done:
                 experiments_done = ed
 
+        # Core team members always show (sleeping when idle); legacy agents only show when active
+        _CORE_TEAM = {"sweep", "runner", "director_cron"}
         if not svc_running and not hb:
-            continue  # Service not active and no heartbeat — skip
+            if agent_type in _CORE_TEAM:
+                # Check if the service/timer is at least enabled (installed)
+                _is_enabled = False
+                try:
+                    # For timer-based services, check the timer unit
+                    check_unit = svc_name + ".timer" if agent_type == "director_cron" else svc_name
+                    r2 = _sp.run(["systemctl", "is-enabled", check_unit],
+                                 capture_output=True, text=True, timeout=3)
+                    _is_enabled = r2.stdout.strip() == "enabled"
+                except Exception:
+                    pass
+                if not _is_enabled:
+                    continue  # Not even installed — skip
+                # Core team member is installed but idle — show as sleeping
+            else:
+                continue  # Legacy/optional agent not active — skip
 
         found_any = True
 
@@ -2570,7 +2587,21 @@ def _build_agents(daemon: dict) -> list:
                 task   = f"Queue: {dc_depth} experiments" if dc_depth else "Idle until next run"
             elif dc_status == "stopped" or not svc_running:
                 status = "sleeping"
-                task   = "Cron complete"
+                # Show next run time if we can get it
+                _next_run = ""
+                try:
+                    r3 = _sp.run(["systemctl", "show", "atlas-director.timer",
+                                  "--property=NextElapseUSecRealtime", "--value"],
+                                 capture_output=True, text=True, timeout=3)
+                    nxt = r3.stdout.strip()
+                    if nxt:
+                        # Format: "Fri 2026-03-13 20:00:00 AEST" → extract time
+                        parts = nxt.split()
+                        if len(parts) >= 3:
+                            _next_run = parts[2][:5]  # "20:00"
+                except Exception:
+                    pass
+                task = f"Next review at {_next_run}" if _next_run else "Sleeping between reviews"
             else:
                 status = "reading"
                 task   = "Reviewing..."
