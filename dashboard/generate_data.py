@@ -2307,7 +2307,90 @@ def generate_research_data() -> dict:
         "daily_insight": generate_daily_insight(),
         "agents": _build_agents(daemon),
         "discoveries": _build_discoveries(patterns, hypotheses, journal),
+        "portfolio": _build_portfolio_metrics(),
     }
+
+
+def _build_portfolio_metrics() -> dict:
+    """Build portfolio-level metrics from portfolio_optimization.json + daily snapshot tracking.
+
+    Returns dict with: sharpe, return, vol, drawdown, n_strategies, avg_corr,
+    active_weights, and daily deltas (sharpe_delta, return_delta etc.)
+    """
+    opt_path = PROJECT_ROOT / "research" / "results" / "portfolio_optimization.json"
+    snapshot_path = PROJECT_ROOT / "dashboard" / "cache" / "portfolio_snapshot.json"
+
+    result = {
+        "available": False,
+        "sharpe": None,
+        "annual_return": None,
+        "annual_vol": None,
+        "max_drawdown": None,
+        "n_strategies": 0,
+        "avg_correlation": None,
+        "active_weights": {},
+        "sharpe_delta": None,
+        "return_delta": None,
+        "drawdown_delta": None,
+        "last_updated": None,
+    }
+
+    opt = safe_json(str(opt_path), None)
+    if not opt or "portfolio_metrics" not in opt:
+        return result
+
+    pm = opt["portfolio_metrics"]
+    result["available"] = True
+    result["sharpe"] = pm.get("simulated_sharpe")
+    result["annual_return"] = pm.get("portfolio_annual_return")
+    result["annual_vol"] = pm.get("portfolio_annual_vol")
+    result["max_drawdown"] = pm.get("portfolio_max_drawdown")
+    result["n_strategies"] = pm.get("n_strategies", 0)
+    result["avg_correlation"] = pm.get("avg_correlation")
+    result["active_weights"] = opt.get("active_weights", {})
+
+    # File modification time as "last updated"
+    try:
+        mtime = opt_path.stat().st_mtime
+        result["last_updated"] = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        pass
+
+    # ── Daily delta tracking ─────────────────────────────────
+    # Read yesterday's snapshot and compute deltas
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    snapshot = safe_json(str(snapshot_path), {})
+    prev_date = snapshot.get("date", "")
+    prev_sharpe = snapshot.get("sharpe")
+    prev_return = snapshot.get("annual_return")
+    prev_drawdown = snapshot.get("max_drawdown")
+
+    if prev_date and prev_date != today_str:
+        # We have a previous day's data — compute deltas
+        if prev_sharpe is not None and result["sharpe"] is not None:
+            result["sharpe_delta"] = round(result["sharpe"] - prev_sharpe, 4)
+        if prev_return is not None and result["annual_return"] is not None:
+            result["return_delta"] = round(result["annual_return"] - prev_return, 2)
+        if prev_drawdown is not None and result["max_drawdown"] is not None:
+            result["drawdown_delta"] = round(result["max_drawdown"] - prev_drawdown, 2)
+
+    # Save today's snapshot (only write once per day to preserve yesterday's baseline)
+    if prev_date != today_str:
+        try:
+            snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+            snap = {
+                "date": today_str,
+                "sharpe": result["sharpe"],
+                "annual_return": result["annual_return"],
+                "max_drawdown": result["max_drawdown"],
+                "n_strategies": result["n_strategies"],
+            }
+            with open(snapshot_path, "w") as f:
+                json.dump(snap, f, indent=2)
+        except Exception as e:
+            logger.debug("Could not write portfolio snapshot: %s", e)
+
+    return result
 
 
 def _build_strategy_pipeline() -> dict:

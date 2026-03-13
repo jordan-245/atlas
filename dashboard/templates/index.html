@@ -421,6 +421,41 @@ td:nth-child(2) .strat-tip .strat-tiptext::after {
 .agent-ticker .tick-load { color: var(--blue); }
 .agent-ticker .tick-time { color: var(--text-tertiary); font-size: 10px; margin-left: 8px; }
 
+/* Portfolio Metrics Strip */
+.portfolio-strip {
+  display: flex; align-items: stretch; gap: 1px; margin-bottom: 12px;
+  background: var(--border-subtle); border-radius: var(--radius-sm);
+  overflow: hidden; border: 1px solid var(--border-subtle);
+}
+.portfolio-strip-empty { display: none; }
+.pf-cell {
+  flex: 1; background: var(--surface); padding: 10px 10px;
+  text-align: center; min-width: 0;
+}
+.pf-cell:first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
+.pf-cell:last-child { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+.pf-val { font-family: var(--mono); font-size: 18px; font-weight: 800; line-height: 1.2; }
+.pf-lbl { font-size: 9px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-tertiary); margin-top: 3px; }
+.pf-delta { font-family: var(--mono); font-size: 10px; margin-top: 2px; }
+.pf-delta-up { color: var(--green); }
+.pf-delta-down { color: var(--red); }
+.pf-delta-flat { color: var(--text-tertiary); }
+.pf-weights { display: flex; height: 4px; border-radius: 2px; overflow: hidden; margin-top: 4px; gap: 1px; }
+.pf-weights-bar { height: 100%; min-width: 2px; border-radius: 1px; }
+.pf-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 10px 4px; background: var(--surface);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  border: 1px solid var(--border-subtle); border-bottom: none; margin-bottom: 0;
+}
+.pf-header-title { font-size: 10px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--text-secondary); }
+.pf-header-sub { font-family: var(--mono); font-size: 9px; color: var(--text-tertiary); }
+.portfolio-strip { border-top: none; border-radius: 0 0 var(--radius-sm) var(--radius-sm); }
+@media (max-width: 600px) {
+  .portfolio-strip { flex-wrap: wrap; }
+  .pf-cell { flex: 1 1 30%; }
+}
+
 /* KPI Strip */
 .research-kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 16px; }
 .rkpi {
@@ -943,6 +978,13 @@ td:nth-child(2) .strat-tip .strat-tiptext::after {
 
     <!-- Live Activity Ticker (below canvas) -->
     <div id="agent-ticker" class="agent-ticker"></div>
+
+    <!-- Portfolio Metrics Strip (between canvas and KPIs) -->
+    <div id="portfolio-header" class="pf-header" style="display:none">
+      <span class="pf-header-title">📊 Portfolio</span>
+      <span class="pf-header-sub" id="portfolio-updated"></span>
+    </div>
+    <div id="portfolio-strip" class="portfolio-strip portfolio-strip-empty"></div>
 
     <!-- KPI Strip (4 metrics) -->
     <div class="research-kpis" id="research-kpis"></div>
@@ -2909,6 +2951,91 @@ function renderRadarSVG(insight) {
 
 // ── Research Tab ──
 
+function _renderPortfolioStrip(pf) {
+  var strip = document.getElementById('portfolio-strip');
+  var header = document.getElementById('portfolio-header');
+  var updatedEl = document.getElementById('portfolio-updated');
+  if (!strip) return;
+
+  if (!pf || !pf.available) {
+    strip.className = 'portfolio-strip portfolio-strip-empty';
+    if (header) header.style.display = 'none';
+    return;
+  }
+
+  // Show header
+  if (header) {
+    header.style.display = 'flex';
+    if (updatedEl) updatedEl.textContent = pf.last_updated ? 'updated ' + pf.last_updated : '';
+  }
+
+  strip.className = 'portfolio-strip';
+  var h = '';
+
+  // Helper: delta badge
+  function delta(val, suffix, invert) {
+    if (val == null) return '<div class="pf-delta pf-delta-flat">—</div>';
+    var isUp = invert ? val < 0 : val > 0;
+    var isDown = invert ? val > 0 : val < 0;
+    var cls = isUp ? 'pf-delta-up' : isDown ? 'pf-delta-down' : 'pf-delta-flat';
+    var arrow = isUp ? '▲' : isDown ? '▼' : '–';
+    var abs = Math.abs(val);
+    return '<div class="pf-delta ' + cls + '">' + arrow + ' ' + abs.toFixed(suffix === '%' ? 1 : 2) + (suffix || '') + '</div>';
+  }
+
+  // Sharpe
+  var sharpeColor = pf.sharpe >= 1.0 ? 'var(--green)' : pf.sharpe >= 0.5 ? 'var(--amber)' : 'var(--red)';
+  h += '<div class="pf-cell">';
+  h += '<div class="pf-val" style="color:' + sharpeColor + '">' + (pf.sharpe != null ? pf.sharpe.toFixed(2) : '—') + '</div>';
+  h += '<div class="pf-lbl">Sharpe</div>';
+  h += delta(pf.sharpe_delta, '');
+  h += '</div>';
+
+  // Annual Return
+  var retColor = pf.annual_return > 0 ? 'var(--green)' : 'var(--red)';
+  h += '<div class="pf-cell">';
+  h += '<div class="pf-val" style="color:' + retColor + '">' + (pf.annual_return != null ? pf.annual_return.toFixed(1) + '%' : '—') + '</div>';
+  h += '<div class="pf-lbl">Annual Return</div>';
+  h += delta(pf.return_delta, '%');
+  h += '</div>';
+
+  // Volatility
+  h += '<div class="pf-cell">';
+  h += '<div class="pf-val" style="color:var(--text-secondary)">' + (pf.annual_vol != null ? pf.annual_vol.toFixed(1) + '%' : '—') + '</div>';
+  h += '<div class="pf-lbl">Volatility</div>';
+  h += '<div class="pf-delta pf-delta-flat">' + (pf.n_strategies || 0) + ' strategies</div>';
+  h += '</div>';
+
+  // Max Drawdown
+  var ddColor = pf.max_drawdown > -10 ? 'var(--amber)' : 'var(--red)';
+  h += '<div class="pf-cell">';
+  h += '<div class="pf-val" style="color:' + ddColor + '">' + (pf.max_drawdown != null ? pf.max_drawdown.toFixed(1) + '%' : '—') + '</div>';
+  h += '<div class="pf-lbl">Max Drawdown</div>';
+  h += delta(pf.drawdown_delta, '%', true);
+  h += '</div>';
+
+  // Correlation (avg pairwise)
+  var corrColor = pf.avg_correlation < 0.3 ? 'var(--green)' : pf.avg_correlation < 0.5 ? 'var(--amber)' : 'var(--red)';
+  h += '<div class="pf-cell">';
+  h += '<div class="pf-val" style="color:' + corrColor + '">' + (pf.avg_correlation != null ? pf.avg_correlation.toFixed(3) : '—') + '</div>';
+  h += '<div class="pf-lbl">Avg Correlation</div>';
+
+  // Allocation weight bars
+  var weights = pf.active_weights || {};
+  var wKeys = Object.keys(weights).sort(function(a,b) { return weights[b] - weights[a]; });
+  if (wKeys.length > 0) {
+    var barColors = ['var(--green)', 'var(--blue)', 'var(--amber)', 'var(--purple)', 'var(--red)', 'var(--green-bright)'];
+    h += '<div class="pf-weights" title="' + wKeys.map(function(k) { return k.replace(/_/g,' ') + ' ' + (weights[k]*100).toFixed(0) + '%'; }).join(', ') + '">';
+    wKeys.forEach(function(k, i) {
+      h += '<div class="pf-weights-bar" style="flex:' + (weights[k] * 100).toFixed(1) + ';background:' + barColors[i % barColors.length] + ';opacity:0.7"></div>';
+    });
+    h += '</div>';
+  }
+  h += '</div>';
+
+  strip.innerHTML = h;
+}
+
 function renderResearch(d) {
   var res = d.research || {};
   var stats = res.statistics || {};
@@ -2922,6 +3049,9 @@ function renderResearch(d) {
 
   // Update activity ticker
   _updateAgentTicker(agents);
+
+  // ── Portfolio Metrics Strip ──
+  _renderPortfolioStrip(res.portfolio || {});
 
   // FIX 14: Research tab badge — experiment count (was ambiguous "4 ACTIVE")
   var badge = document.getElementById('research-tab-badge');
