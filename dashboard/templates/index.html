@@ -59,10 +59,7 @@
       <svg class="tab-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
       <span class="hotkey-hint">[R]</span> Research <span class="tab-badge" id="research-tab-badge">0</span>
     </button>
-    <button class="tab-btn" onclick="switchTab('monitor')" id="tab-btn-monitor">
-      <svg class="tab-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M12 6v6l4 2"/></svg>
-      <span class="hotkey-hint">[M]</span> Monitor <span class="tab-badge" id="monitor-tab-badge">0</span>
-    </button>
+
   </div>
 
   <!-- ═══ TRADING TAB ═══ -->
@@ -109,10 +106,10 @@
       <div class="section-body" id="body-plan"></div>
     </div>
   </div>
-  <!-- Manual Positions (non-Atlas holdings) -->
-  <div class="section" id="sec-manual" style="display:none;animation-delay:0.47s">
+  <!-- Manual Portfolio (Moomoo — discretionary trades) -->
+  <div class="section" id="sec-manual" style="animation-delay:0.47s">
     <div class="section-head" onclick="toggle('manual')">
-      <div class="section-title">/Manual Holdings <span class="section-count" id="manual-count">0</span></div>
+      <div class="section-title">/Manual Portfolio <span style="color:var(--text-tertiary);font-size:11px;font-weight:400;margin-left:6px">Moomoo</span> <span class="section-count" id="manual-count">0</span></div>
       <span class="chevron down" id="chev-manual">+</span>
     </div>
     <div class="section-body" id="body-manual"></div>
@@ -187,58 +184,7 @@
 
   </div><!-- /tab-research -->
 
-  <!-- ═══ MONITOR TAB ═══ -->
-  <div class="tab-content" id="tab-monitor">
 
-    <!-- Summary KPIs -->
-    <div class="cards" id="monitor-cards" style="grid-template-columns:repeat(4,1fr)"></div>
-
-    <!-- Controls -->
-    <div style="display:flex;gap:8px;margin-bottom:14px;align-items:center;flex-wrap:wrap">
-      <div style="display:flex;gap:3px" id="monitor-sort-btns">
-        <button class="chart-range-btn active" onclick="monitorSort('health')">Health</button>
-        <button class="chart-range-btn" onclick="monitorSort('pnl')">P&amp;L</button>
-        <button class="chart-range-btn" onclick="monitorSort('date')">Date</button>
-      </div>
-      <div style="flex:1"></div>
-      <button class="plan-btn plan-btn-approve" onclick="monitorEvaluate()" id="monitor-eval-btn" style="padding:6px 14px;font-size:11px">
-        ↻ Evaluate Now
-      </button>
-    </div>
-
-    <!-- Tag groups -->
-    <div id="monitor-tags" style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap"></div>
-
-    <!-- Position Cards Grid -->
-    <div id="monitor-positions" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px;margin-bottom:14px"></div>
-
-    <!-- Alerts Feed -->
-    <div class="section" style="animation-delay:0.3s">
-      <div class="section-head" onclick="toggle('malerts')">
-        <div class="section-title">/Alert Feed <span class="section-count" id="malerts-count">0</span></div>
-        <span class="chevron down" id="chev-malerts">+</span>
-      </div>
-      <div class="section-body" id="body-malerts"></div>
-    </div>
-
-    <!-- Templates -->
-    <div class="section" style="animation-delay:0.35s">
-      <div class="section-head" onclick="toggle('mtemplates')">
-        <div class="section-title">/Templates <span class="section-count" id="mtemplates-count">0</span></div>
-        <span class="chevron down" id="chev-mtemplates">+</span>
-      </div>
-      <div class="section-body" id="body-mtemplates"></div>
-    </div>
-
-  </div><!-- /tab-monitor -->
-
-  <!-- ═══ POSITION DETAIL MODAL ═══ -->
-  <div id="monitor-modal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);overflow-y:auto">
-    <div style="max-width:640px;margin:40px auto;padding:0 16px">
-      <div id="monitor-modal-content" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px;position:relative">
-      </div>
-    </div>
-  </div>
 
   <!-- FIX 22: Removed trailing plus-row grid markers (visual noise at page bottom) -->
 
@@ -296,7 +242,7 @@ function buildView(raw, market) {
       currency: md.currency || 'AUD'
     },
     portfolio: md.portfolio || {},
-    manual_positions: md.manual_positions || { positions: [], num_open: 0, unrealized_pnl: 0 },
+    manual_portfolio: raw.manual_portfolio || { connected: false, positions: [], num_open: 0, unrealized_pnl: 0, equity: 0, cash: 0 },
     strategy_summary: md.strategy_summary || [],
     equity_curve: md.equity_curve || [],
     benchmark_curve: md.benchmark_curve || [],
@@ -1107,7 +1053,11 @@ function render(d) {
   var p = d.portfolio || {};
   var risk = d.risk || {};
 
-  var manualPnl = ((d.manual_positions || {}).unrealized_pnl) || 0;
+  var mp = d.manual_portfolio || {};
+  var manualPnl = mp.unrealized_pnl || 0;
+  var manualEquity = mp.equity || 0;
+  var manualCash = mp.cash || 0;
+  var manualConnected = mp.connected || false;
 
   // Market session countdowns — init from active markets in data
   _mcInit(Object.keys(d.markets || {}));
@@ -1182,13 +1132,15 @@ function render(d) {
   // Headline equity: prefer broker-reported total (matches broker app)
   var headlineEquity = p.broker_equity || p.equity || 0;
 
+  // Combined equity: Atlas (Alpaca) + Manual (Moomoo)
+  var totalEquity = headlineEquity + manualEquity;
   var cards = [
     {
-      label: 'Equity',
-      value: $(headlineEquity),
-      c: cls(p.total_pnl),
-      accent: cls(p.total_pnl) === 'up' ? 'accent-green' : cls(p.total_pnl) === 'down' ? 'accent-red' : 'accent-blue',
-      sub: 'Atlas ' + pct(p.total_pnl_pct || 0) + ' from ' + $(p.starting_equity) + ' ' + sparkHtml
+      label: 'Total Equity',
+      value: $(totalEquity),
+      c: cls(p.total_pnl + manualPnl),
+      accent: 'accent-blue',
+      sub: 'Atlas ' + $(headlineEquity) + ' · Manual ' + $(manualEquity) + ' ' + sparkHtml
     },
     {
       label: 'vs ' + benchTk,
@@ -1264,7 +1216,7 @@ function render(d) {
   var pnlHtml = '<div style="display:flex;gap:32px;flex-wrap:wrap;padding:4px 0">';
   pnlHtml += '<div><span class="pnl-label" style="margin-right:6px">Unrealized</span><span class="mono ' + cls(p.market_pnl) + '">' + $(p.market_pnl || 0) + '</span></div>';
   if ((p.realized_pnl || 0) !== 0) pnlHtml += '<div><span class="pnl-label" style="margin-right:6px">Realized</span><span class="mono ' + cls(p.realized_pnl) + '">' + $(p.realized_pnl) + '</span></div>';
-  if (manualPnl !== 0) pnlHtml += '<div><span class="pnl-label" style="margin-right:6px">Manual</span><span class="mono ' + cls(manualPnl) + '">' + $(manualPnl) + '</span><span style="color:var(--text-tertiary);font-size:11px;margin-left:4px">' + ((d.manual_positions||{}).num_open||0) + ' pos</span></div>';
+  pnlHtml += '<div><span class="pnl-label" style="margin-right:6px">Manual</span><span class="mono ' + cls(manualPnl) + '">' + $(manualPnl) + '</span><span style="color:var(--text-tertiary);font-size:11px;margin-left:4px">' + (mp.num_open||0) + ' pos · ' + (manualConnected ? '🟢' : '🔴') + '</span></div>';
   pnlHtml += '</div>';
   document.getElementById('body-pnl').innerHTML = pnlHtml;
 
@@ -1447,35 +1399,45 @@ function render(d) {
     planEl.innerHTML = ph;
   }
 
-  // Manual positions (non-Atlas holdings)
-  var manual = d.manual_positions || {};
-  var manualPos = manual.positions || [];
+  // Manual Portfolio (Moomoo — discretionary trades)
+  var manualPos = mp.positions || [];
   var manualEl = document.getElementById('sec-manual');
+  var manualCountEl = document.getElementById('manual-count');
+  var staleTag = mp.stale_minutes ? ' <span style="color:var(--yellow);font-size:10px">(' + Math.round(mp.stale_minutes) + 'm ago)</span>' : '';
+  var connDot = manualConnected ? '<span style="color:var(--green)">●</span>' : '<span style="color:var(--red)">●</span>';
+  manualCountEl.innerHTML = connDot + ' ' + manualPos.length + ' positions · ' + $(mp.equity || 0) + ' equity' + staleTag;
   if (manualPos.length > 0) {
-    manualEl.style.display = '';
-    document.getElementById('manual-count').textContent = manualPos.length + ' · ' + $(manual.unrealized_pnl || 0);
-    var mh = '<div class="table-scroll"><table id="tbl-manual"><thead><tr>';
-    mh += '<th>Ticker</th><th>Mkt</th><th>Shares</th><th>Entry</th><th>Current</th><th>Value</th><th>P&L</th><th>P&L %</th>';
+    var mh = '<div style="display:flex;gap:24px;margin-bottom:12px;flex-wrap:wrap;font-size:12px">';
+    mh += '<div><span class="pnl-label">Equity</span> <span class="mono">' + $(mp.equity) + '</span></div>';
+    mh += '<div><span class="pnl-label">Cash</span> <span class="mono">' + $(mp.cash) + '</span></div>';
+    mh += '<div><span class="pnl-label">Invested</span> <span class="mono">' + $(mp.market_value) + '</span></div>';
+    mh += '<div><span class="pnl-label">P&L</span> <span class="mono ' + cls(mp.unrealized_pnl) + '">' + $(mp.unrealized_pnl) + '</span></div>';
+    mh += '</div>';
+    mh += '<div class="table-scroll"><table id="tbl-manual"><thead><tr>';
+    mh += '<th role="columnheader" tabindex="0" onclick="sortTable(\'tbl-manual\',0,\'str\')">Ticker</th>';
+    mh += '<th role="columnheader" tabindex="0" onclick="sortTable(\'tbl-manual\',1,\'num\')">Shares</th>';
+    mh += '<th role="columnheader" tabindex="0" onclick="sortTable(\'tbl-manual\',2,\'num\')">Entry</th>';
+    mh += '<th role="columnheader" tabindex="0" onclick="sortTable(\'tbl-manual\',3,\'num\')">Current</th>';
+    mh += '<th role="columnheader" tabindex="0" onclick="sortTable(\'tbl-manual\',4,\'num\')">Value</th>';
+    mh += '<th role="columnheader" tabindex="0" onclick="sortTable(\'tbl-manual\',5,\'num\')">P&L</th>';
+    mh += '<th role="columnheader" tabindex="0" onclick="sortTable(\'tbl-manual\',6,\'num\')">P&L %</th>';
     mh += '</tr></thead><tbody>';
-    manualPos.forEach(function(mp) {
-      var c = cls(mp.pnl);
-      var val = (mp.current_price * mp.shares);
+    manualPos.forEach(function(pos) {
+      var c = cls(pos.pnl);
       mh += '<tr>';
-      mh += '<td style="font-family:var(--mono);font-weight:600;font-size:12px">' + esc(mp.ticker) + '</td>';
-      mh += '<td>' + marketTag(mp.market) + '</td>';
-      mh += '<td class="mono">' + mp.shares + '</td>';
-      mh += '<td class="mono">' + $(mp.entry_price) + '</td>';
-      mh += '<td class="mono">' + $(mp.current_price) + '</td>';
-      mh += '<td class="mono">' + $(val) + '</td>';
-      mh += '<td class="mono ' + c + '">' + $(mp.pnl) + '</td>';
-      mh += '<td class="mono ' + c + '">' + pct(mp.pnl_pct) + '</td>';
+      mh += '<td style="font-family:var(--mono);font-weight:600;font-size:12px">' + esc(pos.ticker) + '</td>';
+      mh += '<td class="mono">' + pos.shares + '</td>';
+      mh += '<td class="mono">' + $(pos.entry_price) + '</td>';
+      mh += '<td class="mono">' + $(pos.current_price) + '</td>';
+      mh += '<td class="mono">' + $(pos.market_value) + '</td>';
+      mh += '<td class="mono ' + c + '">' + $(pos.pnl) + '</td>';
+      mh += '<td class="mono ' + c + '">' + pct(pos.pnl_pct) + '</td>';
       mh += '</tr>';
     });
     mh += '</tbody></table></div>';
-    mh += '<div style="margin-top:10px;font-size:11px;color:var(--text-tertiary)">These positions are held outside Atlas and won\'t be traded by the system.</div>';
     document.getElementById('body-manual').innerHTML = mh;
   } else {
-    manualEl.style.display = 'none';
+    document.getElementById('body-manual').innerHTML = '<div class="empty">' + (manualConnected ? 'No manual positions' : 'Moomoo offline — cached data may be available') + '</div>';
   }
 
   // Orders — merge broker orders + approved/executed plan entries
@@ -2984,342 +2946,10 @@ document.addEventListener('visibilitychange', function() {
 });
 startPoll();
 
-// ═══════════════════════════════════════════════════════════════════
-// POSITION MONITOR
-// ═══════════════════════════════════════════════════════════════════
-var _monitorData = null;
-var _monitorSort = 'health';
-var _monitorTagFilter = null;
+// (Monitor tab removed — Moomoo manual positions shown in Trading tab)
 
-function renderMonitorOffline() {
-  var posEl = document.getElementById('monitor-positions');
-  if (posEl) posEl.innerHTML = '<div class="empty" style="padding:24px;text-align:center;color:var(--text-tertiary);font-family:var(--mono);font-size:12px">Monitor requires live API — running in static / offline mode</div>';
-  var cardsEl = document.getElementById('monitor-cards');
-  if (cardsEl) cardsEl.innerHTML = '';
-  var badge = document.getElementById('monitor-tab-badge');
-  if (badge) { badge.textContent = ''; badge.style.display = 'none'; }
-}
-
-function loadMonitor() {
-  if (window._monitorApiUnavailable) { renderMonitorOffline(); return; }
-  fetch('/api/monitor?t=' + Date.now(), {credentials: 'same-origin'})
-    .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-    .then(function(data) {
-      _monitorData = data;
-      renderMonitor(data);
-    })
-    .catch(function(e) {
-      console.warn('Monitor API unavailable (static mode):', e.message);
-      window._monitorApiUnavailable = true;
-      renderMonitorOffline();
-    });
-}
-
-function monitorSort(by) {
-  _monitorSort = by;
-  document.querySelectorAll('#monitor-sort-btns .chart-range-btn').forEach(function(el) {
-    el.classList.toggle('active', el.textContent.trim().toLowerCase() === by);
-  });
-  if (_monitorData) renderMonitor(_monitorData);
-}
-
-function monitorFilterTag(tag) {
-  _monitorTagFilter = (_monitorTagFilter === tag) ? null : tag;
-  if (_monitorData) renderMonitor(_monitorData);
-}
-
-function monitorEvaluate() {
-  var btn = document.getElementById('monitor-eval-btn');
-  var saved = btn.innerHTML;
-  btn.innerHTML = '<span class="plan-btn-spinner"></span> Evaluating…';
-  btn.disabled = true;
-  fetch('/api/monitor/evaluate', {method:'POST', credentials:'same-origin',
-    headers:{'Content-Type':'application/json'}, body:'{}'})
-    .then(function(r) { return r.json(); })
-    .then(function() { loadMonitor(); })
-    .catch(function() {})
-    .then(function() {
-      // Minimum 5s disabled period to prevent rapid re-clicks
-      setTimeout(function() { btn.innerHTML = saved; btn.disabled = false; }, 5000);
-    });
-}
-
-function healthColor(score) {
-  if (score >= 7) return 'var(--green)';
-  if (score >= 5) return 'var(--amber)';
-  return 'var(--red)';
-}
-
-function healthClass(score) {
-  if (score >= 7) return 'health-good';
-  if (score >= 5) return 'health-warning';
-  return 'health-critical';
-}
-
-function renderMonitor(data) {
-  var positions = (data.positions || []).filter(function(p) { return p.status === 'open'; });
-  var summary = data.summary || {};
-  var alerts = data.alerts || [];
-  var templates = data.templates || [];
-
-  // Badge
-  var badge = document.getElementById('monitor-tab-badge');
-  if (badge) badge.textContent = positions.length;
-
-  // Summary KPIs
-  var cardsEl = document.getElementById('monitor-cards');
-  var totalPnl = summary.total_unrealized_pnl || 0;
-  var worstH = summary.worst_health != null ? summary.worst_health : 10;
-  var avgH = summary.avg_health != null ? summary.avg_health : 10;
-  cardsEl.innerHTML =
-    '<div class="card"><div class="card-label">Open Positions</div><div class="card-value">' + positions.length + '</div></div>' +
-    '<div class="card"><div class="card-label">Unrealised P&L</div><div class="card-value ' + cls(totalPnl) + '">' + (totalPnl >= 0 ? '+' : '') + '$' + Math.abs(totalPnl).toFixed(2) + '</div></div>' +
-    '<div class="card"><div class="card-label">Worst Health</div><div class="card-value" style="color:' + healthColor(worstH) + '">' + worstH.toFixed(1) + '<span style="font-size:14px;color:var(--text-tertiary)">/10</span></div></div>' +
-    '<div class="card"><div class="card-label">Avg Health</div><div class="card-value" style="color:' + healthColor(avgH) + '">' + avgH.toFixed(1) + '<span style="font-size:14px;color:var(--text-tertiary)">/10</span></div></div>';
-
-  // Tag pills
-  var byTag = summary.by_tag || {};
-  var tagsEl = document.getElementById('monitor-tags');
-  var tagHtml = '';
-  Object.keys(byTag).sort().forEach(function(tag) {
-    var t = byTag[tag];
-    var active = _monitorTagFilter === tag ? ' active' : '';
-    tagHtml += '<button class="mon-tag-pill' + active + '" onclick="monitorFilterTag(\'' + esc(tag) + '\')">' +
-      tag + ' <span style="font-size:10px;color:var(--text-tertiary)">' + t.count + '</span>' +
-      '<span class="mon-tag-health" style="background:' + healthColor(t.avg_health) + ';color:#0d0c0a">' + t.avg_health.toFixed(1) + '</span>' +
-      '</button>';
-  });
-  tagsEl.innerHTML = tagHtml;
-
-  // Filter by tag
-  var filtered = positions;
-  if (_monitorTagFilter) {
-    filtered = positions.filter(function(p) { return (p.tags || []).indexOf(_monitorTagFilter) !== -1; });
-  }
-
-  // Sort
-  filtered.sort(function(a, b) {
-    if (_monitorSort === 'health') return (a.health_score || 10) - (b.health_score || 10);
-    if (_monitorSort === 'pnl') return (a.unrealized_pnl || 0) - (b.unrealized_pnl || 0);
-    if (_monitorSort === 'date') return (a.entry_date || '').localeCompare(b.entry_date || '');
-    return 0;
-  });
-
-  // Position cards
-  var posEl = document.getElementById('monitor-positions');
-  if (filtered.length === 0) {
-    posEl.innerHTML = '<div class="empty" style="grid-column:1/-1">No positions to display</div>';
-  } else {
-    var html = '';
-    filtered.forEach(function(p) {
-      var pnl = p.unrealized_pnl || 0;
-      var pnlPct = p.unrealized_pnl_pct || 0;
-      var score = p.health_score != null ? p.health_score : 10;
-      var hClass = healthClass(score);
-      var hColor = healthColor(score);
-      html += '<div class="mon-card ' + hClass + '" onclick="monitorDetail(\'' + p.id + '\')">';
-      html += '<div class="mon-card-header">';
-      html += '<div><span class="mon-ticker">' + esc(p.ticker) + '</span>';
-      if (p.asset_type) html += ' <span style="font-size:10px;color:var(--text-tertiary)">' + esc(p.asset_type) + '</span>';
-      html += '</div>';
-      html += '<div class="mon-pnl ' + cls(pnl) + '">' + (pnl >= 0 ? '+' : '') + '$' + Math.abs(pnl).toFixed(2) + ' <span style="font-size:11px">(' + (pnlPct >= 0 ? '+' : '') + pnlPct.toFixed(1) + '%)</span></div>';
-      html += '</div>';
-      html += '<div class="mon-thesis">' + esc(p.thesis) + '</div>';
-      html += '<div class="mon-health-bar"><div class="mon-health-fill" style="width:' + (score * 10) + '%;background:' + hColor + '"></div></div>';
-      html += '<div class="mon-health-label"><span>Health</span><span style="color:' + hColor + '">' + score.toFixed(1) + '/10</span></div>';
-      html += '<div class="mon-conditions">';
-      (p.conditions || []).forEach(function(c) {
-        var st = c.status || 'unknown';
-        var valStr = c.current_value != null ? c.current_value : '';
-        html += '<div class="mon-cond"><span class="mon-cond-dot ' + st + '"></span>';
-        html += '<span class="mon-cond-label">' + esc(c.label) + '</span>';
-        if (valStr !== '') html += '<span class="mon-cond-value">' + valStr + '</span>';
-        html += '</div>';
-      });
-      html += '</div>';
-      if (p.tags && p.tags.length) {
-        html += '<div class="mon-tags">';
-        p.tags.forEach(function(t) { html += '<span class="mon-tag">' + esc(t) + '</span>'; });
-        html += '</div>';
-      }
-      html += '</div>';
-    });
-    posEl.innerHTML = html;
-  }
-
-  // Alerts feed
-  var alertsEl = document.getElementById('body-malerts');
-  document.getElementById('malerts-count').textContent = alerts.length;
-  if (alerts.length === 0) {
-    alertsEl.innerHTML = '<div class="empty">No alerts yet</div>';
-  } else {
-    var ah = '';
-    alerts.slice().reverse().slice(0, 30).forEach(function(a) {
-      var icon = '⚪';
-      if (a.type === 'health_critical' || a.new_status === 'failing') icon = '🔴';
-      else if (a.type === 'invalidation_breach') icon = '⛔';
-      else if (a.new_status === 'warning') icon = '🟡';
-      else if (a.new_status === 'passing') icon = '🟢';
-      var ts = (a.timestamp || '').substring(5, 16).replace('T', ' ');
-      var msg = a.message || (a.condition_label + ': ' + (a.old_status || '?') + ' → ' + (a.new_status || '?'));
-      ah += '<div class="mon-alert-item"><span class="mon-alert-time">' + ts + '</span>';
-      ah += '<span>' + icon + ' <b>' + esc(a.ticker || '') + '</b> ' + esc(msg) + '</span></div>';
-    });
-    alertsEl.innerHTML = ah;
-  }
-
-  // Templates
-  var tmplEl = document.getElementById('body-mtemplates');
-  document.getElementById('mtemplates-count').textContent = templates.length;
-  if (templates.length === 0) {
-    tmplEl.innerHTML = '<div class="empty">No templates saved</div>';
-  } else {
-    var th = '<table><tr><th>Name</th><th>Tags</th><th>Conditions</th><th>Created</th></tr>';
-    templates.forEach(function(t) {
-      th += '<tr>';
-      th += '<td><b>' + esc(t.name) + '</b><div style="font-size:10px;color:var(--text-tertiary)">' + esc(t.description || '').substring(0, 60) + '</div></td>';
-      th += '<td>' + (t.tags || []).map(function(tg) { return '<span class="mon-tag">' + esc(tg) + '</span>'; }).join(' ') + '</td>';
-      th += '<td class="mono">' + (t.conditions || []).length + '</td>';
-      th += '<td class="mono">' + (t.created_at || '').substring(0, 10) + '</td>';
-      th += '</tr>';
-    });
-    th += '</table>';
-    tmplEl.innerHTML = th;
-  }
-}
-
-function monitorDetail(posId) {
-  if (!_monitorData) return;
-  var pos = null;
-  (_monitorData.positions || []).forEach(function(p) { if (p.id === posId) pos = p; });
-  if (!pos) return;
-
-  var modal = document.getElementById('monitor-modal');
-  var content = document.getElementById('monitor-modal-content');
-  var pnl = pos.unrealized_pnl || 0;
-  var pnlPct = pos.unrealized_pnl_pct || 0;
-  var score = pos.health_score != null ? pos.health_score : 10;
-  var hColor = healthColor(score);
-
-  var h = '<button class="mon-modal-close" onclick="monitorCloseModal()">✕</button>';
-  h += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">';
-  h += '<span style="font-family:var(--mono);font-size:24px;font-weight:800">' + esc(pos.ticker) + '</span>';
-  if (pos.asset_type) h += '<span style="font-size:11px;color:var(--text-tertiary)">' + esc(pos.asset_type) + '</span>';
-  h += '<span class="mon-pnl ' + cls(pnl) + '" style="margin-left:auto;font-size:16px">' + (pnl >= 0 ? '+' : '') + '$' + Math.abs(pnl).toFixed(2) + ' (' + (pnlPct >= 0 ? '+' : '') + pnlPct.toFixed(1) + '%)</span>';
-  h += '</div>';
-
-  h += '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:16px;line-height:1.6">' + esc(pos.thesis) + '</div>';
-
-  // Health bar
-  h += '<div class="mon-health-bar" style="height:8px;margin-bottom:6px"><div class="mon-health-fill" style="width:' + (score * 10) + '%;background:' + hColor + '"></div></div>';
-  h += '<div class="mon-health-label" style="margin-bottom:16px"><span>Thesis Health</span><span style="color:' + hColor + ';font-size:14px;font-weight:700">' + score.toFixed(1) + '/10</span></div>';
-
-  // Key details grid
-  h += '<div class="mon-detail-grid">';
-  h += '<div class="mon-detail-item"><div class="mon-detail-label">Entry</div><div class="mon-detail-value">$' + (pos.entry_price || 0).toFixed(2) + '</div></div>';
-  h += '<div class="mon-detail-item"><div class="mon-detail-label">Current</div><div class="mon-detail-value">$' + (pos.current_price || 0).toFixed(2) + '</div></div>';
-  h += '<div class="mon-detail-item"><div class="mon-detail-label">Invalidation</div><div class="mon-detail-value" style="color:var(--red)">$' + (pos.invalidation_price || 0).toFixed(2) + '</div></div>';
-  h += '<div class="mon-detail-item"><div class="mon-detail-label">Target</div><div class="mon-detail-value">' + (pos.target_price ? '$' + pos.target_price.toFixed(2) : '—') + '</div></div>';
-  h += '<div class="mon-detail-item"><div class="mon-detail-label">Entry Date</div><div class="mon-detail-value">' + (pos.entry_date || '—') + '</div></div>';
-  h += '<div class="mon-detail-item"><div class="mon-detail-label">Timeframe</div><div class="mon-detail-value">' + esc(pos.timeframe || '—') + '</div></div>';
-  h += '<div class="mon-detail-item"><div class="mon-detail-label">Direction</div><div class="mon-detail-value" style="text-transform:uppercase">' + (pos.direction || 'long') + '</div></div>';
-  h += '<div class="mon-detail-item"><div class="mon-detail-label">Quantity</div><div class="mon-detail-value">' + (pos.quantity || 1) + '</div></div>';
-  h += '</div>';
-
-  // Conditions with toggle for manual
-  h += '<div style="border-top:1px solid var(--border);padding-top:14px;margin-top:8px">';
-  h += '<div style="font-size:10px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px">Conditions</div>';
-  (pos.conditions || []).forEach(function(c) {
-    var st = c.status || 'unknown';
-    var valStr = c.current_value != null ? c.current_value : '';
-    h += '<div class="mon-cond" style="padding:6px 0;border-bottom:1px solid var(--border-subtle)">';
-    h += '<span class="mon-cond-dot ' + st + '"></span>';
-    h += '<span class="mon-cond-label" style="flex:1">' + esc(c.label);
-    h += '<div style="font-size:10px;color:var(--text-tertiary);margin-top:1px">' + esc(c.type) + (c.source ? ' · ' + esc(c.source) : '') + ' · weight ' + c.weight + '</div>';
-    h += '</span>';
-    if (valStr !== '') h += '<span class="mon-cond-value" style="font-size:12px">' + valStr + '</span>';
-    if (c.type === 'manual_toggle') {
-      var btnCls = st === 'passing' ? 'active' : st === 'failing' ? 'fail' : '';
-      h += '<button class="mon-toggle-btn ' + btnCls + '" onclick="monitorToggle(\'' + pos.id + '\',\'' + c.id + '\',\'' + (st === 'passing' ? 'failing' : 'passing') + '\')">';
-      h += st === 'passing' ? '✓ ON' : '✗ OFF';
-      h += '</button>';
-    }
-    h += '</div>';
-  });
-  h += '</div>';
-
-  // Notes timeline
-  h += '<div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px">';
-  h += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">';
-  h += '<div style="font-size:10px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Notes</div>';
-  h += '<button class="mon-toggle-btn" onclick="monitorAddNotePrompt(\'' + pos.id + '\')">+ Add Note</button>';
-  h += '</div>';
-  if (!pos.notes || pos.notes.length === 0) {
-    h += '<div class="empty" style="padding:8px 0">No notes yet</div>';
-  } else {
-    pos.notes.slice().reverse().forEach(function(n) {
-      h += '<div class="mon-note"><div class="mon-note-time">' + (n.timestamp || '').substring(0, 16).replace('T', ' ') + '</div>';
-      h += '<div class="mon-note-text">' + esc(n.text) + '</div></div>';
-    });
-  }
-  h += '</div>';
-
-  // Actions
-  h += '<div style="display:flex;gap:8px;margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">';
-  h += '<button class="plan-btn plan-btn-reject" style="font-size:11px;padding:6px 14px" onclick="monitorClosePosition(\'' + pos.id + '\')">Close Position</button>';
-  h += '<div style="flex:1"></div>';
-  if (pos.tags && pos.tags.length) {
-    h += '<div class="mon-tags">';
-    pos.tags.forEach(function(t) { h += '<span class="mon-tag">' + esc(t) + '</span>'; });
-    h += '</div>';
-  }
-  h += '</div>';
-
-  content.innerHTML = h;
-  modal.style.display = 'block';
-  modal.onclick = function(e) { if (e.target === modal) monitorCloseModal(); };
-  document.addEventListener('keydown', _monModalEsc);
-}
-
-function _monModalEsc(e) { if (e.key === 'Escape') monitorCloseModal(); }
-
-function monitorCloseModal() {
-  document.getElementById('monitor-modal').style.display = 'none';
-  document.removeEventListener('keydown', _monModalEsc);
-}
-
-function monitorToggle(posId, condId, newStatus) {
-  fetch('/api/monitor/positions/' + posId + '/toggle', {
-    method: 'POST', credentials: 'same-origin',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({condition_id: condId, status: newStatus})
-  }).then(function() { loadMonitor(); monitorCloseModal(); setTimeout(function() { monitorDetail(posId); }, 300); });
-}
-
-function monitorClosePosition(posId) {
-  if (!confirm('Close this position?')) return;
-  fetch('/api/monitor/positions/' + posId + '/close', {
-    method: 'POST', credentials: 'same-origin',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({reason: 'manual'})
-  }).then(function() { monitorCloseModal(); loadMonitor(); });
-}
-
-function monitorAddNotePrompt(posId) {
-  var text = prompt('Add note:');
-  if (!text) return;
-  fetch('/api/monitor/positions/' + posId + '/note', {
-    method: 'POST', credentials: 'same-origin',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({text: text})
-  }).then(function() { loadMonitor(); monitorCloseModal(); setTimeout(function() { monitorDetail(posId); }, 300); });
-}
-
-// Load monitor data when tab switches
-var _origSwitchTab = switchTab;
-switchTab = function(tab) {
-  _origSwitchTab(tab);
-  if (tab === 'monitor') loadMonitor();
+// Monitor functions removed — see git history for old code
+var _placeholder_monitor_removed = true;
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -3385,7 +3015,7 @@ function initKeyboardShortcuts() {
     switch (e.key.toLowerCase()) {
       case 't': if (typeof switchTab === 'function') switchTab('trading'); break;
       case 'r': if (typeof switchTab === 'function') switchTab('research'); break;
-      case 'm': if (typeof switchTab === 'function') switchTab('monitor'); break;
+      // 'm' key was Monitor tab — removed
       case 'l':
         var cur = getStoredTheme();
         var next = cur === 'dark' ? 'light' : cur === 'light' ? 'auto' : 'dark';
@@ -3662,7 +3292,9 @@ document.addEventListener('DOMContentLoaded', function() {
       var md = markets[mid];
       var pf = md.portfolio || {};
       (pf.open_positions || []).forEach(function(p) { allPos.push(p); });
-      ((md.manual_positions || {}).positions || []).forEach(function(p) { allPos.push(p); });
+    });
+    // Add manual portfolio positions (Moomoo)
+    ((_rawData.manual_portfolio || {}).positions || []).forEach(function(p) { allPos.push(p);
     });
     if (allPos.length === 0) return;
 
@@ -3704,7 +3336,7 @@ document.addEventListener('DOMContentLoaded', function() {
       var md = markets[_currentMarket];
       if (md) {
         var viewPos = (md.portfolio || {}).open_positions || [];
-        var manPos = ((md.manual_positions || {}).positions || []);
+        var manPos = ((_rawData.manual_portfolio || {}).positions || []);
         viewPos.concat(manPos).forEach(function(p) {
           var ticker = p.ticker || '';
           var shares = p.shares || 0;

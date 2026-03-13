@@ -187,7 +187,7 @@ class AuthHandler(SimpleHTTPRequestHandler):
         if self.path.startswith("/api/prices"):
             return self._handle_prices()
         if self.path.startswith("/api/monitor"):
-            return self._handle_monitor_get()
+            return self._send_json(410, {"error": "Monitor tab removed"})
         super().do_GET()
 
     def do_HEAD(self):
@@ -203,18 +203,8 @@ class AuthHandler(SimpleHTTPRequestHandler):
             self._handle_approve()
         elif self.path == "/api/reject":
             self._handle_reject()
-        elif self.path == "/api/monitor/positions":
-            self._handle_monitor_add_position()
-        elif self.path == "/api/monitor/evaluate":
-            self._handle_monitor_evaluate()
-        elif self.path.startswith("/api/monitor/positions/") and self.path.endswith("/toggle"):
-            self._handle_monitor_toggle_condition()
-        elif self.path.startswith("/api/monitor/positions/") and self.path.endswith("/close"):
-            self._handle_monitor_close_position()
-        elif self.path.startswith("/api/monitor/positions/") and self.path.endswith("/note"):
-            self._handle_monitor_add_note()
-        elif self.path == "/api/monitor/templates":
-            self._handle_monitor_save_template()
+        elif self.path.startswith("/api/monitor"):
+            self._send_json(410, {"error": "Monitor tab removed"})
         else:
             self._send_json(404, {"error": "Not found"})
 

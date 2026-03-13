@@ -324,6 +324,107 @@ def get_live_broker_data(config):
         return None, [], False, []
 
 
+def get_moomoo_manual_portfolio() -> dict:
+    """Fetch manual portfolio from Moomoo broker (discretionary positions).
+
+    Connects to Moomoo OpenD independently of the market config to get
+    all positions in the Moomoo account.  These are treated as 100% manual
+    (user's discretionary trades), separate from Atlas automated trades
+    on Alpaca.
+
+    Returns dict with keys: connected, equity, cash, buying_power,
+    currency, positions, num_open, unrealized_pnl, market_value.
+    Falls back to cached data if OpenD is unreachable.
+    """
+    cache_path = CACHE_DIR / "moomoo_manual.json"
+    empty = {
+        "connected": False, "equity": 0, "cash": 0, "buying_power": 0,
+        "currency": "USD", "positions": [], "num_open": 0,
+        "unrealized_pnl": 0, "market_value": 0, "stale_minutes": None,
+    }
+
+    try:
+        from brokers.registry import get_live_broker
+
+        moomoo_config = {
+            "trading": {"broker": "moomoo", "live_enabled": True},
+            "moomoo": {
+                "opend_host": "127.0.0.1", "opend_port": 11111,
+                "security_firm": "FUTUAU", "trd_market": "US",
+                "trd_env": "REAL", "currency": "USD",
+            },
+        }
+        broker = get_live_broker(moomoo_config)
+        if hasattr(broker, '_client_id') and hasattr(broker, '_set_client_id'):
+            broker._set_client_id(21)  # separate from dashboard Alpaca reads
+        if not broker or not broker.connect():
+            raise ConnectionError("Moomoo broker connect failed")
+
+        try:
+            acct = broker.get_account_info()
+            positions = broker.get_positions()
+        finally:
+            broker.disconnect()
+
+        if not acct or (acct.equity == 0 and acct.cash == 0):
+            raise ConnectionError("Moomoo returned zeroed data")
+
+        pos_list = []
+        for pos in positions:
+            pos_list.append({
+                "ticker": pos.ticker,
+                "entry_price": round(pos.entry_price, 4),
+                "shares": pos.shares,
+                "current_price": round(pos.current_price, 4),
+                "market_value": round(pos.market_value, 2),
+                "pnl": round(pos.unrealized_pnl, 2),
+                "pnl_pct": round(pos.unrealized_pnl_pct, 2),
+                "cost_basis": round(pos.cost_basis, 2),
+                "today_pnl": round(pos.today_pnl, 2),
+                "currency": pos.currency or "USD",
+                "strategy": "manual",
+                "is_atlas": False,
+            })
+
+        result = {
+            "connected": True,
+            "equity": round(acct.equity, 2),
+            "cash": round(acct.cash, 2),
+            "buying_power": round(acct.buying_power, 2),
+            "currency": "USD",
+            "positions": pos_list,
+            "num_open": len(pos_list),
+            "unrealized_pnl": round(sum(p["pnl"] for p in pos_list), 2),
+            "market_value": round(sum(p["market_value"] for p in pos_list), 2),
+            "stale_minutes": None,
+        }
+
+        # Cache for fallback
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cache_data = {**result, "timestamp": datetime.now(BRISBANE).isoformat()}
+        with open(cache_path, "w") as f:
+            json.dump(cache_data, f, indent=2, default=str)
+
+        logger.info("Moomoo manual: $%.2f equity, %d positions, $%.2f unrealised",
+                     result["equity"], result["num_open"], result["unrealized_pnl"])
+        return result
+
+    except Exception as e:
+        logger.warning("Moomoo manual portfolio fetch failed: %s — trying cache", e)
+        # Fallback to cache
+        if cache_path.exists():
+            try:
+                cached = json.load(open(cache_path))
+                age = (datetime.now(BRISBANE) - datetime.fromisoformat(cached["timestamp"])).total_seconds() / 60
+                cached["connected"] = False
+                cached["stale_minutes"] = round(age, 1)
+                logger.info("Moomoo manual: using cache (%.0f min old)", age)
+                return cached
+            except Exception:
+                pass
+        return empty
+
+
 def get_latest_plan(market_id: str = ""):
     """Get the latest plan, optionally filtered by market_id."""
     plans_dir = PROJECT_ROOT / "plans"
@@ -2691,6 +2792,10 @@ def generate():
     # them into generate_market() for equity curve FX rate tagging (Issue #3)
     exchange_rates = _get_exchange_rates()
 
+    # ── Fetch Moomoo manual portfolio (independent of market configs) ──
+    print("\n  Fetching Moomoo manual portfolio...")
+    moomoo_manual = get_moomoo_manual_portfolio()
+
     # ── Generate per-market data ────────────────────────────────
     market_data = {}
     for mid in markets:
@@ -2880,12 +2985,7 @@ def generate():
             "today_pnl_by_ccy": _combined_today_pnl_by_ccy,
             "today_pnl_aud": _combined_today_pnl_aud,
         },
-        "manual_positions": {
-            "positions": all_manual,
-            "num_open": len(all_manual),
-            "unrealized_pnl": round(sum(p.get("pnl", 0) for p in all_manual), 2),
-            "market_value": round(sum(p.get("current_price", 0) * p.get("shares", 0) for p in all_manual), 2),
-        },
+        "manual_portfolio": moomoo_manual,
         "strategy_summary": list(combined_strats.values()),
         "equity_curve": combined_curve,
         "benchmark_curve": combined_bench,
@@ -2922,6 +3022,8 @@ def generate():
         print(f"  {mid.upper():6s} {label}: ${pf.get('equity',0):,.2f} equity, "
               f"{pos_detail}{ds_tag}, "
               f"v{md.get('config_version','?')}")
+    moo_tag = f"🟢 {moomoo_manual['num_open']} pos, ${moomoo_manual['equity']:,.2f}" if moomoo_manual.get("connected") else "🔴 offline"
+    print(f"  MOOMOO  Manual: {moo_tag}")
     print(f"  COMBINED (AUD): A${combined_broker_equity_aud:,.2f} equity, "
           f"A${combined_broker_cash_aud:,.2f} cash, "
           f"Atlas P&L A${combined_pnl:,.2f} ({combined_pnl_pct:+.2f}%), "
