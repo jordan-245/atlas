@@ -1102,26 +1102,6 @@ def run_sweep(
                 logger.info("No param grid for %s — skipping.", strategy_name)
                 continue
 
-            # ── Staleness check — skip strategies with no wins recently ──
-            if _PARAM_HISTORY_AVAILABLE:
-                try:
-                    staleness = get_strategy_staleness(strategy_name)
-                    if staleness["is_stale"]:
-                        logger.info(
-                            "Skipping stale strategy %s — 0 wins in last %d "
-                            "experiments (last win: %s). "
-                            "Use --reset-stale to force re-test.",
-                            strategy_name,
-                            staleness["total_recent"],
-                            staleness.get("last_win_date") or "never",
-                        )
-                        continue
-                except Exception as _stale_exc:
-                    logger.debug(
-                        "Staleness check failed for %s: %s",
-                        strategy_name, _stale_exc,
-                    )
-
             # ── Load param history for result-aware grid expansion ────────
             _strategy_ph: Dict = {}
             if _PARAM_HISTORY_AVAILABLE:
@@ -1159,16 +1139,49 @@ def run_sweep(
                 n_expanded = sum(len(v) for v in grid.values())
                 if n_expanded > n_base:
                     logger.info(
-                        "Grid expanded: %d → %d values (+%d jittered around best)",
+                        "Grid expanded: %d -> %d values (+%d jittered around best)",
                         n_base, n_expanded, n_expanded - n_base,
                     )
                 elif n_expanded < n_base:
                     logger.info(
-                        "Grid pruned: %d → %d values (-%d dead zones removed)",
+                        "Grid pruned: %d -> %d values (-%d dead zones removed)",
                         n_base, n_expanded, n_base - n_expanded,
                     )
             else:
                 grid = base_grid
+
+            # ── Staleness check (AFTER grid expansion) ────────────────────
+            # A strategy with new jitter values is NOT stale — it has
+            # unexplored territory. Only skip if the grid is exhausted
+            # AND recent experiments show no wins.
+            if _PARAM_HISTORY_AVAILABLE:
+                try:
+                    staleness = get_strategy_staleness(strategy_name)
+                    if staleness["is_stale"]:
+                        has_new_values = grid is not base_grid and (
+                            sum(len(v) for v in grid.values())
+                            > sum(len(v) for v in base_grid.values())
+                        )
+                        if has_new_values:
+                            logger.info(
+                                "Strategy %s is stale (0/%d wins) but has "
+                                "new jitter values — running anyway.",
+                                strategy_name, staleness["total_recent"],
+                            )
+                        else:
+                            logger.info(
+                                "Skipping stale strategy %s — 0 wins in "
+                                "last %d experiments, no new values to try. "
+                                "Use --reset-stale to force.",
+                                strategy_name,
+                                staleness["total_recent"],
+                            )
+                            continue
+                except Exception as _stale_exc:
+                    logger.debug(
+                        "Staleness check failed for %s: %s",
+                        strategy_name, _stale_exc,
+                    )
 
             logger.info("--- Strategy: %s ---", strategy_name)
             _write_heartbeat(
@@ -1176,6 +1189,7 @@ def run_sweep(
                 total_experiments, total_kept, session_start,
                 activity="loading", detail=f"Loading {strategy_name} data",
             )
+
 
             try:
                 session = ResearchSession(strategy_name, market, top_n=top_n)
