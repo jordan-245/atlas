@@ -69,7 +69,7 @@ MARKET="${2:-${ATLAS_MARKET:-sp500}}"
 TIMESTAMP="$(date '+%Y%m%d_%H%M%S')"
 
 # --- Helper: send Telegram alert (best-effort, never blocks cron exit) ---
-# 60s timeout prevents hangs (e.g. Moomoo socket stuck in send_postclose_summary)
+# 60s timeout prevents hangs (e.g. broker socket stuck in send_postclose_summary)
 notify() {
     timeout 60 python3 "$NOTIFY" "$@" 2>>"$LOG_DIR/telegram.log" || true
 }

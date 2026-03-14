@@ -1,6 +1,6 @@
 #!/bin/bash
 # Atlas dashboard refresh daemon — runs generate_data.py in a 10s loop.
-# Keeps Moomoo connection fresh so equity/P&L/positions update live.
+# Keeps broker data fresh so equity/P&L/positions update live.
 #
 # Managed by: systemd atlas-dashboard-refresh.service
 # Replaces:   cron */15 refresh_dashboard.sh (for live data during market hours)

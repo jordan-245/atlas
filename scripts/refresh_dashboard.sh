@@ -11,7 +11,7 @@ if [ -f "$LOG" ] && [ "$(wc -l < "$LOG")" -gt 5000 ]; then
     echo "[$(date)] Log rotated (kept last 1000 lines)" >> "$LOG"
 fi
 
-# ── Run with timeout — don't let IBKR hang the entire cron ───
+# ── Run with timeout — don't let broker calls hang the entire cron ───
 timeout 180 python3 dashboard/generate_data.py 2>&1
 EXIT_CODE=$?
 
