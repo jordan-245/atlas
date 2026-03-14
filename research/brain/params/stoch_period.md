@@ -1,0 +1,19 @@
+# stoch_period
+
+> Parameter tested across strategies. Shows what values work and where.
+
+| Date | Strategy | Change | Result | Sharpe Δ | New Sharpe |
+|------|----------|--------|--------|----------|------------|
+| 2026-03-13 14:26 | stochastic_oversold | None → 5 | ✅ kept | +0.4601 | 0.3987 |
+| 2026-03-13 14:26 | stochastic_oversold | None → 10 | ❌ discard | -3.6001 | -3.6615 |
+| 2026-03-13 14:26 | stochastic_oversold | None → 14 | ❌ discard | +0.0000 | -0.0614 |
+| 2026-03-13 14:26 | stochastic_oversold | None → 21 | ❌ discard | -3.9185 | -3.9799 |
+| 2026-03-13 23:38 | stochastic_oversold | 5 → 21 | ❌ discard | -4.3786 | -3.9799 |
+| 2026-03-13 23:38 | stochastic_oversold | 5 → 14 | ❌ discard | -0.4601 | -0.0614 |
+| 2026-03-13 23:38 | stochastic_oversold | 5 → 10 | ❌ discard | -4.0602 | -3.6615 |
+| 2026-03-14 02:39 | stochastic_oversold | 5 → 14 | ❌ discard | -0.4601 | -0.0614 |
+| 2026-03-14 02:39 | stochastic_oversold | 5 → 21 | ❌ discard | -4.3786 | -3.9799 |
+| 2026-03-14 02:39 | stochastic_oversold | 5 → 10 | ❌ discard | -4.0602 | -3.6615 |
+| 2026-03-14 10:03 | stochastic_oversold | 5 → 14 | ❌ discard | -0.4601 | -0.0614 |
+| 2026-03-14 10:03 | stochastic_oversold | 5 → 21 | ❌ discard | -4.3786 | -3.9799 |
+| 2026-03-14 10:03 | stochastic_oversold | 5 → 10 | ❌ discard | -4.0602 | -3.6615 |

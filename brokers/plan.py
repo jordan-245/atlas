@@ -30,6 +30,20 @@ class TradePlanGenerator:
     def generate_plan(self, signals: list, exit_recommendations: list,
                       prices: dict, trade_date: str) -> dict:
         """Generate a daily trade plan."""
+        # Filter signals for tickers that are tradable on the broker
+        try:
+            from brokers.alpaca.tradable_assets import is_tradable
+            original_count = len(signals)
+            signals = [s for s in signals if is_tradable(s.ticker)]
+            filtered = original_count - len(signals)
+            if filtered:
+                logger.info(
+                    "Filtered %d signals for untradable tickers (%d remaining)",
+                    filtered, len(signals),
+                )
+        except Exception as e:
+            logger.debug("Tradability filter unavailable: %s", e)
+
         # Build allocation pool (no-op when allocation.enabled=false)
         allocation_pool = build_allocation_pool(self.config)
 

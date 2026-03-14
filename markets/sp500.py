@@ -86,7 +86,7 @@ class SP500Market(MarketProfile):
             "ACN", "ADBE", "IBM", "INTU", "TXN", "QCOM", "NOW", "AMAT",
             "ADI", "LRCX", "KLAC", "SNPS", "CDNS", "MRVL", "MU", "MSI",
             "ROP", "PANW", "CRWD", "FTNT", "APH", "NXPI", "MCHP", "TEL",
-            "HPQ", "KEYS", "ON", "ANSS", "CDW", "FSLR", "MPWR", "TYL",
+            "HPQ", "KEYS", "ON", "CDW", "FSLR", "MPWR", "TYL",
 
             # Healthcare
             "UNH", "JNJ", "LLY", "ABBV", "MRK", "TMO", "ABT", "DHR",
@@ -96,7 +96,7 @@ class SP500Market(MarketProfile):
 
             # Financials
             "BRK-B", "JPM", "V", "MA", "BAC", "WFC", "GS", "MS",
-            "SPGI", "BLK", "C", "AXP", "MMC", "PGR", "CB", "SCHW",
+            "SPGI", "BLK", "C", "AXP", "PGR", "CB", "SCHW",
             "ICE", "CME", "AON", "MCO", "USB", "PNC", "TFC", "AIG",
             "MET", "PRU", "TROW", "AFL", "ALL", "TRV", "BK", "FITB",
 
@@ -108,13 +108,13 @@ class SP500Market(MarketProfile):
 
             # Communication Services
             "META", "GOOGL", "GOOG", "NFLX", "DIS", "CMCSA", "VZ", "T",
-            "TMUS", "CHTR", "EA", "TTWO", "ATVI", "WBD", "MTCH", "LYV",
-            "OMC", "IPG", "FOXA", "PARA",
+            "TMUS", "CHTR", "EA", "TTWO", "WBD", "MTCH", "LYV",
+            "OMC", "FOXA",
 
             # Consumer Staples
             "PG", "KO", "PEP", "COST", "WMT", "PM", "MO", "CL",
             "MDLZ", "GIS", "KMB", "SYY", "STZ", "KHC", "HSY", "KDP",
-            "MKC", "CHD", "K", "CAG", "SJM", "CLX", "TSN", "HRL",
+            "MKC", "CHD", "CAG", "SJM", "CLX", "TSN", "HRL",
 
             # Industrials
             "GE", "CAT", "HON", "UNP", "UPS", "RTX", "DE", "BA",
@@ -124,7 +124,7 @@ class SP500Market(MarketProfile):
 
             # Energy
             "XOM", "CVX", "COP", "SLB", "EOG", "MPC", "PSX", "VLO",
-            "PXD", "OXY", "WMB", "KMI", "HES", "DVN", "HAL", "BKR",
+            "OXY", "WMB", "KMI", "DVN", "HAL", "BKR",
             "FANG", "CTRA", "OKE", "TRGP",
 
             # Materials
@@ -135,7 +135,7 @@ class SP500Market(MarketProfile):
             # Real Estate
             "PLD", "AMT", "CCI", "EQIX", "PSA", "SPG", "O", "DLR",
             "WELL", "VICI", "ARE", "AVB", "EQR", "MAA", "UDR", "ESS",
-            "SUI", "PEAK", "BXP", "VTR",
+            "SUI", "BXP", "VTR",
 
             # Utilities
             "NEE", "DUK", "SO", "D", "AEP", "SRE", "EXC", "XEL",

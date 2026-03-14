@@ -4,8 +4,6 @@
 
 | Date | Strategy | Change | Result | Sharpe Δ | New Sharpe |
 |------|----------|--------|--------|----------|------------|
-| 2026-03-12 10:31 | momentum_breakout | None → True | ❌ discard | +0.0000 | 0.7217 |
-| 2026-03-12 10:31 | momentum_breakout | None → False | ❌ discard | +0.0000 | 0.7217 |
 | 2026-03-12 13:17 | connors_rsi2 | False → True | ❌ discard | +0.0045 | 0.3948 |
 | 2026-03-12 13:19 | momentum_breakout | None → True | ❌ discard | +0.0000 | 0.7217 |
 | 2026-03-12 13:19 | momentum_breakout | None → False | ❌ discard | +0.0000 | 0.7217 |
@@ -54,3 +52,5 @@
 | 2026-03-14 10:02 | donchian_breakout | None → False | ❌ discard | +0.0055 | 0.5602 |
 | 2026-03-14 10:02 | donchian_breakout | None → True | ❌ discard | +0.0000 | 0.5547 |
 | 2026-03-14 10:10 | williams_percent_r | False → True | ❌ discard | -2.3366 | -2.1398 |
+| 2026-03-14 11:57 | triple_rsi | None → True | ❌ discard | +0.0000 | 0.2065 |
+| 2026-03-14 11:57 | triple_rsi | None → False | ❌ discard | -3.2077 | -3.0012 |

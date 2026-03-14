@@ -22,20 +22,19 @@ _NON_US_SUFFIXES = (".AX", ".HK", ".L", ".T", ".PA", ".DE")
 
 
 def to_alpaca(atlas_ticker: str) -> str:
-    """Convert Atlas ticker to Alpaca symbol.
+    """Convert Atlas/yfinance ticker to Alpaca symbol.
 
-    For US equities (SP500), this is a no-op since both formats
-    use plain symbols (AAPL, MSFT, etc.).
-
-    Edge cases:
-        - Already in Alpaca format → returned as-is (uppercased)
-        - Has non-US suffix (e.g. BHP.AX) → strip suffix, warn
-        - Handles BRK.B style class suffixes correctly (not stripped)
+    Key mappings:
+        - BRK-B → BRK.B  (yfinance uses '-', Alpaca uses '.')
+        - .AX / .HK suffixes stripped (non-US, best-effort)
+        - Uppercase normalisation
 
     >>> to_alpaca('AAPL')
     'AAPL'
     >>> to_alpaca('aapl')
     'AAPL'
+    >>> to_alpaca('BRK-B')
+    'BRK.B'
     >>> to_alpaca('BRK.B')
     'BRK.B'
     """
@@ -44,8 +43,11 @@ def to_alpaca(atlas_ticker: str) -> str:
     # Strip known non-US suffixes
     for suffix in _NON_US_SUFFIXES:
         if ticker.endswith(suffix):
-            # Non-US ticker — strip suffix for best-effort lookup
             return ticker[: -len(suffix)]
+
+    # yfinance uses '-' for share class (BRK-B), Alpaca uses '.' (BRK.B)
+    if "-" in ticker:
+        ticker = ticker.replace("-", ".")
 
     return ticker
 
@@ -53,20 +55,30 @@ def to_alpaca(atlas_ticker: str) -> str:
 def to_atlas(alpaca_symbol: str) -> str:
     """Convert Alpaca symbol to Atlas/yfinance format.
 
-    For US equities, this is a no-op since Alpaca uses the same
-    bare format as Atlas for SP500 symbols.
+    Key mappings:
+        - BRK.B → BRK-B  (Alpaca uses '.', yfinance uses '-')
+        - BRK/B → BRK-B  (Alpaca alt format)
 
     >>> to_atlas('AAPL')
     'AAPL'
+    >>> to_atlas('BRK.B')
+    'BRK-B'
     >>> to_atlas('BRK/B')
     'BRK-B'
     """
     symbol = alpaca_symbol.strip().upper()
 
-    # Alpaca sometimes uses '/' for class separators (BRK/B) while
-    # yfinance uses '-'. Normalise to yfinance format.
+    # Alpaca uses '/' or '.' for class separators; yfinance uses '-'
     if "/" in symbol:
         symbol = symbol.replace("/", "-")
+
+    # Share class dots: BRK.B → BRK-B (but not suffixes like .AX)
+    # Heuristic: if the part after '.' is 1-2 chars and all alpha, it's a
+    # share class (B, A, WS) not a market suffix.
+    if "." in symbol:
+        parts = symbol.rsplit(".", 1)
+        if len(parts) == 2 and len(parts[1]) <= 2 and parts[1].isalpha():
+            symbol = parts[0] + "-" + parts[1]
 
     return symbol
 

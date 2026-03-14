@@ -25,5 +25,9 @@ Credentials (NOT in config — loaded from env or ~/.atlas-secrets.json):
 
 from brokers.alpaca.broker import AlpacaBroker
 from brokers.alpaca.mapper import to_atlas, to_alpaca
+from brokers.alpaca.tradable_assets import is_tradable, filter_tradable, get_tradable_set
 
-__all__ = ["AlpacaBroker", "to_atlas", "to_alpaca"]
+__all__ = [
+    "AlpacaBroker", "to_atlas", "to_alpaca",
+    "is_tradable", "filter_tradable", "get_tradable_set",
+]

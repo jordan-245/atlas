@@ -1,0 +1,22 @@
+# stoch_entry
+
+> Parameter tested across strategies. Shows what values work and where.
+
+| Date | Strategy | Change | Result | Sharpe Δ | New Sharpe |
+|------|----------|--------|--------|----------|------------|
+| 2026-03-13 14:27 | stochastic_oversold | None → 10 | ❌ discard | -0.3987 | 0.0000 |
+| 2026-03-13 14:27 | stochastic_oversold | None → 15 | ❌ discard | -7.0431 | -6.6444 |
+| 2026-03-13 14:27 | stochastic_oversold | None → 20 | ❌ discard | +0.0000 | 0.3987 |
+| 2026-03-13 14:27 | stochastic_oversold | None → 25 | ❌ discard | -0.4641 | -0.0654 |
+| 2026-03-13 23:39 | stochastic_oversold | None → 10 | ❌ discard | -0.3987 | 0.0000 |
+| 2026-03-13 23:39 | stochastic_oversold | None → 15 | ❌ discard | -7.0431 | -6.6444 |
+| 2026-03-13 23:39 | stochastic_oversold | None → 20 | ❌ discard | +0.0000 | 0.3987 |
+| 2026-03-13 23:39 | stochastic_oversold | None → 25 | ❌ discard | -0.4641 | -0.0654 |
+| 2026-03-14 02:40 | stochastic_oversold | None → 10 | ❌ discard | -0.3987 | 0.0000 |
+| 2026-03-14 02:40 | stochastic_oversold | None → 15 | ❌ discard | -7.0431 | -6.6444 |
+| 2026-03-14 02:40 | stochastic_oversold | None → 20 | ❌ discard | +0.0000 | 0.3987 |
+| 2026-03-14 02:40 | stochastic_oversold | None → 25 | ❌ discard | -0.4641 | -0.0654 |
+| 2026-03-14 10:04 | stochastic_oversold | None → 10 | ❌ discard | -0.3987 | 0.0000 |
+| 2026-03-14 10:04 | stochastic_oversold | None → 25 | ❌ discard | -0.4641 | -0.0654 |
+| 2026-03-14 10:04 | stochastic_oversold | None → 20 | ❌ discard | +0.0000 | 0.3987 |
+| 2026-03-14 10:04 | stochastic_oversold | None → 15 | ❌ discard | -7.0431 | -6.6444 |

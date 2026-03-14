@@ -261,6 +261,32 @@ class LiveExecutor:
                 f"Plan status is '{status}', must be APPROVED", trade_date
             )
 
+        # Pre-trade: filter untradable tickers from entries
+        try:
+            from brokers.alpaca.tradable_assets import filter_tradable
+            entry_tickers = [e.get("ticker", "") for e in plan.get("proposed_entries", [])]
+            _, untradable = filter_tradable(entry_tickers)
+            if untradable:
+                logger.warning(
+                    "Filtering %d untradable tickers from plan: %s",
+                    len(untradable), untradable,
+                )
+                untradable_set = set(untradable)
+                original_entries = plan.get("proposed_entries", [])
+                plan = dict(plan)  # shallow copy — don't mutate original
+                plan["proposed_entries"] = [
+                    e for e in original_entries
+                    if e.get("ticker", "") not in untradable_set
+                ]
+                # Record filtered entries in report
+                for ticker in untradable:
+                    _journal_entry("entry_filtered_untradable", {
+                        "ticker": ticker, "trade_date": trade_date,
+                        "reason": "not tradable on Alpaca",
+                    })
+        except Exception as e:
+            logger.warning("Tradability check failed (proceeding anyway): %s", e)
+
         # Pre-trade: check market state
         all_plan_tickers = (
             [e.get("ticker") for e in plan.get("proposed_entries", [])]

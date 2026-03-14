@@ -1,0 +1,18 @@
+# setup_bars
+
+> Parameter tested across strategies. Shows what values work and where.
+
+| Date | Strategy | Change | Result | Sharpe Δ | New Sharpe |
+|------|----------|--------|--------|----------|------------|
+| 2026-03-13 10:39 | demark_sequential | None → 13 | ❌ discard | -1.7710 | -6.4771 |
+| 2026-03-13 10:39 | demark_sequential | None → 9 | ❌ discard | +0.0000 | -4.7061 |
+| 2026-03-13 10:39 | demark_sequential | None → 7 | ❌ discard | -1.4412 | -6.1473 |
+| 2026-03-13 13:06 | demark_sequential | None → 13 | ❌ discard | -1.1244 | -4.2803 |
+| 2026-03-13 13:06 | demark_sequential | None → 9 | ❌ discard | +0.0000 | -3.1559 |
+| 2026-03-13 13:06 | demark_sequential | None → 7 | ❌ discard | -0.7467 | -3.9026 |
+| 2026-03-13 23:09 | demark_sequential | None → 9 | ❌ discard | +0.0000 | -3.1559 |
+| 2026-03-13 23:09 | demark_sequential | None → 13 | ❌ discard | -1.1244 | -4.2803 |
+| 2026-03-13 23:09 | demark_sequential | None → 7 | ❌ discard | -0.7467 | -3.9026 |
+| 2026-03-14 02:08 | demark_sequential | None → 13 | ❌ discard | -1.1244 | -4.2803 |
+| 2026-03-14 02:08 | demark_sequential | None → 9 | ❌ discard | +0.0000 | -3.1559 |
+| 2026-03-14 02:08 | demark_sequential | None → 7 | ❌ discard | -0.7467 | -3.9026 |
