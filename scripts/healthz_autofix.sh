@@ -100,7 +100,14 @@ NOT ALLOWED (never do these):
 After fixing, run the healthcheck again to verify:
   cd /root/atlas && python3 pi-package/atlas-ops/skills/atlas-healthz/scripts/healthz.py --market sp500
 
-Report what you fixed and what still needs attention."
+TELEGRAM: Send a Telegram notification ONLY if you actually fixed something or something remains broken.
+  python3 -c \"import sys; sys.path.insert(0,'/root/atlas'); from utils.telegram import send_message; send_message('''YOUR_MSG''')\"
+
+Rules:
+- If you fixed issues and system is now healthy: send a short success message (what was fixed)
+- If issues remain unfixed: send an alert listing what needs manual attention
+- If the healthcheck only found minor warnings (pycache, log size): do NOT send anything
+- Keep it under 10 lines. Use HTML formatting (<b>, <i>)"
 
 # Run pi headless — 5 min timeout, capture output
 # Load incident + state-queries skills for diagnostic knowledge
@@ -122,44 +129,15 @@ python3 "$HEALTHZ" --market sp500 2>/dev/null >> "$LOG_FILE"
 VERIFY_EXIT=$?
 echo "Post-fix exit code: $VERIFY_EXIT" >> "$LOG_FILE"
 
-# ── Step 5: Send Telegram summary ──
-python3 -c "
-import sys
-sys.path.insert(0, '$PROJECT')
+# Agent handles its own Telegram notifications based on significance.
+# Only send a shell-level alert if the agent itself crashed.
+if [ $PI_EXIT -ne 0 ]; then
+    python3 -c "
+import sys; sys.path.insert(0, '$PROJECT')
 from utils.telegram import send_message
-
-issues = '''$ISSUES'''.strip().split('\n')
-issue_count = len(issues)
-pi_exit = $PI_EXIT
-verify_exit = $VERIFY_EXIT
-
-if verify_exit == 0:
-    icon = '✅'
-    status = 'ALL FIXED'
-elif verify_exit == 1:
-    icon = '⚠️'
-    status = 'PARTIALLY FIXED'
-else:
-    icon = '❌'
-    status = 'FIXES FAILED'
-
-lines = [
-    f'{icon} <b>Atlas Autofix — {status}</b>',
-    f'Found {issue_count} issue(s), agent exit {pi_exit}, verify exit {verify_exit}',
-    '',
-]
-for i in issues[:10]:
-    lines.append(f'• {i}')
-
-if verify_exit == 0:
-    lines.append('')
-    lines.append('<i>System healthy before premarket.</i>')
-else:
-    lines.append('')
-    lines.append('<i>Manual attention may be needed.</i>')
-
-send_message('\n'.join(lines))
+send_message('🚨 <b>Healthz autofix agent crashed</b> (exit $PI_EXIT).\nVerify exit: $VERIFY_EXIT\nCheck logs: $LOG_FILE')
 " 2>>"$LOG_DIR/telegram.log"
+fi
 
 # Clean old autofix logs (keep 14 days)
 find "$LOG_DIR" -name "healthz-autofix_*.log" -mtime +14 -delete 2>/dev/null

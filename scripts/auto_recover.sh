@@ -48,13 +48,8 @@ log() {
     echo "$(date -Iseconds) $*" | tee -a "$RECOVER_LOG"
 }
 
-# ── Notify start ──
+# ── Start ──
 log "Recovery attempt $ATTEMPT/$MAX_ATTEMPTS for $MODE ($MARKET)"
-tg "🔧 <b>Atlas Auto-Recovery</b> [attempt $ATTEMPT/$MAX_ATTEMPTS]
-<i>$(date '+%Y-%m-%d %H:%M')</i>
-
-<b>Failed mode:</b> $MODE
-<b>Diagnosing...</b>"
 
 # ═══════════════════════════════════════════════════════════════
 # Phase 1: Diagnose — check infrastructure before spawning agent
@@ -170,17 +165,8 @@ if [ -z "$DIAGNOSIS" ]; then
 fi
 
 
-# ── Notify diagnosis ──
-DIAG_MSG="🔧 <b>Atlas Auto-Recovery</b> [attempt $ATTEMPT/$MAX_ATTEMPTS]
-
-<b>Diagnosis:</b>
-$(echo -e "$DIAGNOSIS")
-<b>Fixes applied:</b>
-$(echo -e "${FIXES_APPLIED:-None yet — proceeding to re-run}")
-
-<b>Re-running $MODE...</b>"
-
-tg "$DIAG_MSG"
+log "Diagnosis: $(echo -e "$DIAGNOSIS" | tr '\n' ' ')"
+log "Fixes: $(echo -e "${FIXES_APPLIED:-none}" | tr '\n' ' ')"
 
 # ═══════════════════════════════════════════════════════════════
 # Phase 2: Fix and re-run
@@ -196,8 +182,7 @@ RERUN_OK=false
 if $CODE_ERROR; then
     # ── Path A: Spawn pi agent to fix code error ──
     log "Code error — spawning pi agent to diagnose and fix"
-    tg "🤖 <b>Spawning code-fix agent…</b>
-Error: <pre>$(python3 -c "from utils.telegram import _esc; print(_esc('''$(echo "$CODE_ERROR_DETAIL" | head -10)'''))" 2>/dev/null || echo "$CODE_ERROR_DETAIL" | head -5)</pre>"
+    log "Spawning code-fix agent..."
 
     AGENT_LOG="$LOG_DIR/agent_fix_${MODE}_${TIMESTAMP}.log"
 
@@ -304,67 +289,29 @@ if ! $RERUN_OK; then
 fi
 
 # ═══════════════════════════════════════════════════════════════
-# Phase 3: Report results
+# Phase 3: Report results — single Telegram message on final outcome
 # ═══════════════════════════════════════════════════════════════
 if $RERUN_OK; then
     log "Recovery SUCCEEDED"
-
-    # Send success alerts (same as normal cron success)
-    case "$MODE" in
-        premarket)  notify premarket-approve "" "$MARKET" || notify premarket-ok "" "$MARKET" ;;
-        postclose)  notify postclose-ok "$MARKET" ;;
-        research)   notify research-complete "$MARKET" ;;
-    esac
-
-    SUCC_MSG="✅ <b>Atlas Auto-Recovery SUCCEEDED</b>
-
-<b>Mode:</b> $MODE
-<b>Attempt:</b> $ATTEMPT/$MAX_ATTEMPTS
-<b>Fixes applied:</b>
-$(echo -e "${FIXES_APPLIED:-Direct re-run fixed the issue}")
-
-Operations resumed normally."
-
-    # If agent fixed a code error, include summary
-    if [ -n "${AGENT_LOG:-}" ] && [ -f "${AGENT_LOG:-/dev/null}" ]; then
-        SUCC_MSG="${SUCC_MSG}
-
-<b>Agent log:</b> <code>$(basename "$AGENT_LOG")</code>"
+    # Only notify if we actually fixed something (not just a transient retry)
+    if [ -n "${FIXES_APPLIED:-}" ]; then
+        tg "✅ <b>Atlas Auto-Recovery</b> — $MODE fixed
+$(echo -e "$FIXES_APPLIED")"
     fi
-
-    tg "$SUCC_MSG"
-
 else
     log "Recovery FAILED (attempt $ATTEMPT)"
 
     if [ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ]; then
-        # Retry with incremented attempt counter
         log "Scheduling retry (attempt $((ATTEMPT + 1)))"
-        tg "⚠️ <b>Atlas Recovery attempt $ATTEMPT failed</b>
-Retrying in 60 seconds (attempt $((ATTEMPT + 1))/$MAX_ATTEMPTS)..."
-
         sleep 60
         exec "$0" "$MODE" "$MARKET" "$FAILED_LOG" "$((ATTEMPT + 1))"
     else
-        # Max attempts reached — escalate to human
+        # Max attempts exhausted — this is the only mandatory alert
         log "MAX ATTEMPTS REACHED — escalating"
-
-        # Extract last errors from recovery log
-        TAIL=$(tail -15 "$RECOVER_LOG" | head -10)
-
-        tg "🚨 <b>Atlas Auto-Recovery FAILED</b>
-
-<b>Mode:</b> $MODE
-<b>Attempts:</b> $ATTEMPT/$MAX_ATTEMPTS exhausted
-<b>Diagnosis:</b>
-$(echo -e "$DIAGNOSIS")
-<b>Fixes tried:</b>
-$(echo -e "$FIXES_APPLIED")
-<b>Recovery log tail:</b>
-<pre>$(python3 -c "from utils.telegram import _esc; print(_esc('''$TAIL'''))")</pre>
-
-<b>Manual intervention required.</b>
-Run: <code>cd /root/atlas &amp;&amp; scripts/pi-cron.sh $MODE $MARKET</code>"
+        tg "🚨 <b>Atlas Recovery FAILED</b> — $MODE
+Attempts: $ATTEMPT exhausted
+$(echo -e "$DIAGNOSIS" | head -5)
+<code>scripts/pi-cron.sh $MODE $MARKET</code>"
     fi
 fi
 

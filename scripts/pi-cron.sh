@@ -124,7 +124,19 @@ case "$MODE" in
 - atlas-incident: if any service is down, diagnose using this
 - atlas-lessons: critical pitfalls to avoid
 
-Run the atlas-daily pre-market workflow for the ${MARKET} market ONLY: check data freshness and run cli_ingest if stale (pass -m ${MARKET}), then run cli_plan (pass -m ${MARKET}). ${VOL_CONTEXT} Summarize the plan and stop — do NOT approve or execute. Write results to logs/pi-cron-premarket-${TIMESTAMP}.md"
+Run the atlas-daily pre-market workflow for the ${MARKET} market ONLY: check data freshness and run cli_ingest if stale (pass -m ${MARKET}), then run cli_plan (pass -m ${MARKET}). ${VOL_CONTEXT} Summarize the plan and stop — do NOT approve or execute. Write results to logs/pi-cron-premarket-${TIMESTAMP}.md
+
+TELEGRAM: You own all notifications. Send a single Telegram message via:
+  python3 -c \"import sys; sys.path.insert(0,'/root/atlas'); from utils.telegram import send_message; send_message('''YOUR_MSG''')\"
+
+Rules:
+- ALWAYS send a message summarizing the plan (entries, exits, portfolio snapshot)
+- If entries > 0: include ticker, strategy, confidence, and entry price for each
+- If entries = 0: just say 'No trades today' with a one-line reason
+- If a service is down or data refresh failed: mention it prominently
+- If volatility gate flagged: include the flag
+- Keep it under 20 lines. Use HTML formatting (<b>, <i>, <code>)
+- Do NOT send multiple messages. One consolidated summary."
         LOGFILE="$LOG_DIR/pi-cron-premarket-${TIMESTAMP}.log"
         SKILL_FLAGS=$(build_skill_flags "$SKILL_DIR" "$SKILL_STATE" "$SKILL_INCIDENT" "$SKILL_LESSONS")
         ;;
@@ -135,7 +147,18 @@ Run the atlas-daily pre-market workflow for the ${MARKET} market ONLY: check dat
 - atlas-incident: if any service is down or settlement fails, diagnose using this
 - atlas-lessons: critical pitfalls to avoid
 
-Run the atlas-daily post-close workflow for the ${MARKET} market: run cli_eod_settlement (pass -m ${MARKET}), then dashboard_generate_data. Summarize any exits triggered and the final equity snapshot. Write results to logs/pi-cron-postclose-${TIMESTAMP}.md"
+Run the atlas-daily post-close workflow for the ${MARKET} market: run cli_eod_settlement (pass -m ${MARKET}), then dashboard_generate_data. Summarize any exits triggered and the final equity snapshot. Write results to logs/pi-cron-postclose-${TIMESTAMP}.md
+
+TELEGRAM: You own all notifications. Send a single Telegram message via:
+  python3 -c \"import sys; sys.path.insert(0,'/root/atlas'); from utils.telegram import send_message; send_message('''YOUR_MSG''')\"
+
+Rules:
+- ONLY send if something significant happened:
+  * Positions were exited (SL/TP hit) — include ticker, exit reason, P&L
+  * Equity changed by more than 1% — include old vs new equity
+  * A service failed or settlement errored — include the error
+- If nothing happened (no exits, no errors, equity flat): do NOT send anything
+- Keep it under 15 lines. Use HTML formatting (<b>, <i>, <code>)"
         LOGFILE="$LOG_DIR/pi-cron-postclose-${TIMESTAMP}.log"
         SKILL_FLAGS=$(build_skill_flags "$SKILL_DIR" "$SKILL_STATE" "$SKILL_INCIDENT" "$SKILL_LESSONS")
 
@@ -167,6 +190,20 @@ Run the atlas-daily post-close workflow for the ${MARKET} market: run cli_eod_se
 - atlas-backtest: how to run backtests, interpret results, and record findings
 - atlas-lessons: critical pitfalls to avoid (degenerate solutions, solo vs combined, etc.)
 - atlas-codebase: system architecture reference
+
+TELEGRAM: You own all notifications. Send via:
+  python3 -c \"import sys; sys.path.insert(0,'/root/atlas'); from utils.telegram import send_message; send_message('''YOUR_MSG''')\"
+
+Rules:
+- Send ONE summary at the END of your session, not during
+- ONLY send if you found something significant:
+  * A strategy improved (new Sharpe > previous best) — include the numbers
+  * A promotion candidate was staged — include strategy and metrics
+  * A previously unknown pattern was discovered
+  * Infrastructure blocked research (service down, data stale)
+- If all experiments were discards and nothing improved: do NOT send
+- Include: experiments run, improvements found, top finding
+- Keep it under 20 lines. Use HTML formatting (<b>, <i>, <code>)
 
 Run a daily autoresearch session. Read research/program.md first.
 
@@ -309,24 +346,12 @@ fi
 # --- Dashboard refresh (always, regardless of pi exit) ---
 python3 dashboard/generate_data.py >> "$LOG_DIR/dashboard-refresh.log" 2>&1 || true
 
-# --- Telegram alerts + auto-recovery ---
-if [ $EXIT_CODE -eq 0 ]; then
-    case "$MODE" in
-        premarket)
-            # Send plan with Approve/Reject buttons (bot handles callbacks)
-            notify premarket-approve "" "$MARKET"
-            # Fallback: also send plain summary if approve fails
-            [ $? -ne 0 ] && notify premarket-ok "" "$MARKET"
-            ;;
-        postclose)  notify postclose-ok "$MARKET" ;;
-        research)   notify research-complete "$MARKET" ;;
-    esac
-else
-    # Send error alert first (immediate notification)
+# --- Error recovery (agent handles its own Telegram on success) ---
+if [ $EXIT_CODE -ne 0 ]; then
+    # Agent crashed before it could send its own notification — alert via shell
     notify error "$MODE" "$LOGFILE"
 
     # Spawn auto-recovery agent (background, won't block cron)
-    # Recovery handles its own Telegram updates and retries.
     echo "$(date -Iseconds) Spawning auto-recovery for $MODE" >> "$LOG_DIR/pi-cron.log"
     nohup "$SCRIPT_DIR/auto_recover.sh" "$MODE" "$MARKET" "$LOGFILE" 1 \
         >> "$LOG_DIR/auto_recover.log" 2>&1 &
