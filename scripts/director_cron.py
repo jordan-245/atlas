@@ -12,9 +12,9 @@ Design: Deterministic logic only. All LLM-guided strategy decisions
 remain in scripts/principal.py. This script is purely mechanical maintenance.
 
 Deployment (systemd timer — runs at 08:00 and 20:00 AEST daily):
-    # Install service + timer from systemd/ directory:
-    cp systemd/atlas-director.service /etc/systemd/system/
-    cp systemd/atlas-director.timer /etc/systemd/system/
+    # Install service + timer (reference copies in docs/systemd/):
+    cp docs/systemd/atlas-director.service /etc/systemd/system/
+    cp docs/systemd/atlas-director.timer /etc/systemd/system/
     systemctl daemon-reload
     systemctl enable --now atlas-director.timer
 

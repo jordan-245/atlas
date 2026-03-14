@@ -118,7 +118,7 @@ Complete architecture map for the Atlas multi-market swing-trading system.
 │   ├── equity_curve_sp500.json
 │   ├── equity_curve_asx.json
 │   └── *.log
-├── memory/             # Brain knowledge base
+├── memory/             # Symlink → research/brain/SUMMARY.md
 │   └── SUMMARY.md
 ├── tasks/              # Project management
 │   ├── lessons.md      # Operational lessons (35+)
@@ -128,7 +128,7 @@ Complete architecture map for the Atlas multi-market swing-trading system.
 │   └── atlas-ops/
 │       ├── extensions/ # 8 Pi extensions
 │       └── skills/     # Pi skills (this file lives here)
-└── systemd/            # Service unit files
+└── docs/systemd/       # Service unit file backups (live copies in /etc/systemd/system/)
 ```
 
 ---

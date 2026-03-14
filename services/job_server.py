@@ -37,7 +37,7 @@ logger = logging.getLogger("atlas.job_server")
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 JOBS_DIR = PROJECT_ROOT / "jobs"
-SPECS_DIR = PROJECT_ROOT / "specs"
+SPECS_DIR = PROJECT_ROOT / "docs" / "runbooks"
 LOGS_DIR = Path("/tmp/atlas-jobs")
 DRIVE_SH = Path.home() / ".pi" / "agent" / "skills" / "drive" / "drive.sh"
 
@@ -45,7 +45,7 @@ DRIVE_SH = Path.home() / ".pi" / "agent" / "skills" / "drive" / "drive.sh"
 SKILL_ALIASES = {
     "healthz": str(PROJECT_ROOT / "pi-package/atlas-ops/skills/atlas-healthz"),
     "health": str(PROJECT_ROOT / "pi-package/atlas-ops/skills/atlas-healthz"),
-    "research": str(PROJECT_ROOT / "pi-package/atlas-ops/skills/atlas-research"),
+    "research": str(PROJECT_ROOT / "pi-package/atlas-ops/skills/atlas-research-loop"),
     "research-loop": str(PROJECT_ROOT / "pi-package/atlas-ops/skills/atlas-research-loop"),
     "reoptimize": str(PROJECT_ROOT / "pi-package/atlas-ops/skills/atlas-reoptimize"),
     "daily": str(PROJECT_ROOT / "pi-package/atlas-ops/skills/atlas-daily"),
@@ -80,7 +80,7 @@ class JobManager:
         Args:
             prompt: The task prompt for the Pi agent.
             skill: Optional skill name or path. Supports aliases (e.g. "healthz").
-            spec: Optional spec file name (loaded from specs/ directory).
+            spec: Optional spec file name (loaded from docs/runbooks/ directory).
             timeout: Max runtime in seconds.
 
         Returns:

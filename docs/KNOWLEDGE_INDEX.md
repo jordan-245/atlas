@@ -37,7 +37,7 @@
 | All executed trades | [`journal/trade_ledger.json`](../journal/trade_ledger.json) |
 | How to re-optimize | [`docs/OPTIMIZATION_GUIDE.md`](OPTIMIZATION_GUIDE.md) |
 | Daily workflow (CLI commands) | [`README.md`](../README.md) |
-| Critical bugs and fix status | [`audit/FULL_AUDIT.md`](../audit/FULL_AUDIT.md) |
+| Critical bugs and fix status | [`docs/FULL_AUDIT.md`](../docs/FULL_AUDIT.md) |
 | Research system design | [`research/README.md`](../research/README.md) |
 
 ---
@@ -453,7 +453,6 @@ See [`docs/OPTIMIZATION_GUIDE.md`](OPTIMIZATION_GUIDE.md) for the full 3-test va
 
 | Broker | Startup | Port | Auth |
 |---|---|---|---|
-| Moomoo (SP500) | `python3 scripts/start_opend.py` | 11111 | Trade password via `~/.atlas-secrets.json` |
 | IBKR (ASX/HK) | `docker start ib-gateway` | 4001 | 2FA once per week via IBC |
 
 ```bash
@@ -573,7 +572,7 @@ Full list: [`tasks/lessons.md`](../tasks/lessons.md)
 
 | File | Description |
 |---|---|
-| [`audit/FULL_AUDIT.md`](../audit/FULL_AUDIT.md) | 90-file audit: 5 CRITICAL + 12 HIGH + 15 MEDIUM + 10 LOW issues |
+| [`docs/FULL_AUDIT.md`](../docs/FULL_AUDIT.md) | 90-file audit: 5 CRITICAL + 12 HIGH + 15 MEDIUM + 10 LOW issues |
 
 **CRITICAL fixes applied (2026-03-02 swarm):**
 - ✅ C1: Look-ahead bias — trailing stop/max_loss_cap now use T-1 close
@@ -638,7 +637,6 @@ Full list: [`tasks/lessons.md`](../tasks/lessons.md)
 | `scripts/test_moomoo.py` | Moomoo API connectivity + order placement test |
 | `scripts/test_ibkr.py` | IBKR IB Gateway connectivity test |
 | `scripts/test_live_plumbing.py` | Full live trading plumbing verification (all safety gates) |
-| `scripts/start_opend.py` | Start/restart Moomoo OpenD daemon |
 | `scripts/setup_moomoo_login.py` | Add Moomoo credentials to `~/.atlas-secrets.json` |
 
 ### Automation & Maintenance
@@ -780,7 +778,7 @@ Full list: [`tasks/lessons.md`](../tasks/lessons.md)
 | What markets are live right now? | [`memory/SUMMARY.md`](../memory/SUMMARY.md) → System State table |
 | Why was decision X made? | [`docs/DECISIONS.md`](DECISIONS.md) → search by date or topic |
 | What patterns should I not repeat? | [`tasks/lessons.md`](../tasks/lessons.md) |
-| What bugs were found and fixed? | [`audit/FULL_AUDIT.md`](../audit/FULL_AUDIT.md) |
+| What bugs were found and fixed? | [`docs/FULL_AUDIT.md`](../docs/FULL_AUDIT.md) |
 | How does the research pipeline work? | [`research/README.md`](../research/README.md) |
 
 ### Run something
