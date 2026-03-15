@@ -265,14 +265,14 @@ class EventCalendar:
             try:
                 centre = datetime.strptime(dt_str, "%Y-%m-%d").date()
             except ValueError as exc:
-                logger.error("get_events_near: invalid date string '%s': %s", dt_str, exc)
+                logger.warning("get_events_near: invalid date string '%s': %s", dt_str, exc)
                 return []
         elif isinstance(dt_str, datetime):
             centre = dt_str.date()
         elif isinstance(dt_str, date):
             centre = dt_str
         else:
-            logger.error("get_events_near: unsupported type %s", type(dt_str))
+            logger.warning("get_events_near: unsupported type %s", type(dt_str))
             return []
 
         lo = centre - timedelta(days=window_days)

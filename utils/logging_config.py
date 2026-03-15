@@ -221,7 +221,11 @@ def setup_logging(
         root.addHandler(extra_h)
 
     # ── Telegram error collector ────────────────────────────────
-    if telegram_errors:
+    # Never send Telegram alerts from pytest runs — tests intentionally exercise
+    # failure paths (bad credentials, rejected orders, invalid dates) which
+    # generate ERROR-level log records that must not surface as production alerts.
+    _in_pytest = "pytest" in sys.modules or bool(os.getenv("PYTEST_CURRENT_TEST"))
+    if telegram_errors and not _in_pytest:
         _collector = TelegramErrorCollector(script_name=script_name)
         root.addHandler(_collector)
         atexit.register(_collector.flush_to_telegram)

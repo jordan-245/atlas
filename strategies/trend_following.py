@@ -93,6 +93,9 @@ class TrendFollowing(BaseStrategy):
             3. Risk limits allow a new position
             4. Ticker is not already held
         """
+        # Auto-precompute if the caller forgot (e.g. unit tests calling generate_signals directly).
+        if not self._precomputed:
+            self.precompute(data)
         signals: List[Signal] = []
         held_tickers = self._get_held_tickers(existing_positions)
         risk_pct = self.risk_config.get("max_risk_per_trade_pct", 0.005)
@@ -295,6 +298,10 @@ class TrendFollowing(BaseStrategy):
             3. Trailing stop: price drops below highest_since_entry - trailing_atr_mult * ATR
             4. Time exit: position held longer than max_hold_days
         """
+        # Auto-precompute if the caller forgot.
+        if not self._precomputed:
+            self.precompute(data)
+
         exits: List[Dict[str, Any]] = []
 
         for pos in positions:

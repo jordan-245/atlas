@@ -88,6 +88,10 @@ class MomentumBreakout(BaseStrategy):
         existing_positions: List[Dict[str, Any]],
     ) -> List[Signal]:
         """Scan all tickers for momentum breakout entry signals."""
+        # Auto-precompute if the caller forgot (e.g. unit tests calling generate_signals directly).
+        if not self._precomputed:
+            self.precompute(data)
+
         signals: List[Signal] = []
         held_tickers = self._get_held_tickers(existing_positions)
         risk_pct = self.risk_config.get("max_risk_per_trade_pct", 0.005)
@@ -297,6 +301,10 @@ class MomentumBreakout(BaseStrategy):
         positions: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
         """Check open momentum positions for exit conditions."""
+        # Auto-precompute if the caller forgot.
+        if not self._precomputed:
+            self.precompute(data)
+
         exits: List[Dict[str, Any]] = []
 
         for pos in positions:
