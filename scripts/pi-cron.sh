@@ -6,6 +6,7 @@
 # Cron schedule (AEST via TZ=Australia/Brisbane in crontab):
 #   30 8  * * 1-5  /root/atlas/scripts/pi-cron.sh premarket
 #   00 08 * * 2-6  /root/atlas/scripts/pi-cron.sh postclose
+#   00 9  1 * *    /root/atlas/scripts/pi-cron.sh slippage-cal
 #
 # Setup:
 #   1. Ensure pi is logged in: pi (interactive) — OAuth login persists in ~/.pi/agent/auth.json
@@ -287,8 +288,15 @@ LOCKEOF
         echo "$(date -Iseconds) Manual recovery triggered for $RECOVER_MODE" >> "$LOG_DIR/pi-cron.log"
         exec "$SCRIPT_DIR/auto_recover.sh" "$RECOVER_MODE" "$RECOVER_MARKET" "" 1
         ;;
+    slippage-cal)
+        # Monthly slippage calibration (1st of month, 09:00 AEST)
+        echo "$(date -Iseconds) Running slippage calibration for $MARKET" >> "$LOG_DIR/pi-cron.log"
+        python3 "$PROJECT/scripts/slippage_calibration.py" --market "$MARKET" \
+            >> "$LOG_DIR/pi-cron.log" 2>&1
+        exit $?
+        ;;
     *)
-        echo "Usage: $0 {premarket|postclose|research|research-status|recover} [market] [agent-id]"
+        echo "Usage: $0 {premarket|postclose|research|research-status|recover|slippage-cal} [market] [agent-id]"
         exit 1
         ;;
 esac

@@ -12,3 +12,7 @@
 | 2026-03-14 10:12 | lower_band_reversion | None → 25 | ❌ discard | +0.0000 | 0.3966 |
 | 2026-03-14 10:12 | lower_band_reversion | None → 10 | ❌ discard | -0.0221 | 0.3745 |
 | 2026-03-14 10:12 | lower_band_reversion | None → 20 | ❌ discard | -0.0027 | 0.3939 |
+| 2026-03-14 23:15 | lower_band_reversion | None → 10 | ❌ discard | -0.0217 | 0.3749 |
+| 2026-03-14 23:15 | lower_band_reversion | None → 15 | ❌ discard | -0.0041 | 0.3925 |
+| 2026-03-14 23:15 | lower_band_reversion | None → 20 | ❌ discard | -0.0027 | 0.3939 |
+| 2026-03-14 23:15 | lower_band_reversion | None → 25 | ❌ discard | +0.0000 | 0.3966 |

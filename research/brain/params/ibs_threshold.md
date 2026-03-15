@@ -21,3 +21,5 @@
 | 2026-03-14 06:00 | lower_band_reversion | None → 0.3 | ❌ discard | +0.0000 | -0.1649 |
 | 2026-03-14 10:12 | lower_band_reversion | 0.5 → 0.2 | ❌ discard | -0.0053 | 0.3913 |
 | 2026-03-14 10:12 | lower_band_reversion | 0.5 → 0.3 | ❌ discard | -0.0021 | 0.3945 |
+| 2026-03-14 23:14 | lower_band_reversion | 0.5 → 0.2 | ❌ discard | -0.0053 | 0.3913 |
+| 2026-03-14 23:14 | lower_band_reversion | 0.5 → 0.3 | ❌ discard | -0.0021 | 0.3945 |

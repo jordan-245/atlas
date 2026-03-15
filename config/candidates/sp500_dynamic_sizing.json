@@ -22,7 +22,7 @@
     "max_daily_drawdown_pct": 0.02,
     "require_stop_loss": true,
     "require_planned_exit": true,
-    "min_confidence": 0.65,
+    "min_confidence": 0.75,
     "trailing_stop": {
       "enabled": false,
       "activation_pct": 0.02,
@@ -361,8 +361,8 @@
   },
   "_upgrade_notes": {
     "from": "v2.2",
-    "date": "2026-03-15",
-    "change": "Enable dynamic position sizing with graduated drawdown tiers (4%\u21920.75x, 7%\u21920.50x, 10%\u21920.25x). MaxDD 13.46%\u219211.51% (-1.95pp), CAGR 44.56%\u219242.75% (-1.81pp), Calmar 3.31\u21923.72 (+0.40).",
+    "date": "2026-03-13",
+    "change": "7-strategy portfolio with optimized weights",
     "portfolio_sharpe": 1.0927,
     "previous_sharpe": "~0.50 (3-strategy equal-weight)"
   }

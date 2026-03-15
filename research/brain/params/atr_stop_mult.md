@@ -4,25 +4,6 @@
 
 | Date | Strategy | Change | Result | Sharpe Δ | New Sharpe |
 |------|----------|--------|--------|----------|------------|
-| 2026-03-13 23:40 | stochastic_oversold | None → 1.5 | ❌ discard | -0.4926 | -0.0939 |
-| 2026-03-13 23:40 | stochastic_oversold | None → 3.0 | ❌ discard | -0.0158 | 0.3829 |
-| 2026-03-13 23:40 | stochastic_oversold | None → 2.5 | ❌ discard | -0.0049 | 0.3938 |
-| 2026-03-13 23:40 | stochastic_oversold | None → 2.0 | ❌ discard | +0.0000 | 0.3987 |
-| 2026-03-14 00:11 | williams_percent_r | None → 1.5 | ✅ kept | +0.4687 | -2.0282 |
-| 2026-03-14 00:11 | williams_percent_r | None → 3.0 | ❌ discard | -1.6426 | -4.1395 |
-| 2026-03-14 00:11 | williams_percent_r | None → 2.5 | ❌ discard | -0.9652 | -3.4621 |
-| 2026-03-14 00:11 | williams_percent_r | None → 2.0 | ❌ discard | +0.0000 | -2.4969 |
-| 2026-03-14 02:02 | short_term_mr | None → 2.5 | ❌ discard | -0.0182 | 0.4955 |
-| 2026-03-14 02:02 | short_term_mr | None → 2.0 | ❌ discard | -0.0255 | 0.4882 |
-| 2026-03-14 02:02 | short_term_mr | None → 1.5 | ❌ discard | +0.0000 | 0.5137 |
-| 2026-03-14 02:06 | adx_trend_pullback | 1.5 → 2.5 | ❌ discard | -0.0082 | 0.3819 |
-| 2026-03-14 02:06 | adx_trend_pullback | 1.5 → 3.0 | ❌ discard | -0.0198 | 0.3703 |
-| 2026-03-14 02:06 | adx_trend_pullback | 1.5 → 2.0 | ❌ discard | -2.1646 | -1.7745 |
-| 2026-03-14 02:09 | demark_sequential | 1.5 → 2.5 | ❌ discard | -2.7393 | -5.8952 |
-| 2026-03-14 02:09 | demark_sequential | 1.5 → 2.0 | ❌ discard | -1.1608 | -4.3167 |
-| 2026-03-14 02:09 | demark_sequential | 1.5 → 3.0 | ❌ discard | -4.4076 | -7.5635 |
-| 2026-03-14 02:36 | donchian_breakout | 1.5 → 2.5 | ❌ discard | -0.2891 | 0.2656 |
-| 2026-03-14 02:36 | donchian_breakout | 1.5 → 2.0 | ❌ discard | -0.1464 | 0.4083 |
 | 2026-03-14 02:36 | donchian_breakout | 1.5 → 3.0 | ❌ discard | -0.4722 | 0.0825 |
 | 2026-03-14 02:40 | stochastic_oversold | None → 1.5 | ❌ discard | -0.4926 | -0.0939 |
 | 2026-03-14 02:40 | stochastic_oversold | None → 2.5 | ❌ discard | -0.0049 | 0.3938 |
@@ -54,3 +35,22 @@
 | 2026-03-14 10:13 | lower_band_reversion | 2.5 → 2.0 | ❌ discard | -0.0110 | 0.3856 |
 | 2026-03-14 10:13 | lower_band_reversion | 2.5 → 3.0 | ❌ discard | -0.0099 | 0.3867 |
 | 2026-03-14 10:13 | lower_band_reversion | 2.5 → 1.5 | ❌ discard | -0.3859 | 0.0107 |
+| 2026-03-14 23:02 | short_term_mr | None → 2.0 | ❌ discard | -0.0255 | 0.4882 |
+| 2026-03-14 23:02 | short_term_mr | None → 2.5 | ❌ discard | -0.0182 | 0.4955 |
+| 2026-03-14 23:02 | short_term_mr | None → 1.5 | ❌ discard | +0.0000 | 0.5137 |
+| 2026-03-14 23:06 | adx_trend_pullback | 1.5 → 2.5 | ❌ discard | -0.0078 | 0.3823 |
+| 2026-03-14 23:06 | adx_trend_pullback | 1.5 → 2.0 | ❌ discard | -2.1646 | -1.7745 |
+| 2026-03-14 23:06 | adx_trend_pullback | 1.5 → 3.0 | ❌ discard | -0.0199 | 0.3702 |
+| 2026-03-14 23:08 | donchian_breakout | 1.5 → 2.0 | ❌ discard | -0.1396 | 0.4070 |
+| 2026-03-14 23:08 | donchian_breakout | 1.5 → 3.0 | ❌ discard | -0.4641 | 0.0825 |
+| 2026-03-14 23:08 | donchian_breakout | 1.5 → 2.5 | ❌ discard | -0.2807 | 0.2659 |
+| 2026-03-14 23:11 | williams_percent_r | 1.5 → 2.5 | ❌ discard | -0.3544 | -0.1576 |
+| 2026-03-14 23:11 | williams_percent_r | 1.5 → 2.0 | ❌ discard | -0.1538 | 0.0430 |
+| 2026-03-14 23:11 | williams_percent_r | 1.5 → 3.0 | ❌ discard | -0.4828 | -0.2860 |
+| 2026-03-14 23:16 | lower_band_reversion | 2.5 → 1.5 | ❌ discard | -0.3859 | 0.0107 |
+| 2026-03-14 23:16 | lower_band_reversion | 2.5 → 3.0 | ❌ discard | -0.0099 | 0.3867 |
+| 2026-03-14 23:16 | lower_band_reversion | 2.5 → 2.0 | ❌ discard | -0.0110 | 0.3856 |
+| 2026-03-14 23:52 | triple_rsi | None → 2.0 | ✅ kept | +0.1345 | 0.1988 |
+| 2026-03-14 23:52 | triple_rsi | None → 2.5 | ❌ discard | +0.0000 | 0.0643 |
+| 2026-03-14 23:52 | triple_rsi | None → 3.0 | ❌ discard | -0.0904 | -0.0261 |
+| 2026-03-14 23:52 | triple_rsi | None → 1.5 | ❌ discard | -0.0431 | 0.0212 |

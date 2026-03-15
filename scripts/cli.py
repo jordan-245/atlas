@@ -987,6 +987,27 @@ def cmd_schedule(args):
     print()
 
 
+def cmd_calibrate(args):
+    market_id = getattr(args, "market", DEFAULT_MARKET)
+    config = get_active_config(market_id)
+    print("Loading data for %s..." % market_id)
+    tickers = get_tickers(market_id)
+    data = load_data(tickers, config)
+    if not data:
+        print("ERROR: No data available. Run 'ingest' first.")
+        return
+    print("Running confidence calibration on %d tickers..." % len(data))
+    print("This runs a full backtest with min_confidence=0 to capture all signals.")
+    print()
+
+    from research.calibration import calibrate_from_backtest, print_report, save_report
+
+    report = calibrate_from_backtest(config, market_id, data=data)
+    print_report(report)
+    report_path = save_report(report, market_id)
+    print("Report saved to %s" % report_path)
+
+
 def main():
     parser = argparse.ArgumentParser(prog="atlas", description="Atlas Multi-Market Swing Trading Lab")
     # Global --market flag
@@ -1023,6 +1044,7 @@ def main():
     p.add_argument("--days", type=int, default=90)
     subparsers.add_parser("market-check", help="Check market state and trading calendar")
     subparsers.add_parser("schedule", help="Show recommended cron schedule for all markets")
+    subparsers.add_parser("calibrate", help="Run confidence score calibration analysis")
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -1039,6 +1061,7 @@ def main():
         "history": cmd_history, "fees": cmd_fees,
         "market-check": cmd_market_check,
         "schedule": cmd_schedule,
+        "calibrate": cmd_calibrate,
     }
     cmd_func = commands.get(args.command)
     if cmd_func:
