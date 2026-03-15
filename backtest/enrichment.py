@@ -5,6 +5,7 @@ confidence adjustment.  All functions mutate signals in-place and
 return None — consistent with the original implementation.
 """
 import logging
+from datetime import date as date_type
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
@@ -291,3 +292,64 @@ def apply_rs_confidence(
                         f"rs={_rs_val:.1f}, adj={_rs_adj:+.3f}, "
                         f"conf {_rs_orig_conf:.3f} -> {_sig.confidence:.3f}"
                     )
+
+
+def inject_event_features(
+    signals: list,
+    today,
+    event_calendar,
+) -> None:
+    """Inject event proximity features into signals (info-only, no filtering).
+
+    Queries the EventCalendar for the next occurrence of each macro event type
+    relative to ``today`` and stamps matching keys onto each signal's
+    ``.features`` dict.  The function never filters or rejects signals — it
+    only annotates them so downstream analysis can observe event context.
+
+    Injected feature keys:
+        days_to_fomc   — calendar days until next FOMC meeting (-1 if not found)
+        days_to_cpi    — calendar days until next CPI release (-1 if not found)
+        days_to_nfp    — calendar days until next NFP report (-1 if not found)
+        is_opex_week   — True when monthly options expiration is ≤ 5 days away
+        is_rebal_week  — True when quarterly S&P 500 rebalance is ≤ 5 days away
+
+    Args:
+        signals:        List of Signal objects (must support a ``features`` dict).
+        today:          Reference date for proximity queries (date or datetime).
+        event_calendar: EventCalendar instance, or None to skip injection.
+    """
+    if event_calendar is None or not signals:
+        return
+
+    # Normalise today to a date object (EventCalendar.get_event_proximity needs date)
+    if not isinstance(today, date_type):
+        try:
+            today = today.date()
+        except AttributeError:
+            from datetime import datetime as _dt
+            today = _dt.strptime(str(today), "%Y-%m-%d").date()
+
+    proximity = event_calendar.get_event_proximity(today)
+
+    days_to_opex = proximity.get("days_to_opex", -1)
+    days_to_rebal = proximity.get("days_to_rebal", -1)
+
+    for sig in signals:
+        if not hasattr(sig, "features") or sig.features is None:
+            sig.features = {}
+        sig.features["days_to_fomc"] = proximity.get("days_to_fomc", -1)
+        sig.features["days_to_cpi"] = proximity.get("days_to_cpi", -1)
+        sig.features["days_to_nfp"] = proximity.get("days_to_nfp", -1)
+        # is_opex_week: True when OPEX is within 5 calendar days (0 = same day)
+        sig.features["is_opex_week"] = 0 <= days_to_opex <= 5
+        # is_rebal_week: True when quarterly rebalance is within 5 calendar days
+        sig.features["is_rebal_week"] = 0 <= days_to_rebal <= 5
+        logger.debug(
+            "inject_event_features %s: fomc=%d cpi=%d nfp=%d opex_week=%s rebal_week=%s",
+            getattr(sig, "ticker", "?"),
+            sig.features["days_to_fomc"],
+            sig.features["days_to_cpi"],
+            sig.features["days_to_nfp"],
+            sig.features["is_opex_week"],
+            sig.features["is_rebal_week"],
+        )

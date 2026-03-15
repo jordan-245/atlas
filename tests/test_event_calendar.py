@@ -193,6 +193,65 @@ class TestGetEventProximity:
         for key in ("days_to_fomc", "days_to_cpi", "days_to_nfp"):
             assert prox[key] >= 0 or prox[key] == -1
 
+    def test_has_days_to_opex_key(self, ec):
+        """get_event_proximity must return a days_to_opex key."""
+        prox = ec.get_event_proximity(date(2026, 3, 1))
+        assert "days_to_opex" in prox
+
+    def test_has_days_to_rebal_key(self, ec):
+        """get_event_proximity must return a days_to_rebal key."""
+        prox = ec.get_event_proximity(date(2026, 3, 1))
+        assert "days_to_rebal" in prox
+
+    def test_days_to_opex_on_opex_date(self, ec):
+        """On the OPEX date itself (2026-03-20), days_to_opex should be 0."""
+        prox = ec.get_event_proximity(date(2026, 3, 20))
+        assert prox["days_to_opex"] == 0
+
+    def test_days_to_opex_before_opex(self, ec):
+        """Four days before March 2026 OPEX (2026-03-20), days_to_opex should be 4."""
+        prox = ec.get_event_proximity(date(2026, 3, 16))
+        assert prox["days_to_opex"] == 4
+
+    def test_days_to_rebal_on_rebal_date(self, ec):
+        """On a REBAL date (2026-03-20 is also Q1 REBAL), days_to_rebal should be 0."""
+        prox = ec.get_event_proximity(date(2026, 3, 20))
+        assert prox["days_to_rebal"] == 0
+
+    def test_days_to_rebal_before_rebal(self, ec):
+        """Five days before Q1 2026 REBAL (2026-03-20), days_to_rebal should be 5."""
+        prox = ec.get_event_proximity(date(2026, 3, 15))
+        assert prox["days_to_rebal"] == 5
+
+    def test_days_to_opex_nonnegative_or_minus_one(self, ec):
+        """days_to_opex should be >= 0 or -1 (not found)."""
+        prox = ec.get_event_proximity(date(2026, 1, 1))
+        assert prox["days_to_opex"] >= 0 or prox["days_to_opex"] == -1
+
+    def test_days_to_rebal_nonnegative_or_minus_one(self, ec):
+        """days_to_rebal should be >= 0 or -1 (not found)."""
+        prox = ec.get_event_proximity(date(2026, 1, 1))
+        assert prox["days_to_rebal"] >= 0 or prox["days_to_rebal"] == -1
+
+    def test_days_to_opex_after_opex_date(self, ec):
+        """Day after OPEX (2026-03-21), days_to_opex points to April OPEX (April 17 = 27 days)."""
+        prox = ec.get_event_proximity(date(2026, 3, 21))
+        expected = (date(2026, 4, 17) - date(2026, 3, 21)).days
+        assert prox["days_to_opex"] == expected
+
+    def test_is_opex_week_consistent_with_days_to_opex(self, ec):
+        """is_opex_week=1 should coincide with days_to_opex in [0, 6]."""
+        for day_offset in range(-10, 30):
+            ref = date(2026, 3, 20) + __import__("datetime").timedelta(days=day_offset)
+            if ref.year != 2026:
+                continue
+            prox = ec.get_event_proximity(ref)
+            d = prox["days_to_opex"]
+            if d != -1 and 0 <= d <= 6:
+                assert prox["is_opex_week"] == 1, (
+                    f"is_opex_week should be 1 when days_to_opex={d} (ref={ref})"
+                )
+
 
 # ---------------------------------------------------------------------------
 # _compute_nfp_dates — first Fridays
