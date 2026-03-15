@@ -1,7 +1,7 @@
 # Short Selling Capability
 
-**Date:** 2026-03-14  
-**Status:** PARTIAL (backtest engine + live executor incomplete)
+**Date:** 2026-03-14 (updated 2026-03-15)  
+**Status:** IMPLEMENTED — backtest engine + live executor + protective orders all direction-aware
 
 ## Decision
 
@@ -13,19 +13,18 @@ Added short selling infrastructure to enable bearish strategies. Currently gated
 2. **MR short signal generation** — `strategies/mean_reversion.py` `_generate_short_signals()` triggers on RSI > 70, z-score > +2.0 (overbought conditions)
 3. **MR exit logic** — Direction-aware exits: short take-profit when price drops to target, short stop-loss when price rises above stop
 4. **Alpaca verification** — `verify_shorting_enabled()` confirms account has shorting enabled (multiplier=2, margin account)
-
-## What's Incomplete (FIX-1, FIX-2)
-
-1. **Backtest engine P&L** — `_build_trade_record()` hardcodes long-only P&L calculation
-2. **Backtest trailing stops** — Track highest price (long-only), shorts need lowest price tracking
-3. **Backtest MAE/MFE** — Inverted for shorts (adverse = price rise, favorable = price drop)
-4. **Live executor order sides** — Always BUY for entry, SELL for exit. Shorts need SELL to open, BUY to cover
-5. **Protective order types** — Stop/limit order types need inversion for short positions
-6. **Live preflight check** — No kill switch to block short entries in live trading
+5. **Backtest engine P&L** — `_build_trade_record()` and `_force_close_all()` use direction-aware P&L: `(entry - exit) × shares` for shorts
+6. **Backtest trailing stops** — Shorts track lowest price (not highest), trigger when price rises above trailing stop
+7. **Backtest MAE/MFE** — Inverted for shorts: adverse = price rise (high - entry), favorable = price drop (entry - low)
+8. **Backtest max-loss exits** — Direction-aware unrealized P&L in `_process_max_loss_exits()`
+9. **Live executor order sides** — SELL to open (short entry), BUY to cover (short exit)
+10. **Protective order types** — Inverted for shorts: BUY stop for stop-loss, BUY limit for take-profit
+11. **Live preflight check** — Rejects short entries when `short_enabled=false`
+12. **Ledger direction field** — Trade records include `direction` field
 
 ## Rollout Plan
 
-1. Complete FIX-1 (backtest engine) and FIX-2 (live executor)
+1. ~~Complete FIX-1 (backtest engine) and FIX-2 (live executor)~~ ✅ Done
 2. Run 3-month backtest with MR `short_enabled=true`
 3. Validate short trade P&L accuracy against manual calculations
 4. Paper-trade with short signals for 1 month
@@ -34,15 +33,16 @@ Added short selling infrastructure to enable bearish strategies. Currently gated
 ## Config
 
 - `mean_reversion.short_enabled: false` — strategy-level kill switch
-- `trading.short_selling_enabled: false` (proposed) — system-level kill switch
 
 ## Files
 
 - `strategies/mean_reversion.py` — short signal generation
-- `backtest/engine.py` — needs direction-aware P&L (FIX-1)
-- `brokers/live_executor.py` — needs order side logic (FIX-2)
+- `backtest/engine.py` — direction-aware P&L, trailing stops, MAE/MFE
+- `brokers/live_executor.py` — direction-aware order sides, protective orders, preflight
 - `brokers/alpaca/broker.py` — `verify_shorting_enabled()`
 - `tests/test_short_selling.py` — 43 tests (signal + strategy level)
+- `tests/test_engine_shorts.py` — 23 tests (engine direction-aware P&L)
+- `tests/test_executor_shorts.py` — 40 tests (executor order sides, preflight)
 
 ## Risk Assessment
 
