@@ -101,6 +101,41 @@ class TradePlanGenerator:
                 base_entry["rejection_reason"] = reason
                 rejected_entries.append(base_entry)
 
+        # Event calendar warnings (info-only — does NOT reject signals)
+        event_cal_cfg = self.config.get("event_calendar", {})
+        if event_cal_cfg.get("enabled", False) and event_cal_cfg.get("warn_in_plan", True):
+            try:
+                from data.events import EventCalendar
+                ec = EventCalendar()
+                _trade_date_parsed = None
+                try:
+                    from datetime import date as _date
+                    _trade_date_parsed = _date.fromisoformat(trade_date)
+                except Exception:
+                    pass
+                for entry in proposed_entries:
+                    ref_date = trade_date if _trade_date_parsed is None else trade_date
+                    nearby = ec.get_events_near(ref_date, window_days=3)
+                    if nearby:
+                        warnings = []
+                        for ev in nearby:
+                            ref = _trade_date_parsed or __import__("datetime").date.today()
+                            days_away = (ev.date - ref).days
+                            warnings.append({
+                                "type": ev.event_type,
+                                "date": ev.date.isoformat(),
+                                "days_away": days_away,
+                                "impact": ev.impact,
+                                "description": ev.description,
+                            })
+                            logger.info(
+                                "Event warning for %s: %s in %d days",
+                                entry["ticker"], ev.event_type, days_away,
+                            )
+                        entry["event_warnings"] = warnings
+            except Exception as exc:
+                logger.debug("Event calendar integration skipped: %s", exc)
+
         # Portfolio state after proposed trades
         proposed_cost = sum(e["entry_price"] * e["position_size"] for e in proposed_entries)
         proposed_risk = sum(e["risk_amount"] for e in proposed_entries)
