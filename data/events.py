@@ -282,8 +282,8 @@ class EventCalendar:
     def get_event_proximity(self, dt: date) -> Dict[str, int]:
         """Return days-to-next occurrence for each major event type.
 
-        Searches forward from dt for the next FOMC, CPI, and NFP events
-        and whether the current week is an OPEX week.
+        Searches forward from dt for the next FOMC, CPI, NFP, OPEX, and REBAL
+        events.
 
         Args:
             dt: Reference date (typically today or the trade date).
@@ -294,6 +294,8 @@ class EventCalendar:
                 "days_to_cpi"   — calendar days until next CPI after dt
                 "days_to_nfp"   — calendar days until next NFP after dt
                 "is_opex_week"  — 1 if there is an OPEX event within 0-6 days, else 0
+                "days_to_opex"  — calendar days until next OPEX after dt
+                "days_to_rebal" — calendar days until next quarterly REBAL after dt
             Values of -1 indicate no future event found in the loaded schedule.
         """
         result: Dict[str, int] = {
@@ -301,6 +303,8 @@ class EventCalendar:
             "days_to_cpi": -1,
             "days_to_nfp": -1,
             "is_opex_week": 0,
+            "days_to_opex": -1,
+            "days_to_rebal": -1,
         }
 
         type_to_key = {
@@ -323,8 +327,14 @@ class EventCalendar:
                     result[key] = delta
 
             elif event.event_type == EventType.OPEX:
+                if result["days_to_opex"] == -1:
+                    result["days_to_opex"] = delta
                 if delta <= 6 and result["is_opex_week"] == 0:
                     result["is_opex_week"] = 1
+
+            elif event.event_type == EventType.REBAL:
+                if result["days_to_rebal"] == -1:
+                    result["days_to_rebal"] = delta
 
         return result
 
