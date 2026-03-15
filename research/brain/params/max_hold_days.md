@@ -4,16 +4,6 @@
 
 | Date | Strategy | Change | Result | Sharpe Δ | New Sharpe |
 |------|----------|--------|--------|----------|------------|
-| 2026-03-14 05:01 | donchian_breakout | 30 → 15 | ❌ discard | -0.4752 | 0.0795 |
-| 2026-03-14 05:01 | donchian_breakout | 30 → 10 | ❌ discard | -0.4296 | 0.1251 |
-| 2026-03-14 05:01 | donchian_breakout | 30 → 20 | ❌ discard | -0.3961 | 0.1586 |
-| 2026-03-14 05:32 | williams_percent_r | 7 → 5 | ❌ discard | -0.1369 | 0.0599 |
-| 2026-03-14 05:32 | williams_percent_r | 7 → 15 | ❌ discard | -1.3423 | -1.1455 |
-| 2026-03-14 05:32 | williams_percent_r | 7 → 10 | ❌ discard | -1.6889 | -1.4921 |
-| 2026-03-14 06:01 | lower_band_reversion | None → 7 | ❌ discard | +0.0000 | 0.3856 |
-| 2026-03-14 06:01 | lower_band_reversion | None → 5 | ❌ discard | -0.0010 | 0.3846 |
-| 2026-03-14 06:01 | lower_band_reversion | None → 10 | ❌ discard | +0.0023 | 0.3879 |
-| 2026-03-14 06:01 | lower_band_reversion | None → 3 | ❌ discard | -2.6356 | -2.2500 |
 | 2026-03-14 10:01 | donchian_breakout | 30 → 15 | ❌ discard | -0.4752 | 0.0795 |
 | 2026-03-14 10:01 | donchian_breakout | 30 → 10 | ❌ discard | -0.4296 | 0.1251 |
 | 2026-03-14 10:01 | donchian_breakout | 30 → 20 | ❌ discard | -0.3961 | 0.1586 |
@@ -54,3 +44,13 @@
 | 2026-03-14 23:20 | triple_rsi | None → 10 | ❌ discard | +0.0000 | 0.0643 |
 | 2026-03-14 23:20 | triple_rsi | None → 5 | ❌ discard | -0.4346 | -0.3703 |
 | 2026-03-14 23:20 | triple_rsi | None → 3 | ❌ discard | -0.4146 | -0.3503 |
+| 2026-03-15 02:31 | demark_sequential | 15 → 10 | ✅ kept | +0.1618 | -1.7879 |
+| 2026-03-15 02:31 | demark_sequential | 15 → 7 | ❌ discard | -0.2439 | -2.1936 |
+| 2026-03-15 02:31 | demark_sequential | 15 → 5 | ❌ discard | -0.2795 | -2.2292 |
+| 2026-03-15 02:33 | donchian_breakout | 30 → 10 | ❌ discard | -0.2453 | 0.1196 |
+| 2026-03-15 02:33 | donchian_breakout | 30 → 20 | ❌ discard | -0.0648 | 0.3001 |
+| 2026-03-15 02:33 | donchian_breakout | 30 → 15 | ❌ discard | -0.3418 | 0.0231 |
+| 2026-03-15 03:06 | stochastic_oversold | None → 15 | ❌ discard | +0.0000 | 0.3991 |
+| 2026-03-15 03:06 | stochastic_oversold | None → 5 | ❌ discard | +0.0017 | 0.4008 |
+| 2026-03-15 03:06 | stochastic_oversold | None → 7 | ❌ discard | +0.0002 | 0.3993 |
+| 2026-03-15 03:06 | stochastic_oversold | None → 10 | ❌ discard | +0.0000 | 0.3991 |

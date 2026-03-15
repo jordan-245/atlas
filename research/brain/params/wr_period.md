@@ -17,3 +17,5 @@
 | 2026-03-14 10:07 | williams_percent_r | 21 → 14 | ❌ discard | -1.5433 | -1.3465 |
 | 2026-03-14 23:10 | williams_percent_r | 21 → 14 | ❌ discard | -1.5531 | -1.3563 |
 | 2026-03-14 23:10 | williams_percent_r | 21 → 10 | ❌ discard | -1.3176 | -1.1208 |
+| 2026-03-15 03:37 | williams_percent_r | 21 → 10 | ✅ kept | +1.4529 | -0.0480 |
+| 2026-03-15 03:37 | williams_percent_r | 21 → 14 | ❌ discard | +1.3971 | -0.1038 |

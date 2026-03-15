@@ -6920,5 +6920,97 @@
     "promoted": false,
     "runtime_s": 49.9,
     "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260315_123146",
+    "timestamp": "2026-03-15T02:31:46.832672+00:00",
+    "market": "sp500",
+    "category": "autoresearch",
+    "strategy": "demark_sequential",
+    "hypothesis": "max_hold_days: 15\u219210",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": -1.7879,
+      "cagr_pct": 1.4311,
+      "max_drawdown_pct": 2.1282,
+      "total_trades": 120,
+      "profit_factor": 1.4542
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 max_hold_days: 15\u219210"
+    ],
+    "promoted": false,
+    "runtime_s": 34.9,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260315_130504",
+    "timestamp": "2026-03-15T03:05:04.159461+00:00",
+    "market": "sp500",
+    "category": "autoresearch",
+    "strategy": "stochastic_oversold",
+    "hypothesis": "stoch_entry: None\u219215",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.3991,
+      "cagr_pct": 34.373,
+      "max_drawdown_pct": 2.68,
+      "total_trades": 227,
+      "profit_factor": 10.2276
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 stoch_entry: None\u219215"
+    ],
+    "promoted": false,
+    "runtime_s": 31.5,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260315_133718",
+    "timestamp": "2026-03-15T03:37:18.688200+00:00",
+    "market": "sp500",
+    "category": "autoresearch",
+    "strategy": "williams_percent_r",
+    "hypothesis": "wr_period: 21\u219210",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": -0.048,
+      "cagr_pct": 4.2062,
+      "max_drawdown_pct": 3.7439,
+      "total_trades": 293,
+      "profit_factor": 1.6342
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 wr_period: 21\u219210"
+    ],
+    "promoted": false,
+    "runtime_s": 39.8,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260315_152802",
+    "timestamp": "2026-03-15T05:28:02.821154+00:00",
+    "market": "sp500",
+    "category": "autoresearch",
+    "strategy": "demark_sequential",
+    "hypothesis": "setup_bars: None\u21927",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": -0.2921,
+      "cagr_pct": 2.0238,
+      "max_drawdown_pct": 6.2778,
+      "total_trades": 152,
+      "profit_factor": 1.4049
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 setup_bars: None\u21927"
+    ],
+    "promoted": false,
+    "runtime_s": 34.4,
+    "agent_id": "autoresearch"
   }
 ]

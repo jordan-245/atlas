@@ -1,7 +1,7 @@
 # williams_percent_r
 
-> **Status:** active | **Best Sharpe:** 0.1968 | **Trades:** 228
-> **Updated:** 2026-03-14 05:30
+> **Status:** active | **Best Sharpe:** -0.0480 | **Trades:** 293
+> **Updated:** 2026-03-15 03:37
 
 ## Current Best Params
 
@@ -10,23 +10,24 @@
 | atr_stop_mult | 1.5 |
 | max_hold_days | 7 |
 | sma200_filter | False |
-| wr_period | 21 |
+| wr_period | 10 |
 
 ## Current Metrics
 
 | Metric | Value |
 |--------|-------|
-| Sharpe | 0.1968 |
-| CAGR | 6.9% |
-| Profit Factor | 2.46 |
-| Max Drawdown | 3.9% |
-| Total Trades | 228 |
-| Win Rate | 55.7% |
+| Sharpe | -0.0480 |
+| CAGR | 4.2% |
+| Profit Factor | 1.63 |
+| Max Drawdown | 3.7% |
+| Total Trades | 293 |
+| Win Rate | 53.6% |
 
 ## History
 
 | Date | Sharpe | Trades | PF | CAGR | Change |
 |------|--------|--------|----|------|--------|
+| Date | Sharpe | Trades | PF | CAGR | Change |
 | Date | Sharpe | Trades | PF | CAGR | Change |
 | Date | Sharpe | Trades | PF | CAGR | Change |
 | Date | Sharpe | Trades | PF | CAGR | Change |
@@ -38,3 +39,4 @@
 | 2026-03-14 00:39 | -1.6028 | 214 | 1.41 | 1.6% | max_hold_days=7 |
 | 2026-03-14 03:13 | -1.1208 | 254 | 1.53 | 2.5% | sma200_filter=False |
 | 2026-03-14 05:30 | 0.1968 | 228 | 2.46 | 6.9% | wr_period=21 |
+| 2026-03-15 03:37 | -0.0480 | 293 | 1.63 | 4.2% | wr_period=10 |
