@@ -47,3 +47,6 @@
 | 2026-03-16 10:07 | adx_trend_pullback | 0.01 → 0.005 | ❌ discard | -0.4743 | 0.4450 |
 | 2026-03-16 10:07 | adx_trend_pullback | 0.01 → 0.015 | ❌ discard | -0.4743 | 0.4450 |
 | 2026-03-16 10:07 | adx_trend_pullback | 0.01 → 0.02 | ❌ discard | -0.4712 | 0.4481 |
+| 2026-03-16 13:07 | adx_trend_pullback | 0.01 → 0.005 | ❌ discard | -0.5068 | 0.4449 |
+| 2026-03-16 13:07 | adx_trend_pullback | 0.01 → 0.015 | ❌ discard | -0.5065 | 0.4452 |
+| 2026-03-16 13:07 | adx_trend_pullback | 0.01 → 0.02 | ❌ discard | -0.5034 | 0.4483 |
