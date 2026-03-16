@@ -41,3 +41,6 @@
 | 2026-03-16 06:17 | williams_percent_r | -85 → -95 | ❌ discard | -0.2856 | -0.1080 |
 | 2026-03-16 06:17 | williams_percent_r | -85 → -90 | ❌ discard | -1.6056 | -1.4280 |
 | 2026-03-16 06:17 | williams_percent_r | -85 → -80 | ❌ discard | -0.2163 | -0.0387 |
+| 2026-03-16 10:24 | williams_percent_r | -85 → -95 | ❌ discard | -0.7585 | 0.2079 |
+| 2026-03-16 10:24 | williams_percent_r | -85 → -90 | ❌ discard | -0.6974 | 0.2690 |
+| 2026-03-16 10:24 | williams_percent_r | -85 → -80 | ❌ discard | -0.8257 | 0.1407 |

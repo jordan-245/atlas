@@ -1,0 +1,102 @@
+{
+  "timestamp": "20260316T203658",
+  "label": "MR Long",
+  "config_version": "v3.0",
+  "metrics": {
+    "total_return": 0.4923,
+    "cagr": 0.069771,
+    "max_drawdown": 0.083769,
+    "sharpe": 0.3172,
+    "sortino": 0.4531,
+    "win_rate": 0.5465,
+    "profit_factor": 1.5381,
+    "avg_trade": 6.44,
+    "total_trades": 269,
+    "total_pnl": 1732.53,
+    "exposure": 0.8592,
+    "turnover": 93.969,
+    "avg_equity": 4385.71,
+    "final_equity": 5250.14,
+    "avg_winner": 33.69,
+    "avg_loser": -26.39,
+    "largest_winner": 124.09,
+    "largest_loser": -106.66,
+    "avg_hold_days": 12.7,
+    "calmar": 0.8329,
+    "var_95": 0.006151,
+    "var_99": 0.010869,
+    "cvar_95": 0.009334,
+    "var_95_parametric": 0.006627,
+    "expectancy_r": -1.0538,
+    "avg_r": -1.0538,
+    "avg_winner_r": 1.5985,
+    "avg_loser_r": -4.2496,
+    "win_rate_r": 0.5465,
+    "total_r": -283.4778,
+    "r_count": 269,
+    "largest_winner_r": 11.6469,
+    "largest_loser_r": -195.107,
+    "edge_t_statistic": -1.3277,
+    "edge_p_value": 0.18541,
+    "edge_significant": false,
+    "strategy_correlation": {
+      "strategies": [
+        "mean_reversion"
+      ],
+      "matrix": [
+        [
+          1.0
+        ]
+      ],
+      "concentrated_pairs": [],
+      "daily_returns": {}
+    },
+    "mc_p95_drawdown": 0.106218,
+    "mc_p99_drawdown": 0.131501,
+    "mc_fragile": false,
+    "monte_carlo": {
+      "p50_drawdown": 0.067514,
+      "p75_drawdown": 0.080443,
+      "p95_drawdown": 0.106218,
+      "p99_drawdown": 0.131501,
+      "worst_drawdown": 0.181409,
+      "actual_drawdown": 0.081723,
+      "n_simulations": 1000,
+      "n_trades": 269,
+      "fragile": false
+    },
+    "regime_metrics": {
+      "bear": {
+        "trades": 30,
+        "win_rate_pct": 60.0,
+        "avg_trade": 6.15,
+        "total_pnl": 184.49,
+        "profit_factor": 1.608,
+        "sharpe_approx": 0.2019,
+        "avg_r": 0.4901
+      },
+      "bull": {
+        "trades": 172,
+        "win_rate_pct": 55.2,
+        "avg_trade": 8.55,
+        "total_pnl": 1470.96,
+        "profit_factor": 1.7836,
+        "sharpe_approx": 0.2388,
+        "avg_r": -1.7529
+      },
+      "neutral": {
+        "trades": 67,
+        "win_rate_pct": 50.7,
+        "avg_trade": 1.15,
+        "total_pnl": 77.08,
+        "profit_factor": 1.0742,
+        "sharpe_approx": 0.0304,
+        "avg_r": 0.0495
+      }
+    }
+  },
+  "trade_count": 269,
+  "long_trades": 269,
+  "short_trades": 0,
+  "short_trade_details": []
+}

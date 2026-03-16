@@ -1,34 +1,55 @@
 # Portfolio Allocation Analysis
 
-> Generated: 2026-03-12 17:35
+> Generated: 2026-03-16 20:38
 
 ## Portfolio Metrics
 
-- **Analytic Sharpe**: 0.4634
-- **Simulated Sharpe**: 0.9919
-- **Strategies active**: 6
-- **Average correlation**: 0.2090
-- **Annual return**: 10.8%
-- **Annual volatility**: 10.9%
-- **Max drawdown**: -6.4%
+- **Analytic Sharpe**: -2.3033
+- **Simulated Sharpe**: 0.5284
+- **Strategies active**: 31
+- **Average correlation**: 0.2061
+- **Annual return**: 1.1%
+- **Annual volatility**: 2.1%
+- **Max drawdown**: -2.8%
 
 ## Optimal Weights (Sharpe-tilted inverse-vol)
 
 | Strategy | Weight | Sharpe | Trades | CAGR% | Group |
 |----------|--------|--------|--------|-------|-------|
-| sector_rotation | 24.9% | 0.401 | 773 | 10.4% | other |
-| mean_reversion | 23.8% | 0.229 | 240 | 7.2% | mean_reversion |
-| opening_gap | 19.1% | 0.271 | 392 | 8.7% | other |
-| connors_rsi2 | 14.8% | 0.175 | 925 | 6.7% | mean_reversion |
-| momentum_breakout | 14.3% | 0.152 | 397 | 6.3% | momentum |
-| short_term_mr | 3.0% | 0.395 | 878 | 36.0% | mean_reversion |
+| connors_rsi2 | 3.2% | -0.380 | 729 | 2.0% | mean_reversion |
+| demark_sequential | 3.2% | -0.685 | 188 | 1.8% | mean_reversion |
+| bb_squeeze | 3.2% | -0.662 | 179 | 1.9% | mean_reversion |
+| donchian_breakout | 3.2% | -0.812 | 112 | 1.1% | momentum |
+| gap_and_go | 3.2% | -1.732 | 204 | -0.0% | momentum |
+| consecutive_down_days | 3.2% | -1.387 | 629 | -0.5% | mean_reversion |
+| adx_trend_pullback | 3.2% | -0.242 | 233 | 3.6% | momentum |
+| inside_bar_nr7 | 3.2% | -1.232 | 248 | 0.5% | other |
+| mean_reversion | 3.2% | -0.399 | 237 | 2.2% | mean_reversion |
+| lower_band_reversion | 3.2% | -1.578 | 369 | -0.1% | mean_reversion |
+| macd_divergence | 3.2% | -0.632 | 171 | 2.6% | momentum |
+| keltner_reversion | 3.2% | -0.769 | 199 | 1.5% | mean_reversion |
+| monthly_rotation | 3.2% | -1.902 | 51 | 0.3% | other |
+| momentum_breakout | 3.2% | -0.565 | 294 | 0.9% | momentum |
+| opening_gap | 3.2% | -0.475 | 466 | 1.4% | other |
+| pead_earnings_drift | 3.2% | -0.561 | 87 | 2.8% | other |
+| dividend_capture | 3.2% | -1.229 | 110 | 1.3% | other |
+| put_call_vix_proxy | 3.2% | -4.129 | 19 | 0.5% | other |
+| overnight_return | 3.2% | -1.483 | 436 | -0.1% | other |
+| relative_strength_pullback | 3.2% | -0.976 | 219 | 0.1% | momentum |
+| sector_rotation | 3.2% | -0.914 | 284 | -0.5% | other |
+| trend_following | 3.2% | -0.217 | 231 | 3.5% | momentum |
+| short_term_mr | 3.2% | -1.227 | 783 | -2.0% | mean_reversion |
+| rsi_divergence | 3.2% | -2.571 | 125 | -2.3% | mean_reversion |
+| stochastic_oversold | 3.2% | -0.794 | 292 | 2.2% | mean_reversion |
+| volume_climax | 3.2% | -1.062 | 483 | 0.2% | mean_reversion |
+| williams_percent_r | 3.2% | -0.505 | 233 | 2.4% | mean_reversion |
+| triple_rsi | 3.2% | -1.409 | 197 | 0.1% | other |
+| vwap_reversion | 3.2% | -1.573 | 208 | -0.3% | other |
+| mtf_momentum | 3.2% | -2.179 | 46 | -0.5% | other |
+| heikin_ashi_reversal | 3.2% | -0.092 | 225 | 4.5% | momentum |
 
 ## Excluded Strategies (weight = 0)
 
-- **bb_squeeze**: Sharpe=-0.746, trades=371 — low Sharpe
-- **consecutive_down_days**: Sharpe=-1.610, trades=1605 — low Sharpe
-- **lower_band_reversion**: Sharpe=-1.360, trades=780 — low Sharpe
-- **trend_following**: Sharpe=-0.388, trades=302 — low Sharpe
 
 ## Method
 

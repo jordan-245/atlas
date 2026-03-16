@@ -14,3 +14,5 @@
 | 2026-03-15 11:20 | keltner_reversion | 10 → 20 | ❌ discard | -4.0227 | -4.1029 |
 | 2026-03-16 07:05 | keltner_reversion | 10 → 15 | ❌ discard | -2.5289 | -2.5207 |
 | 2026-03-16 07:05 | keltner_reversion | 10 → 20 | ❌ discard | -2.6019 | -2.5937 |
+| 2026-03-16 10:46 | keltner_reversion | 10 → 20 | ❌ discard | -1.6576 | -0.6912 |
+| 2026-03-16 10:46 | keltner_reversion | 10 → 15 | ❌ discard | -1.6668 | -0.7004 |
