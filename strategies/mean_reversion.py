@@ -110,22 +110,13 @@ class MeanReversion(BaseStrategy):
         equity: float,
         existing_positions: List[Dict[str, Any]],
     ) -> List[Signal]:
-        """Scan all tickers for mean reversion entry signals (long and short).
+        """Scan all tickers for mean reversion long entry signals.
 
         Long signals when:
             1. RSI(rsi_period) < rsi_oversold
             2. Z-score(zscore_lookback) < zscore_entry
-
-        Short signals (when short_enabled=True) when:
-            1. RSI(rsi_period) > (100 - rsi_oversold)
-            2. Z-score(zscore_lookback) > -zscore_entry (overbought)
         """
-        signals = self._generate_long_signals(data, equity, existing_positions)
-
-        if self.config.get("strategies", {}).get("mean_reversion", {}).get("short_enabled", False):
-            signals.extend(self._generate_short_signals(data, equity, existing_positions))
-
-        return signals
+        return self._generate_long_signals(data, equity, existing_positions)
 
     def _generate_long_signals(
         self,

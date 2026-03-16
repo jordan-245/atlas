@@ -71,7 +71,6 @@
     },
     "mean_reversion": {
       "enabled": true,
-      "short_enabled": false,
       "rsi_period": 14,
       "rsi_oversold": 35,
       "zscore_lookback": 30,
