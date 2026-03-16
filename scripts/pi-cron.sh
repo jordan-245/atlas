@@ -422,7 +422,13 @@ fi
 exit $EXIT_CODE
 
 # ══════════════════════════════════════════════════════════════
-# Overnight autoresearch — uncomment to enable
+# Autoresearch — rotate top-5 strategies Mon-Fri, 09:00 AEST
+# Starts after postclose settles (~08:30), finishes by 17:00
+# (1 hour before 18:00 healthz). Uses frozen snapshot — no conflicts.
+# Top 5 by portfolio weight: SR 24%, OG 22%, TF 21%, MR 17%, MB 9%
 # ══════════════════════════════════════════════════════════════
-# 22:00 Mon-Fri: 8-hour research session on mean_reversion
-# 0 22 * * 1-5 cd /root/atlas && python3 research/autoresearch_runner.py --strategy mean_reversion --market sp500 --hours 8 --notify > logs/autoresearch_$(date +\%Y\%m\%d_\%H\%M).log 2>&1
+# 0 9 * * 1  python3 /root/atlas/research/autoresearch_runner.py --strategy mean_reversion    --market sp500 --hours 8 --fast-screen --notify > /root/atlas/logs/autoresearch_mon.log 2>&1
+# 0 9 * * 2  python3 /root/atlas/research/autoresearch_runner.py --strategy trend_following    --market sp500 --hours 8 --fast-screen --notify > /root/atlas/logs/autoresearch_tue.log 2>&1
+# 0 9 * * 3  python3 /root/atlas/research/autoresearch_runner.py --strategy opening_gap        --market sp500 --hours 8 --fast-screen --notify > /root/atlas/logs/autoresearch_wed.log 2>&1
+# 0 9 * * 4  python3 /root/atlas/research/autoresearch_runner.py --strategy momentum_breakout  --market sp500 --hours 8 --fast-screen --notify > /root/atlas/logs/autoresearch_thu.log 2>&1
+# 0 9 * * 5  python3 /root/atlas/research/autoresearch_runner.py --strategy sector_rotation    --market sp500 --hours 8 --fast-screen --notify > /root/atlas/logs/autoresearch_fri.log 2>&1
