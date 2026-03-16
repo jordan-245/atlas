@@ -4,8 +4,6 @@
 
 | Date | Strategy | Change | Result | Sharpe Δ | New Sharpe |
 |------|----------|--------|--------|----------|------------|
-| 2026-03-14 23:12 | williams_percent_r | False → True | ❌ discard | -2.2991 | -2.1023 |
-| 2026-03-14 23:53 | triple_rsi | None → True | ❌ discard | +0.0000 | 0.1988 |
 | 2026-03-14 23:53 | triple_rsi | None → False | ❌ discard | -3.5851 | -3.3863 |
 | 2026-03-15 02:32 | demark_sequential | None → True | ❌ discard | -0.1668 | -1.9547 |
 | 2026-03-15 02:32 | demark_sequential | None → False | ❌ discard | +0.0000 | -1.7879 |
@@ -54,3 +52,5 @@
 | 2026-03-16 10:59 | volume_climax | None → False | ❌ discard | -0.5657 | 0.4007 |
 | 2026-03-16 11:02 | gap_and_go | None → True | ❌ discard | -2.3360 | -1.3694 |
 | 2026-03-16 11:02 | gap_and_go | None → False | ❌ discard | -2.2184 | -1.2518 |
+| 2026-03-16 11:48 | heikin_ashi_reversal | None → True | ❌ discard | -2.0810 | -1.1147 |
+| 2026-03-16 11:48 | heikin_ashi_reversal | None → False | ❌ discard | -2.4008 | -1.4345 |

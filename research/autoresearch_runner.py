@@ -6,8 +6,13 @@ LLM API.  For each parameter in the strategy's current best config the runner
 generates a set of candidate values, consults the brain history to skip
 already-discarded values, and runs backtest experiments via ResearchSession.
 
-Two-stage gating (``--fast-screen``, default on):
+Three-stage gating (``--fast-screen``, default on):
 
+0. **Vectorised presort** — for supported strategies (mean_reversion),
+   runs a vectorised parameter sweep (~5-30 s for hundreds of combos) to
+   pre-score entry-signal parameters.  Reorders the sweep plan so the most
+   promising parameter regions are tested first, maximising improvement
+   per unit time.  Transparent — no experiments are skipped, only reordered.
 1. **Solo screen** — solo backtest on top-50 tickers (~20-25 s).
    ``keep_or_discard()`` applied on solo Sharpe.  Discards are logged and
    skipped immediately.
@@ -17,6 +22,7 @@ Two-stage gating (``--fast-screen``, default on):
 
 When ``--no-fast-screen`` is passed, every experiment runs the full combined
 backtest directly (original behaviour, maximum rigor, lower throughput).
+The vectorised presort still runs regardless of ``--fast-screen``.
 
 Typical usage (CLI)::
 
@@ -225,6 +231,160 @@ def _brain_history_count(strategy: str, param_name: str) -> int:
         if parts[2].strip() == strategy:
             count += 1
     return count
+
+
+# ─── Vectorised Pre-Sort ──────────────────────────────────────────────────────
+
+# Mapping from autoresearch dotted param keys → vectorised sweep grid keys
+_VEC_PARAM_MAP = {
+    "rsi_period":    "rsi_period",
+    "rsi_oversold":  "rsi_threshold",
+    "zscore_lookback": "zscore_lookback",
+    "zscore_entry":  "zscore_threshold",
+}
+
+# Strategies that have vectorised sweep support
+_VEC_SUPPORTED_STRATEGIES = {"mean_reversion"}
+
+
+def _vectorised_presort(
+    strategy: str,
+    plan: List[Tuple[str, str, Any]],
+    data: dict,
+    current_best: dict,
+) -> List[Tuple[str, str, Any]]:
+    """Reorder sweep plan using vectorised parameter pre-scoring.
+
+    For mean_reversion, the 4 entry-signal parameters (rsi_period,
+    rsi_oversold, zscore_lookback, zscore_entry) can be scored in seconds
+    via the vectorised sweep.  Experiments touching these parameters are
+    reordered so the most promising candidates come first.  Experiments
+    touching other parameters (ATR, volume, breadth, etc.) keep their
+    original ordering and are appended after the vectorised-sorted ones.
+
+    For unsupported strategies, returns the plan unchanged.
+
+    Args:
+        strategy:     Strategy name.
+        plan:         Original sweep plan from build_sweep_plan().
+        data:         Full ticker data dict (passed to vectorised sweep).
+        current_best: Current best params for this strategy.
+
+    Returns:
+        Reordered plan (same items, different order).
+    """
+    if strategy not in _VEC_SUPPORTED_STRATEGIES:
+        return plan
+
+    try:
+        from research.vectorised_sweep import sweep_mean_reversion
+    except ImportError:
+        logger.warning("vectorised_sweep not available — skipping presort")
+        return plan
+
+    # Split plan into vectorisable and non-vectorisable experiments
+    vec_experiments = []   # (idx, display, key, value) for entry-signal params
+    other_experiments = [] # everything else
+
+    for item in plan:
+        display_name, dotted_key, candidate_value = item
+        if dotted_key in _VEC_PARAM_MAP:
+            vec_experiments.append(item)
+        else:
+            other_experiments.append(item)
+
+    if not vec_experiments:
+        return plan
+
+    # Build param grid: current best + all candidates from plan
+    grid = {
+        "rsi_period": set(),
+        "rsi_threshold": set(),
+        "zscore_lookback": set(),
+        "zscore_threshold": set(),
+    }
+
+    # Add current best values
+    grid["rsi_period"].add(current_best.get("rsi_period", 14))
+    grid["rsi_threshold"].add(current_best.get("rsi_oversold", 35))
+    grid["zscore_lookback"].add(current_best.get("zscore_lookback", 30))
+    grid["zscore_threshold"].add(current_best.get("zscore_entry", -2.0))
+
+    # Add all candidate values from the plan
+    for _display, dotted_key, candidate in vec_experiments:
+        grid_key = _VEC_PARAM_MAP[dotted_key]
+        grid[grid_key].add(candidate)
+
+    # Convert sets to sorted lists
+    param_grid = {k: sorted(v) for k, v in grid.items()}
+    hold_days = current_best.get("max_hold_days", 10)
+
+    logger.info(
+        "Vectorised presort: %d entry-param experiments, grid %s",
+        len(vec_experiments),
+        {k: len(v) for k, v in param_grid.items()},
+    )
+
+    t0 = time.time()
+    try:
+        results_df = sweep_mean_reversion(data, param_grid, hold_days=hold_days)
+    except Exception as exc:
+        logger.warning("Vectorised sweep failed — keeping original order: %s", exc)
+        return plan
+
+    elapsed = time.time() - t0
+    logger.info("Vectorised presort completed in %.1f s (%d combos scored)",
+                elapsed, len(results_df))
+
+    if results_df.empty:
+        return plan
+
+    # Build a score lookup: (param_key, candidate_value) → best vectorised score
+    # For each experiment that changes ONE param, look up all combos where that
+    # param equals the candidate and all others equal current best, then take
+    # the best score.
+    current_rsi_p = current_best.get("rsi_period", 14)
+    current_rsi_th = current_best.get("rsi_oversold", 35)
+    current_zsc_lb = current_best.get("zscore_lookback", 30)
+    current_zsc_th = current_best.get("zscore_entry", -2.0)
+
+    def _score_for_experiment(dotted_key: str, candidate_value: Any) -> float:
+        """Look up vectorised score for a single-param change."""
+        grid_key = _VEC_PARAM_MAP[dotted_key]
+        # Filter: all params at current best EXCEPT the one being changed
+        mask = (
+            (results_df["rsi_period"] == (candidate_value if grid_key == "rsi_period" else current_rsi_p)) &
+            (results_df["rsi_threshold"] == (candidate_value if grid_key == "rsi_threshold" else current_rsi_th)) &
+            (results_df["zscore_lookback"] == (candidate_value if grid_key == "zscore_lookback" else current_zsc_lb)) &
+            (results_df["zscore_threshold"] == (candidate_value if grid_key == "zscore_threshold" else current_zsc_th))
+        )
+        matches = results_df.loc[mask, "score"]
+        if matches.empty:
+            return float("-inf")
+        return float(matches.iloc[0])
+
+    # Score each vectorisable experiment
+    scored = []
+    for item in vec_experiments:
+        display_name, dotted_key, candidate_value = item
+        score = _score_for_experiment(dotted_key, candidate_value)
+        scored.append((score, item))
+
+    # Sort by descending score (most promising first)
+    scored.sort(key=lambda x: x[0], reverse=True)
+
+    # Log top 5 for visibility
+    for i, (score, (display, _key, _val)) in enumerate(scored[:5]):
+        logger.info("  Presort #%d: score=%.4f  %s", i + 1, score, display)
+
+    # Reconstruct plan: vectorised-sorted experiments first, then others
+    reordered = [item for _score, item in scored] + other_experiments
+    logger.info(
+        "Presort reordered: %d entry-param experiments prioritised, "
+        "%d other experiments appended",
+        len(vec_experiments), len(other_experiments),
+    )
+    return reordered
 
 
 def build_sweep_plan(
@@ -480,6 +640,11 @@ def run_session(
     logger.info("Building sweep plan ...")
     plan = build_sweep_plan(strategy, market, current_best_params)
     logger.info("Sweep plan: %d experiments queued.", len(plan))
+
+    # ── Vectorised presort (reorder plan by signal quality) ───────────────
+    plan = _vectorised_presort(
+        strategy, plan, session._data, current_best_params,
+    )
 
     # ── Counters ──────────────────────────────────────────────────────────────
     screened = 0       # experiments that ran solo screen (fast_screen only)
