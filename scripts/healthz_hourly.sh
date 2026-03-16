@@ -184,7 +184,7 @@ Rules:
 - Be concise — this runs every hour, nobody wants a novel"
 
 SKILLS_ROOT="$PROJECT/pi-package/atlas-ops/skills"
-timeout 300 pi -p --no-session --model anthropic/claude-haiku-4-5 \
+timeout 300 pi -p --no-session --model anthropic/claude-opus-4 \
     --skill "$SKILLS_ROOT/atlas-incident" \
     --skill "$SKILLS_ROOT/atlas-state-queries" \
     --skill "$SKILLS_ROOT/atlas-codebase" \
