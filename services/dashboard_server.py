@@ -229,48 +229,39 @@ class AuthHandler(SimpleHTTPRequestHandler):
             self._send_json(404, {"error": "Not found"})
 
     def _handle_prices(self):
-        """GET /api/prices — live quotes for held positions + indices.
+        """GET /api/prices — pre-computed P&L for open positions.
+
+        Returns the new simple format with server-computed P&L per
+        position.  The frontend does NO math — it just swaps values.
 
         Query params:
-          ?tickers=AAPL,REH.AX   — specific tickers (optional)
-
-        If no tickers specified, returns quotes for all positions in the
-        current dashboard data plus benchmark indices and FX.
+          ?tickers=AAPL,REH.AX   — legacy: fall back to raw quotes
         """
         try:
             sys.path.insert(0, str(PROJECT_ROOT))
-            from dashboard.live_prices import (
-                fetch_prices,
-                get_all_tickers_from_dashboard,
-                get_cache_stats,
-            )
 
             parsed = urlparse(self.path)
             params = parse_qs(parsed.query)
             tickers_param = params.get("tickers", [""])[0]
 
             if tickers_param:
+                # Legacy mode: specific tickers requested → return raw quotes
+                from dashboard.live_prices import fetch_prices, get_cache_stats
                 tickers = [t.strip() for t in tickers_param.split(",") if t.strip()]
+                quotes = fetch_prices(tickers)
+                response = {
+                    "ok": True,
+                    "timestamp": datetime.now().isoformat(),
+                    "quotes": quotes,
+                    "cache": get_cache_stats(),
+                    "ticker_count": len(quotes),
+                }
             else:
-                # Auto-discover from dashboard data + add benchmarks/FX
-                dashboard_path = str(SERVE_DIR / "dashboard-data.json")
-                tickers = get_all_tickers_from_dashboard(dashboard_path)
+                # New mode: pre-computed P&L for all positions
+                from dashboard.live_prices import get_live_prices_with_pnl
+                simple_path = str(SERVE_DIR / "simple-dashboard-data.json")
+                response = get_live_prices_with_pnl(simple_path)
 
-            # Always include benchmarks + FX
-            for idx in ["^GSPC", "^AXJO", "^HSI", "AUDUSD=X"]:
-                if idx not in tickers:
-                    tickers.append(idx)
-
-            quotes = fetch_prices(tickers)
-            stats = get_cache_stats()
-
-            response = {
-                "ok": True,
-                "timestamp": datetime.now().isoformat(),
-                "quotes": quotes,
-                "cache": stats,
-                "ticker_count": len(quotes),
-            }
             self._send_json(200, response)
 
         except Exception as e:

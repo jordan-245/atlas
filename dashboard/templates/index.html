@@ -198,25 +198,29 @@ function tickClocks() {
 }
 
 // ── Sparkline SVG ────────────────────────────────────────────
-function sparkline(pnlPct) {
-  // Deterministic but visually interesting 8-point polyline.
-  // Seeded from pnl sign + magnitude — no actual price history needed.
-  var pts = [];
-  var seed = Math.abs(pnlPct || 0);
-  var trend = pnlPct >= 0 ? 1 : -1;
-  var w = 100, h = 32, n = 8;
-  // Generate y-values: noisy trend
-  var base = trend > 0 ? 20 : 12;
-  for (var i = 0; i < n; i++) {
-    var noise = ((seed * (i + 1) * 1.37) % 6) - 3;
-    var y = base + trend * (i / (n - 1)) * 14 + noise;
-    y = Math.max(2, Math.min(h - 2, y));
-    pts.push([(i / (n - 1)) * w, y]);
+function renderSparkline(prices, pnlPct) {
+  var w = 100, h = 32;
+  var color = (pnlPct || 0) >= 0 ? 'var(--green)' : 'var(--red)';
+
+  if (!prices || prices.length < 2) {
+    // Not enough data — show flat line
+    return '<svg viewBox="0 0 100 32" preserveAspectRatio="none" style="width:100%;height:32px">' +
+      '<line x1="0" y1="16" x2="100" y2="16" stroke="' + color + '" stroke-width="1.5" stroke-opacity="0.3"/></svg>';
   }
-  var d = pts.map(function(p, i) { return (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1); }).join(' ');
-  var color = pnlPct >= 0 ? 'var(--green)' : 'var(--red)';
+
+  var minV = Math.min.apply(null, prices);
+  var maxV = Math.max.apply(null, prices);
+  var range = maxV - minV || 1;
+  var pad = 2;
+
+  var pts = prices.map(function(v, i) {
+    var x = (i / (prices.length - 1)) * w;
+    var y = pad + ((maxV - v) / range) * (h - 2 * pad);
+    return x.toFixed(1) + ',' + y.toFixed(1);
+  });
+
   return '<svg viewBox="0 0 100 32" preserveAspectRatio="none" style="width:100%;height:32px">' +
-    '<polyline points="' + pts.map(function(p) { return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' ') +
+    '<polyline points="' + pts.join(' ') +
     '" fill="none" stroke="' + color + '" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>' +
     '</svg>';
 }
@@ -226,32 +230,11 @@ function renderPositions(data) {
   var grid = document.getElementById('positions-grid');
   var label = document.getElementById('positions-label');
 
-  // Combine all positions
-  var positions = [];
-
-  // Atlas SP500 positions
-  var atlas = (data.portfolio && data.portfolio.open_positions) || [];
-  atlas.forEach(function(p) {
-    positions.push(Object.assign({ market: 'sp500' }, p));
-  });
-
-  // Manual USD positions (Moomoo USD)
-  var manualUSD = (data.manual_portfolio && data.manual_portfolio.positions) || [];
-  manualUSD.forEach(function(p) {
-    positions.push(Object.assign({ market: 'usd', currency: 'USD' }, p));
-  });
-
-  // Manual AUD positions (ASX)
-  var manualASX = [];
-  if (data.markets && data.markets.asx && data.markets.asx.manual_positions) {
-    manualASX = data.markets.asx.manual_positions.positions || [];
-  }
-  manualASX.forEach(function(p) {
-    positions.push(Object.assign({ market: 'asx' }, p));
-  });
+  // Flat positions array from simple dashboard data — no assembly needed
+  var positions = (data.positions || []).slice();
 
   // Sort by absolute P&L descending
-  positions.sort(function(a, b) { return Math.abs(b.pnl || 0) - Math.abs(a.pnl || 0); });
+  positions.sort(function(a, b) { return Math.abs(b.pnl_local || 0) - Math.abs(a.pnl_local || 0); });
 
   label.textContent = 'Open Positions (' + positions.length + ')';
 
@@ -263,18 +246,17 @@ function renderPositions(data) {
   }
 
   grid.innerHTML = positions.map(function(p) {
-    var pnl      = p.pnl || 0;
+    var pnl      = p.pnl_local || 0;
     var pnlPct   = p.pnl_pct || 0;
     var isPos    = pnl >= 0;
     var mktLabel = p.market === 'asx' ? 'ASX' : (p.market === 'sp500' ? 'SP500' : 'USD');
     var ccy      = (p.currency && p.currency.toUpperCase() === 'AUD') ? 'AUD' : 'USD';
     var strat    = p.strategy || 'manual';
     var stratColor = STRATEGY_COLORS[strat] || '#9ca3af';
+    var pnlDisp  = p.pnl_display || ((isPos ? '+' : '') + fmtCcy(pnl, ccy));
 
     return '<div class="pos-card' + (isPos ? '' : ' negative') + '" ' +
-      'data-ticker="' + (p.ticker || '') + '" ' +
-      'data-entry="' + (p.entry_price || 0) + '" ' +
-      'data-shares="' + (p.shares || 0) + '">' +
+      'data-ticker="' + (p.ticker || '') + '">' +
       '<div class="card-top">' +
         '<span class="card-ticker">' + (p.ticker || '—') + '</span>' +
         '<span class="market-pill">' + mktLabel + '</span>' +
@@ -287,31 +269,27 @@ function renderPositions(data) {
         '</span>' +
         (p.stop_price ? '<span><span class="label">Stop</span><span class="val">' + fmtCcy(p.stop_price, ccy) + '</span></span>' : '') +
       '</div>' +
-      '<div class="card-pnl ' + pnlClass(pnl) + '">' +
-        (isPos ? '+' : '') + fmtCcy(pnl, ccy) +
+      '<div class="card-pnl ' + pnlClass(pnl) + '" data-ticker="' + (p.ticker || '') + '">' +
+        pnlDisp +
         ' <span style="font-size:12px;opacity:0.8">(' + fmtPct(pnlPct) + ')</span>' +
       '</div>' +
       '<div class="card-meta">' +
         (p.days_held != null ? p.days_held + 'd held' : '') +
         (p.sector && p.sector !== 'Unknown' ? ' · ' + p.sector : '') +
       '</div>' +
-      '<div class="sparkline">' + sparkline(pnlPct) + '</div>' +
+      '<div class="sparkline">' + renderSparkline(p.sparkline || [], pnlPct) + '</div>' +
     '</div>';
   }).join('');
 }
 
 // ── Summary Strip ────────────────────────────────────────────
 function renderSummary(data) {
-  var acct  = data.account || {};
-  var port  = data.portfolio || {};
-  var risk  = data.risk || {};
-  var ccy   = acct.currency || 'AUD';
+  var s = data.summary || {};
 
   // Equity
-  var eq    = acct.equity;
-  var eqEl  = document.getElementById('stat-equity');
-  eqEl.textContent = fmtCcy(eq, ccy);
-  if (risk.halted) {
+  var eqEl = document.getElementById('stat-equity');
+  eqEl.textContent = fmtCcy(s.total_equity_aud, 'AUD');
+  if (s.halted) {
     var dot = document.createElement('span');
     dot.className = 'halted-dot';
     dot.title = 'Trading halted';
@@ -319,20 +297,16 @@ function renderSummary(data) {
   }
 
   // Today P&L
-  var today = port.today_pnl_aud != null ? port.today_pnl_aud : 0;
+  var today = s.today_pnl_aud || 0;
   var todEl = document.getElementById('stat-today');
   todEl.textContent = (today >= 0 ? '+' : '') + fmtCcy(today, 'AUD');
   todEl.className   = 'stat-value ' + pnlClass(today);
 
-  // Total positions (all markets)
-  var atlas    = (port.open_positions || []).length;
-  var manUSD   = ((data.manual_portfolio || {}).positions || []).length;
-  var manASX   = (((data.markets || {}).asx || {}).manual_positions || {}).positions;
-  var manASXn  = manASX ? manASX.length : 0;
-  document.getElementById('stat-positions').textContent = atlas + manUSD + manASXn;
+  // Position count
+  document.getElementById('stat-positions').textContent = s.open_position_count || 0;
 
   // Win rate
-  var wr = port.win_rate;
+  var wr = s.win_rate_pct;
   document.getElementById('stat-winrate').textContent =
     (wr != null && wr > 0) ? wr.toFixed(0) + '%' : '—';
 }
@@ -357,7 +331,7 @@ function drawChart(curve) {
   var isDark = document.documentElement.getAttribute('data-theme') !== 'light';
   var lineColor = isDark ? '#4ade80' : '#16a34a';
 
-  var vals  = curve.map(function(d) { return d.equity; });
+  var vals  = curve.map(function(d) { return d.equity_aud || d.equity || 0; });
   var dates = curve.map(function(d) { return d.date; });
   var minV  = Math.min.apply(null, vals);
   var maxV  = Math.max.apply(null, vals);
@@ -459,7 +433,7 @@ function drawChart(curve) {
     if (n < 2) return;
     var idx = Math.round((mx - c.pad.l) / c.cw * (n - 1));
     idx = Math.max(0, Math.min(n - 1, idx));
-    var val  = c.curve[idx].equity;
+    var val  = c.curve[idx].equity_aud || c.curve[idx].equity || 0;
     var date = c.curve[idx].date || '';
     tooltip.style.opacity  = '1';
     tooltip.style.left     = (mx + 12) + 'px';
@@ -493,13 +467,19 @@ function drawChart(curve) {
 
 // ── Return Badge ─────────────────────────────────────────────
 function renderReturnBadge(data) {
-  var curve = data.equity_curve || [];
-  if (!curve.length) return;
-  var first = curve[0].equity;
-  var last  = curve[curve.length - 1].equity;
-  if (!first) return;
-  var retPct = ((last - first) / first) * 100;
-  var badge  = document.getElementById('return-badge');
+  var s = data.summary || {};
+  var badge = document.getElementById('return-badge');
+  // Prefer pre-computed total_pnl_pct from summary
+  var retPct = s.total_pnl_pct;
+  if (retPct == null) {
+    // Fallback: compute from equity curve
+    var curve = data.equity_curve || [];
+    if (!curve.length) return;
+    var first = curve[0].equity_aud;
+    var last  = curve[curve.length - 1].equity_aud;
+    if (!first) return;
+    retPct = ((last - first) / first) * 100;
+  }
   badge.textContent = fmtPct(retPct);
   badge.className   = 'return-badge' + (retPct < 0 ? ' negative' : '');
 }
@@ -520,22 +500,44 @@ function flashCard(card, isPositive) {
   }, 300);
 }
 
-function applyPrices(quotes) {
+function applyPrices(resp) {
+  if (!resp || !resp.ok) return;
+  var positions = resp.positions || {};
+
+  // Update summary strip today P&L
+  if (resp.today_pnl_display) {
+    var todEl = document.getElementById('stat-today');
+    todEl.textContent = resp.today_pnl_display;
+    todEl.className = 'stat-value ' + pnlClass(resp.today_pnl_aud || 0);
+  }
+
+  // Update each position card
   var cards = document.querySelectorAll('#positions-grid .pos-card');
   cards.forEach(function(card) {
     var ticker = card.getAttribute('data-ticker');
-    if (!ticker || !quotes[ticker]) return;
-    var q = quotes[ticker];
+    if (!ticker || !positions[ticker]) return;
+    var q = positions[ticker];
     if (!q.price) return;
 
-    // Update displayed price only (no P&L recalculation)
+    var ccy = ticker.endsWith('.AX') ? 'AUD' : 'USD';
+
+    // Update current price
     var priceEl = card.querySelector('.live-price[data-ticker="' + ticker + '"]');
-    if (priceEl) {
-      // Determine currency from data-entry context (assume USD for US stocks, AUD for .AX)
-      var ccy = ticker.endsWith('.AX') ? 'AUD' : 'USD';
-      priceEl.textContent = fmtCcy(q.price, ccy);
-      flashCard(card, (q.change_pct || 0) >= 0);
+    if (priceEl) priceEl.textContent = fmtCcy(q.price, ccy);
+
+    // Update P&L display (pre-computed server-side)
+    var pnlEl = card.querySelector('.card-pnl[data-ticker="' + ticker + '"]');
+    if (pnlEl && q.pnl_display != null) {
+      var isPos = (q.pnl_local || 0) >= 0;
+      pnlEl.className = 'card-pnl ' + (isPos ? 'green' : 'red');
+      pnlEl.innerHTML = q.pnl_display +
+        ' <span style="font-size:12px;opacity:0.8">(' + fmtPct(q.pnl_pct) + ')</span>';
+
+      // Update card border color
+      card.className = 'pos-card' + (isPos ? '' : ' negative');
     }
+
+    flashCard(card, (q.pnl_local || 0) >= 0);
   });
 }
 
@@ -554,7 +556,7 @@ function startPricePolling() {
 // ── Main Init ────────────────────────────────────────────────
 async function init() {
   try {
-    var resp = await fetch('/data/dashboard-data.json');
+    var resp = await fetch('/data/simple-dashboard-data.json');
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     var data = await resp.json();
     _marketData = data;

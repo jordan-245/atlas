@@ -354,3 +354,129 @@ def get_cache_stats() -> dict:
             "stale": total - fresh,
             "cache_ttl_s": CACHE_TTL,
         }
+
+
+# ── Pre-computed P&L for simple dashboard ─────────────────────
+
+def get_live_prices_with_pnl(simple_data_path: str = "") -> dict:
+    """Fetch live prices and return pre-computed P&L per position.
+
+    Reads positions from simple-dashboard-data.json, fetches live prices,
+    computes P&L server-side, and returns the response in the format
+    expected by the new dashboard frontend.
+
+    Returns::
+
+        {
+            "ok": True,
+            "timestamp": "2026-03-16T10:30:15",
+            "today_pnl_aud": 148.50,
+            "today_pnl_display": "+A$148.50",
+            "positions": {
+                "OXY": {"price": 61.25, "pnl_local": 5.70, "pnl_pct": 4.88, "pnl_display": "+$5.70"},
+                ...
+            }
+        }
+    """
+    from pathlib import Path
+    from datetime import datetime
+
+    project_root = Path("/root/atlas")
+    if not simple_data_path:
+        simple_data_path = str(project_root / "dashboard" / "data" / "simple-dashboard-data.json")
+
+    # Load current positions from the simple dashboard data
+    try:
+        with open(simple_data_path) as f:
+            data = json.load(f)
+    except Exception as e:
+        logger.warning("Cannot load simple dashboard data: %s", e)
+        return {
+            "ok": False,
+            "error": f"Cannot load position data: {e}",
+            "timestamp": datetime.now().isoformat(),
+        }
+
+    positions_data = data.get("positions", [])
+    if not positions_data:
+        return {
+            "ok": True,
+            "timestamp": datetime.now().isoformat(),
+            "today_pnl_aud": 0.0,
+            "today_pnl_display": "+A$0.00",
+            "positions": {},
+        }
+
+    # Fetch live prices for all position tickers
+    tickers = [p["ticker"] for p in positions_data if p.get("ticker")]
+    quotes = fetch_prices(tickers)
+
+    # Get FX rate for AUD conversion
+    fx_quotes = fetch_prices(["AUDUSD=X"])
+    audusd = 0.70  # default fallback
+    if "AUDUSD=X" in fx_quotes:
+        audusd = fx_quotes["AUDUSD=X"].get("price", 0.70)
+    usdaud = 1.0 / audusd if audusd > 0 else 1.43
+
+    # Compute P&L per position
+    result_positions = {}
+    total_pnl_aud = 0.0
+
+    for pos in positions_data:
+        ticker = pos.get("ticker", "")
+        if not ticker:
+            continue
+
+        entry_price = float(pos.get("entry_price", 0) or 0)
+        shares = float(pos.get("shares", 0) or 0)
+        currency = (pos.get("currency", "USD") or "USD").upper()
+        direction = pos.get("direction", "long")
+
+        # Get live price, fallback to static current_price
+        live_price = entry_price  # safe default
+        if ticker in quotes and quotes[ticker].get("price"):
+            live_price = quotes[ticker]["price"]
+        elif pos.get("current_price"):
+            live_price = float(pos["current_price"])
+
+        # Compute P&L (server-side, no client math)
+        if direction == "short":
+            pnl_local = round((entry_price - live_price) * shares, 2)
+        else:
+            pnl_local = round((live_price - entry_price) * shares, 2)
+
+        pnl_pct = round((live_price / entry_price - 1) * 100, 2) if entry_price > 0 else 0.0
+        if direction == "short":
+            pnl_pct = -pnl_pct
+
+        # Format display string
+        ccy_sym = "A$" if currency == "AUD" else "$"
+        sign = "+" if pnl_local >= 0 else "-"
+        pnl_display = f"{sign}{ccy_sym}{abs(pnl_local):,.2f}"
+
+        result_positions[ticker] = {
+            "price": round(live_price, 4),
+            "pnl_local": pnl_local,
+            "pnl_pct": round(pnl_pct, 2),
+            "pnl_display": pnl_display,
+        }
+
+        # Accumulate total P&L in AUD
+        if currency == "AUD":
+            total_pnl_aud += pnl_local
+        elif currency == "USD":
+            total_pnl_aud += pnl_local * usdaud
+        else:
+            total_pnl_aud += pnl_local  # unknown currency — pass through
+
+    total_pnl_aud = round(total_pnl_aud, 2)
+    sign = "+" if total_pnl_aud >= 0 else "-"
+    today_pnl_display = f"{sign}A${abs(total_pnl_aud):,.2f}"
+
+    return {
+        "ok": True,
+        "timestamp": datetime.now().isoformat(),
+        "today_pnl_aud": total_pnl_aud,
+        "today_pnl_display": today_pnl_display,
+        "positions": result_positions,
+    }
