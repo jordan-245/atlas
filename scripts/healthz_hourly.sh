@@ -174,13 +174,14 @@ NOT ALLOWED (never do these):
 After fixing, run the healthcheck again:
   cd /root/atlas && python3 pi-package/atlas-ops/skills/atlas-healthz/scripts/healthz.py --market sp500
 
-TELEGRAM: Send a short notification about what you found and fixed:
+TELEGRAM: Only send a notification if you actually FIXED something:
   python3 -c \"import sys; sys.path.insert(0,'/root/atlas'); from utils.telegram import send_message; send_message('''YOUR_MSG''')\"
 
 Rules:
-- ALWAYS send a Telegram message summarizing what you found and what you did (or couldn't do)
+- ONLY send Telegram if you applied a fix (restarted a service, cleaned logs, refreshed data, etc.)
+- Do NOT send Telegram if you just observed issues but couldn't or didn't fix anything
+- Do NOT send Telegram for warnings that are informational only (weekend gaps, expected states)
 - Keep it under 10 lines, use HTML (<b>, <code>)
-- If something needs manual attention, say so clearly
 - Be concise — this runs every hour, nobody wants a novel"
 
 SKILLS_ROOT="$PROJECT/pi-package/atlas-ops/skills"
