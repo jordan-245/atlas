@@ -473,6 +473,8 @@ class LiveExecutor:
 
         # Live execution — LIMIT order at (refined) entry price
         _submit_time = datetime.now().isoformat()
+        # Use OTO bracket order (entry + stop-loss as one atomic call)
+        # so the stop activates on fill — bypasses PDT same-day rejection.
         order_result = self._broker.place_order(
             ticker=ticker,
             side=order_side,
@@ -480,6 +482,7 @@ class LiveExecutor:
             price=_order_price,
             order_type=OrderType.LIMIT,
             remark=f"atlas_{strategy}_{trade_date}"[:64],
+            stop_loss_price=stop_price if stop_price else None,
         )
 
         result = {

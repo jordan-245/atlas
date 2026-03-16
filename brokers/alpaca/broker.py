@@ -47,6 +47,7 @@ try:
         StopLimitOrderRequest,
         TrailingStopOrderRequest,
         GetOrdersRequest,
+        StopLossRequest,
     )
     from alpaca.trading.enums import (
         OrderSide as AlpacaSide,
@@ -54,11 +55,32 @@ try:
         TimeInForce,
         QueryOrderStatus,
         OrderStatus as AlpacaOrderStatus,
+        OrderClass,
     )
     ALPACA_AVAILABLE = True
 except ImportError:
     ALPACA_AVAILABLE = False
     logger.warning("alpaca-py not installed. Run: pip install alpaca-py")
+
+
+# ═══════════════════════════════════════════════════════════════
+# PDT error detection
+# ═══════════════════════════════════════════════════════════════
+
+# Alpaca error code for Pattern Day Trading protection
+_PDT_ERROR_CODE = "40310100"
+
+
+def _is_pdt_error(message: str) -> bool:
+    """Return True if an Alpaca rejection is due to Pattern Day Trading protection.
+
+    PDT (Pattern Day Trade) protection triggers on accounts < $25k equity when
+    a sell order is placed on a position opened the same trading day — the order
+    could constitute a same-session round-trip (day trade) if it fills today.
+    These are regulatory deferrals, not operational errors.  The stop will be
+    placed successfully by the next pre-market sync (≥ next trading session).
+    """
+    return _PDT_ERROR_CODE in str(message)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -487,6 +509,7 @@ class AlpacaBroker(BrokerAdapter):
                 extended_hours=extended_hours,
                 trail_percent=kwargs.get("trail_percent"),
                 trail_price=kwargs.get("trail_price"),
+                stop_loss_price=kwargs.get("stop_loss_price"),
             )
         except ValueError as e:
             logger.error("build_order_request failed for %s: %s", ticker, e)
@@ -640,7 +663,8 @@ class AlpacaBroker(BrokerAdapter):
         Returns:
             Summary dict: {"sl_placed": N, "sl_already_exists": M,
                            "tp_placed": N, "tp_already_exists": M,
-                           "errors": E, "per_ticker": {ticker: {action, ...}}}
+                           "errors": E, "pdt_deferred": P,
+                           "per_ticker": {ticker: {action, ...}}}
         """
         self._require_connected()
 
@@ -649,6 +673,7 @@ class AlpacaBroker(BrokerAdapter):
         tp_placed = 0
         tp_already_exists = 0
         errors = 0
+        pdt_deferred = 0
         per_ticker: dict = {}
 
         # Fetch positions from Alpaca if caller did not supply them
@@ -811,10 +836,20 @@ class AlpacaBroker(BrokerAdapter):
                                 "sync_protective: placed STOP SELL GTC %s qty=%d stop=%.2f → id=%s",
                                 ticker, pos.shares, stop_price, sl_result.order_id,
                             )
+                        elif _is_pdt_error(sl_result.message):
+                            pdt_deferred += 1
+                            ticker_result["sl_action"] = "pdt_deferred"
+                            ticker_result["sl_message"] = sl_result.message
+                            logger.warning(
+                                "sync_protective: SL deferred for %s — PDT protection "
+                                "(same-day entry, account < $25k). "
+                                "Stop will be placed at next pre-market sync.",
+                                ticker,
+                            )
                         else:
                             errors += 1
                             ticker_result["sl_action"] = "error"
-                            ticker_result["sl_error"] = sl_result.message
+                            ticker_result["sl_message"] = sl_result.message
                             logger.error(
                                 "sync_protective: SL place_order failed for %s: %s",
                                 ticker, sl_result.message,
@@ -855,10 +890,19 @@ class AlpacaBroker(BrokerAdapter):
                                 "sync_protective: placed LIMIT SELL GTC %s qty=%d tp=%.2f → id=%s",
                                 ticker, pos.shares, take_profit, tp_result.order_id,
                             )
+                        elif _is_pdt_error(tp_result.message):
+                            pdt_deferred += 1
+                            ticker_result["tp_action"] = "pdt_deferred"
+                            ticker_result["tp_message"] = tp_result.message
+                            logger.warning(
+                                "sync_protective: TP deferred for %s — PDT protection "
+                                "(same-day entry, account < $25k).",
+                                ticker,
+                            )
                         else:
                             errors += 1
                             ticker_result["tp_action"] = "error"
-                            ticker_result["tp_error"] = tp_result.message
+                            ticker_result["tp_message"] = tp_result.message
                             logger.error(
                                 "sync_protective: TP place_order failed for %s: %s",
                                 ticker, tp_result.message,
@@ -916,10 +960,21 @@ class AlpacaBroker(BrokerAdapter):
                                 ticker, pos.shares, trail_distance,
                                 trail_result.order_id,
                             )
+                        elif _is_pdt_error(trail_result.message):
+                            pdt_deferred += 1
+                            ticker_result["sl_action"] = "pdt_deferred"
+                            ticker_result["sl_message"] = trail_result.message
+                            ticker_result["tp_action"] = "pdt_deferred"
+                            logger.warning(
+                                "sync_protective: trailing stop deferred for %s — "
+                                "PDT protection (same-day entry, account < $25k). "
+                                "Stop will be placed at next pre-market sync.",
+                                ticker,
+                            )
                         else:
                             errors += 1
                             ticker_result["sl_action"] = "error"
-                            ticker_result["sl_error"] = trail_result.message
+                            ticker_result["sl_message"] = trail_result.message
                             ticker_result["tp_action"] = "error"
                             logger.error(
                                 "sync_protective: trailing stop failed for %s: %s",
@@ -940,8 +995,9 @@ class AlpacaBroker(BrokerAdapter):
 
         logger.info(
             "sync_all_protective_orders complete: sl_placed=%d sl_exists=%d "
-            "tp_placed=%d tp_exists=%d errors=%d",
-            sl_placed, sl_already_exists, tp_placed, tp_already_exists, errors,
+            "tp_placed=%d tp_exists=%d errors=%d pdt_deferred=%d",
+            sl_placed, sl_already_exists, tp_placed, tp_already_exists,
+            errors, pdt_deferred,
         )
         return {
             "sl_placed": sl_placed,
@@ -949,6 +1005,7 @@ class AlpacaBroker(BrokerAdapter):
             "tp_placed": tp_placed,
             "tp_already_exists": tp_already_exists,
             "errors": errors,
+            "pdt_deferred": pdt_deferred,
             "per_ticker": per_ticker,
         }
 
@@ -1146,11 +1203,14 @@ def _summarise_ticker_action(ticker_result: dict) -> str:
     """Build a combined action string from SL and TP sub-actions.
 
     Returns a human-readable summary like 'sl_placed+tp_placed',
-    'trailing_placed', 'sl_skipped+tp_skipped', etc.
+    'trailing_placed', 'sl_skipped+tp_skipped', 'pdt_deferred', etc.
     """
     sl = ticker_result.get("sl_action", "unknown")
     tp = ticker_result.get("tp_action", "unknown")
 
+    # PDT protection — regulatory deferral, not an error
+    if sl == "pdt_deferred" or tp == "pdt_deferred":
+        return "pdt_deferred"
     # If both errored, overall is 'error'
     if sl == "error" and tp == "error":
         return "error"
@@ -1186,6 +1246,7 @@ def _build_order_request(
     extended_hours: bool = False,
     trail_percent: Optional[float] = None,
     trail_price: Optional[float] = None,
+    stop_loss_price: Optional[float] = None,
 ) -> object:
     """Build the appropriate alpaca-py order request object.
 
@@ -1230,7 +1291,7 @@ def _build_order_request(
     elif order_type == OrderType.LIMIT:
         if not price:
             raise ValueError("Limit price required for LIMIT order")
-        return LimitOrderRequest(
+        limit_kwargs: dict = dict(
             symbol=symbol,
             qty=qty_param,
             notional=notional_param,
@@ -1240,6 +1301,17 @@ def _build_order_request(
             client_order_id=client_id,
             extended_hours=extended_hours,
         )
+        # OTO bracket: attach stop-loss leg so it activates on fill
+        if stop_loss_price and stop_loss_price > 0:
+            limit_kwargs["order_class"] = OrderClass.OTO
+            limit_kwargs["stop_loss"] = StopLossRequest(
+                stop_price=round(stop_loss_price, 2),
+            )
+            logger.info(
+                "OTO bracket: %s entry=$%.2f stop=$%.2f",
+                symbol, price, stop_loss_price,
+            )
+        return LimitOrderRequest(**limit_kwargs)
 
     elif order_type == OrderType.STOP:
         if not stop_price:
