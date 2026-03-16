@@ -1,0 +1,481 @@
+#!/usr/bin/env python3
+"""Nightly autoresearch orchestrator — runs all strategies in parallel.
+
+Spawns one ``autoresearch_runner.py`` subprocess per strategy.  Workers share
+the same frozen data snapshot but maintain separate backtests, TSV logs, and
+brain param files.
+
+Resource budget: each worker uses ~1-2 cores during backtest and ~2 GB RAM.
+With ``--workers 5`` on an 8-core VPS, leaves 3 cores for system + cron.
+
+Usage::
+
+    # Parallel sweep of all 5 strategies for 8 hours:
+    python3 research/autoresearch_nightly.py --hours 8 --workers 5 --notify
+
+    # Only 2 strategies:
+    python3 research/autoresearch_nightly.py --hours 4 --workers 2 \\
+        --strategies mean_reversion,trend_following
+
+Concurrency safety:
+- Each worker writes to its own ``research/results/{strategy}.tsv``
+- Each worker writes to its own ``research/best/{strategy}.json``
+- Brain param files are per-param, workers rarely overlap
+- ``research/journal.json`` uses ``fcntl.LOCK_EX`` (via ``_locked_append``)
+- Evaluation lock files are per-session (unique session IDs)
+- The data snapshot is read-only
+"""
+
+import argparse
+import os
+import re
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Dict, List, Optional
+
+ATLAS_ROOT = Path(__file__).resolve().parent.parent
+if str(ATLAS_ROOT) not in sys.path:
+    sys.path.insert(0, str(ATLAS_ROOT))
+
+# Top-5 enabled strategies by portfolio weight
+DEFAULT_STRATEGIES = [
+    "mean_reversion",      # 17%
+    "trend_following",     # 21%
+    "opening_gap",         # 22%
+    "momentum_breakout",   # 9%
+    "sector_rotation",     # 24%
+]
+
+RUNNER_SCRIPT = ATLAS_ROOT / "research" / "autoresearch_runner.py"
+LOGS_DIR = ATLAS_ROOT / "logs"
+RESULTS_DIR = ATLAS_ROOT / "research" / "results"
+
+
+# ─── Snapshot Discovery ─────────────────────────────────────────────────────
+
+
+def _find_latest_snapshot(market: str) -> str:
+    """Find the most recent snapshot for *market* in ``data/snapshots/``."""
+    snapshots_root = ATLAS_ROOT / "data" / "snapshots"
+    if not snapshots_root.exists():
+        raise RuntimeError(f"No snapshots directory: {snapshots_root}")
+
+    matching = [
+        d for d in snapshots_root.iterdir()
+        if d.is_dir() and market.lower() in d.name.lower()
+    ]
+    if not matching:
+        raise RuntimeError(f"No snapshot for market '{market}' in {snapshots_root}")
+
+    matching.sort(key=lambda d: d.stat().st_mtime, reverse=True)
+    return matching[0].name
+
+
+# ─── TSV Parsing ─────────────────────────────────────────────────────────────
+
+
+def _parse_session_results(
+    strategy: str,
+    session_start_ts: float,
+) -> Dict:
+    """Parse a strategy's TSV for experiments written after *session_start_ts*.
+
+    Returns dict with counts and Sharpe values.
+    """
+    tsv_path = RESULTS_DIR / f"{strategy}.tsv"
+    result = {
+        "strategy": strategy,
+        "screened": 0,
+        "promoted": 0,
+        "kept": 0,
+        "starting_sharpe": 0.0,
+        "final_sharpe": 0.0,
+    }
+    if not tsv_path.exists():
+        return result
+
+    # Read lines written during this session (after session_start_ts)
+    cutoff = datetime.fromtimestamp(session_start_ts, tz=timezone.utc)
+    lines = tsv_path.read_text().strip().split("\n")
+    if len(lines) <= 1:
+        return result
+
+    session_lines = []
+    for line in lines[1:]:  # skip header
+        parts = line.split("\t")
+        if len(parts) < 9:
+            continue
+        try:
+            row_ts = datetime.fromisoformat(parts[0].replace("Z", "+00:00"))
+            if row_ts.tzinfo is None:
+                row_ts = row_ts.replace(tzinfo=timezone.utc)
+            if row_ts >= cutoff:
+                session_lines.append(parts)
+        except (ValueError, IndexError):
+            continue
+
+    if not session_lines:
+        return result
+
+    # Count by status column (index 7)
+    for parts in session_lines:
+        status = parts[7].strip() if len(parts) > 7 else ""
+        if status == "discard_solo":
+            result["screened"] += 1
+        elif status == "discard":
+            result["screened"] += 1
+            result["promoted"] += 1
+        elif status == "keep":
+            if parts[8].strip() != "baseline":
+                result["screened"] += 1
+                result["promoted"] += 1
+                result["kept"] += 1
+
+    # Sharpe: baseline is first 'keep' with description 'baseline'
+    # Final Sharpe: last 'keep' that isn't baseline, or baseline if no keeps
+    for parts in session_lines:
+        if len(parts) > 7 and parts[7].strip() == "keep" and parts[8].strip() == "baseline":
+            try:
+                result["starting_sharpe"] = float(parts[1])
+                result["final_sharpe"] = float(parts[1])
+            except ValueError:
+                pass
+            break
+
+    # Find the last kept experiment's Sharpe (if any)
+    for parts in reversed(session_lines):
+        if len(parts) > 7 and parts[7].strip() == "keep" and parts[8].strip() != "baseline":
+            try:
+                result["final_sharpe"] = float(parts[1])
+            except ValueError:
+                pass
+            break
+
+    return result
+
+
+# ─── Worker Management ───────────────────────────────────────────────────────
+
+
+def _spawn_workers(
+    strategies: List[str],
+    market: str,
+    hours: float,
+    snapshot_id: str,
+    max_workers: int,
+) -> List[Dict]:
+    """Spawn autoresearch_runner subprocesses, respecting *max_workers* limit.
+
+    Returns list of worker dicts with keys: strategy, proc, log_path, start_time.
+    """
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    date_str = datetime.now().strftime("%Y%m%d")
+
+    workers: List[Dict] = []
+    pending = list(strategies)
+    active: List[Dict] = []
+
+    def _launch(strat: str) -> Dict:
+        log_path = LOGS_DIR / f"autoresearch_{strat}_{date_str}.log"
+        log_fh = open(log_path, "w")
+        cmd = [
+            sys.executable,
+            str(RUNNER_SCRIPT),
+            "--strategy", strat,
+            "--market", market,
+            "--hours", str(hours),
+            "--fast-screen",
+            "--snapshot", snapshot_id,
+        ]
+        proc = subprocess.Popen(
+            cmd,
+            stdout=log_fh,
+            stderr=subprocess.STDOUT,
+            cwd=str(ATLAS_ROOT),
+        )
+        w = {
+            "strategy": strat,
+            "proc": proc,
+            "log_fh": log_fh,
+            "log_path": str(log_path),
+            "start_time": time.time(),
+            "exit_code": None,
+        }
+        print(f"  ▶ Spawned {strat} (PID {proc.pid}) → {log_path}")
+        return w
+
+    # Initial launch up to max_workers
+    while pending and len(active) < max_workers:
+        strat = pending.pop(0)
+        w = _launch(strat)
+        active.append(w)
+        workers.append(w)
+
+    # Monitor loop: poll every 60s, launch pending when slots open
+    while active:
+        time.sleep(60)
+
+        still_active = []
+        for w in active:
+            rc = w["proc"].poll()
+            if rc is not None:
+                w["exit_code"] = rc
+                w["log_fh"].close()
+                elapsed = (time.time() - w["start_time"]) / 60
+                status = "✓" if rc == 0 else f"✗ (exit {rc})"
+                print(f"  {status} {w['strategy']} finished in {elapsed:.1f} min")
+            else:
+                still_active.append(w)
+
+        active = still_active
+
+        # Fill slots with pending strategies
+        while pending and len(active) < max_workers:
+            strat = pending.pop(0)
+            w = _launch(strat)
+            active.append(w)
+            workers.append(w)
+
+        # Status line
+        running_names = [w["strategy"] for w in active]
+        if running_names:
+            print(f"  … {len(active)} running: {', '.join(running_names)}")
+
+    return workers
+
+
+# ─── Telegram ────────────────────────────────────────────────────────────────
+
+
+def _send_summary_telegram(
+    results: List[Dict],
+    runtime_s: float,
+    num_workers: int,
+) -> None:
+    """Send a combined Telegram summary for all strategies."""
+    try:
+        from utils.telegram import notify
+    except ImportError:
+        print("Telegram not configured (utils.telegram not found).")
+        return
+
+    mins = runtime_s / 60
+    total_screened = sum(r["screened"] for r in results)
+    total_promoted = sum(r["promoted"] for r in results)
+    total_kept = sum(r["kept"] for r in results)
+    failures = [r for r in results if r.get("exit_code", 0) != 0]
+
+    lines = [
+        "<b>🔬 Nightly Autoresearch Complete</b>",
+        f"Runtime: {mins:.0f} min | {len(results)} strategies | {num_workers} workers",
+        "",
+    ]
+    for r in results:
+        s = r["strategy"]
+        sc = r["screened"]
+        pr = r["promoted"]
+        kp = r["kept"]
+        s_sharpe = r["starting_sharpe"]
+        f_sharpe = r["final_sharpe"]
+        if r.get("exit_code", 0) != 0:
+            lines.append(f"  {s}: ❌ FAILED (exit {r['exit_code']})")
+        elif kp > 0:
+            lines.append(
+                f"  {s}: {sc} screened → {pr} promoted → {kp} kept "
+                f"(Sharpe {s_sharpe:.3f} → {f_sharpe:.3f})"
+            )
+        else:
+            lines.append(
+                f"  {s}: {sc} screened → {pr} promoted → 0 kept "
+                f"(Sharpe {s_sharpe:.3f})"
+            )
+
+    lines.append("")
+    lines.append(f"Total: {total_screened} screened, {total_promoted} promoted, {total_kept} kept")
+    if failures:
+        lines.append(f"⚠️ {len(failures)} worker(s) failed")
+
+    try:
+        notify("\n".join(lines), category="autoresearch")
+    except Exception as e:
+        print(f"Telegram send failed (non-fatal): {e}")
+
+
+# ─── Main ────────────────────────────────────────────────────────────────────
+
+
+def run_nightly(
+    strategies: Optional[List[str]] = None,
+    market: str = "sp500",
+    hours: float = 8.0,
+    workers: int = 5,
+    notify: bool = False,
+    snapshot_id: Optional[str] = None,
+) -> Dict:
+    """Run parallel autoresearch sessions for multiple strategies.
+
+    Args:
+        strategies:  List of strategy names.  Defaults to :data:`DEFAULT_STRATEGIES`.
+        market:      Market ID (default ``'sp500'``).
+        hours:       Time budget per worker in hours.
+        workers:     Max concurrent worker processes.
+        notify:      Send Telegram summary on completion.
+        snapshot_id: Explicit snapshot to use (auto-discovered if ``None``).
+
+    Returns:
+        Summary dict with per-strategy results and aggregate counts.
+    """
+    session_start = time.time()
+    strategies = strategies or list(DEFAULT_STRATEGIES)
+
+    # Resolve snapshot
+    if snapshot_id is None:
+        snapshot_id = _find_latest_snapshot(market)
+    print(
+        f"\n{'='*65}\n"
+        f"  Atlas Nightly Autoresearch Orchestrator\n"
+        f"{'='*65}\n"
+        f"  Strategies : {', '.join(strategies)}\n"
+        f"  Market     : {market}\n"
+        f"  Budget     : {hours:.1f} h per worker\n"
+        f"  Workers    : {workers}\n"
+        f"  Snapshot   : {snapshot_id}\n"
+        f"  Started    : {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
+        f"{'='*65}\n"
+    )
+
+    # Spawn and monitor workers
+    worker_list = _spawn_workers(strategies, market, hours, snapshot_id, workers)
+
+    # Collect results
+    runtime_s = time.time() - session_start
+    results = []
+    for w in worker_list:
+        r = _parse_session_results(w["strategy"], session_start)
+        r["exit_code"] = w["exit_code"]
+        r["log_path"] = w["log_path"]
+        results.append(r)
+
+    # Print summary
+    total_screened = sum(r["screened"] for r in results)
+    total_promoted = sum(r["promoted"] for r in results)
+    total_kept = sum(r["kept"] for r in results)
+    failures = [r for r in results if r.get("exit_code", 0) != 0]
+    mins = runtime_s / 60
+
+    print(
+        f"\n{'='*65}\n"
+        f"  Nightly Autoresearch Summary\n"
+        f"{'='*65}"
+    )
+    for r in results:
+        s = r["strategy"]
+        sc = r["screened"]
+        pr = r["promoted"]
+        kp = r["kept"]
+        s_sharpe = r["starting_sharpe"]
+        f_sharpe = r["final_sharpe"]
+        if r.get("exit_code", 0) != 0:
+            print(f"  {s:25s} ❌ FAILED (exit {r['exit_code']})")
+        elif kp > 0:
+            print(
+                f"  {s:25s} {sc:3d} screened → {pr:2d} promoted → {kp:2d} kept "
+                f"(Sharpe {s_sharpe:.3f} → {f_sharpe:.3f})"
+            )
+        else:
+            print(
+                f"  {s:25s} {sc:3d} screened → {pr:2d} promoted →  0 kept "
+                f"(Sharpe {s_sharpe:.3f})"
+            )
+    print(
+        f"\n  Total: {total_screened} screened, {total_promoted} promoted, {total_kept} kept"
+    )
+    if failures:
+        print(f"  ⚠️  {len(failures)} worker(s) failed")
+    print(f"  Runtime: {mins:.1f} min")
+    print(f"{'='*65}\n")
+
+    # Telegram
+    if notify:
+        _send_summary_telegram(results, runtime_s, workers)
+
+    return {
+        "status": "complete",
+        "strategies": results,
+        "total_screened": total_screened,
+        "total_promoted": total_promoted,
+        "total_kept": total_kept,
+        "failures": len(failures),
+        "runtime_s": round(runtime_s, 1),
+        "snapshot_id": snapshot_id,
+    }
+
+
+# ─── CLI ─────────────────────────────────────────────────────────────────────
+
+
+def _parse_args(argv=None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Nightly autoresearch orchestrator — parallel strategy sweeps.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Example:\n"
+            "  python3 research/autoresearch_nightly.py --hours 8 --workers 5 --notify\n"
+            "\n"
+            "  # Only specific strategies:\n"
+            "  python3 research/autoresearch_nightly.py --hours 4 --workers 2 \\\n"
+            "      --strategies mean_reversion,trend_following\n"
+        ),
+    )
+    parser.add_argument(
+        "--hours",
+        type=float,
+        default=8.0,
+        help="Time budget per worker in hours (default: 8).",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=5,
+        help="Max concurrent worker processes (default: 5).",
+    )
+    parser.add_argument(
+        "--market",
+        default="sp500",
+        help="Market ID (default: sp500).",
+    )
+    parser.add_argument(
+        "--strategies",
+        default=None,
+        help="Comma-separated strategy list (default: top 5 by weight).",
+    )
+    parser.add_argument(
+        "--notify",
+        action="store_true",
+        default=False,
+        help="Send Telegram summary on completion.",
+    )
+    parser.add_argument(
+        "--snapshot",
+        default=None,
+        help="Snapshot ID (auto-discovered if omitted).",
+    )
+    return parser.parse_args(argv)
+
+
+if __name__ == "__main__":
+    args = _parse_args()
+    strats = args.strategies.split(",") if args.strategies else None
+    result = run_nightly(
+        strategies=strats,
+        market=args.market,
+        hours=args.hours,
+        workers=args.workers,
+        notify=args.notify,
+        snapshot_id=args.snapshot,
+    )
+    failures = result.get("failures", 0)
+    sys.exit(1 if failures == len(result.get("strategies", [])) else 0)

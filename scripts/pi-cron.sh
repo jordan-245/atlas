@@ -397,7 +397,7 @@ if [ $EXIT_CODE -eq 0 ]; then
     case "$MODE" in
         premarket)
             PLAN_FILE="$PROJECT/plans/plan_${MARKET}_$(date '+%Y-%m-%d').json"
-            notify premarket-ok "$PLAN_FILE" "$MARKET" 2>/dev/null || true
+            notify premarket-approve "$PLAN_FILE" "$MARKET" 2>/dev/null || true
             ;;
         postclose)
             notify postclose-ok "$MARKET" 2>/dev/null || true
@@ -422,13 +422,10 @@ fi
 exit $EXIT_CODE
 
 # ══════════════════════════════════════════════════════════════
-# Autoresearch — rotate top-5 strategies Mon-Fri, 09:00 AEST
-# Starts after postclose settles (~08:30), finishes by 17:00
+# Autoresearch — all 5 strategies in parallel, Mon-Fri 09:00 AEST
+# Starts after postclose settles (~08:30), 8h sessions finish by 17:00
 # (1 hour before 18:00 healthz). Uses frozen snapshot — no conflicts.
 # Top 5 by portfolio weight: SR 24%, OG 22%, TF 21%, MR 17%, MB 9%
+# Each worker: ~1-2 cores, ~2GB RAM. 5 workers on 8-core = 3 cores free.
 # ══════════════════════════════════════════════════════════════
-# 0 9 * * 1  python3 /root/atlas/research/autoresearch_runner.py --strategy mean_reversion    --market sp500 --hours 8 --fast-screen --notify > /root/atlas/logs/autoresearch_mon.log 2>&1
-# 0 9 * * 2  python3 /root/atlas/research/autoresearch_runner.py --strategy trend_following    --market sp500 --hours 8 --fast-screen --notify > /root/atlas/logs/autoresearch_tue.log 2>&1
-# 0 9 * * 3  python3 /root/atlas/research/autoresearch_runner.py --strategy opening_gap        --market sp500 --hours 8 --fast-screen --notify > /root/atlas/logs/autoresearch_wed.log 2>&1
-# 0 9 * * 4  python3 /root/atlas/research/autoresearch_runner.py --strategy momentum_breakout  --market sp500 --hours 8 --fast-screen --notify > /root/atlas/logs/autoresearch_thu.log 2>&1
-# 0 9 * * 5  python3 /root/atlas/research/autoresearch_runner.py --strategy sector_rotation    --market sp500 --hours 8 --fast-screen --notify > /root/atlas/logs/autoresearch_fri.log 2>&1
+# 0 9 * * 1-5  python3 /root/atlas/research/autoresearch_nightly.py --hours 8 --workers 5 --notify > /root/atlas/logs/autoresearch_nightly_$(date +\%Y\%m\%d).log 2>&1

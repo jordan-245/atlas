@@ -626,9 +626,9 @@ def cmd_live_run(args):
         if broker.is_live and entries:
             print("\n  Syncing protective orders (SL/TP) on broker...")
             try:
-                plan_entries = plan.get("proposed_entries", []) if plan else entries
                 if hasattr(broker, "sync_all_protective_orders"):
-                    sync_result = broker.sync_all_protective_orders(plan_entries)
+                    # Pass [] so broker fetches live positions; pass plan for stop/TP metadata
+                    sync_result = broker.sync_all_protective_orders([], plan=plan)
                     sl_placed = sync_result.get("sl_placed", sync_result.get("counts", {}).get("sl_placed", 0))
                     tp_placed = sync_result.get("tp_placed", sync_result.get("counts", {}).get("tp_placed", 0))
                     errors = sync_result.get("errors", sync_result.get("counts", {}).get("errors", 0))
@@ -1025,6 +1025,20 @@ def cmd_autoresearch(args):
     )
 
 
+def cmd_autoresearch_nightly(args):
+    """Run parallel autoresearch across multiple strategies."""
+    from research.autoresearch_nightly import run_nightly
+    strats = args.strategies.split(",") if args.strategies else None
+    run_nightly(
+        strategies=strats,
+        market=args.market,
+        hours=args.hours,
+        workers=args.workers,
+        notify=args.notify,
+        snapshot_id=args.snapshot,
+    )
+
+
 def cmd_reconcile(args):
     """Run broker-local state reconciliation."""
     import subprocess
@@ -1095,6 +1109,14 @@ def main():
                        help="Two-stage: solo top-50 screen → combined verify (default)")
     p_ar.add_argument("--no-fast-screen", action="store_false", dest="fast_screen",
                        help="Every experiment runs full combined backtest (max rigor)")
+
+    p_arn = subparsers.add_parser("autoresearch-nightly", help="Parallel autoresearch across multiple strategies")
+    p_arn.add_argument("--hours", type=float, default=8.0, help="Time budget per worker in hours (default: 8)")
+    p_arn.add_argument("--workers", type=int, default=5, help="Max concurrent workers (default: 5)")
+    p_arn.add_argument("--market", type=str, default="sp500", help="Market (default: sp500)")
+    p_arn.add_argument("--strategies", type=str, default=None, help="Comma-separated strategy list (default: top 5)")
+    p_arn.add_argument("--notify", action="store_true", help="Send Telegram summary on completion")
+    p_arn.add_argument("--snapshot", type=str, default=None, help="Snapshot ID (auto-discovered if omitted)")
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -1114,6 +1136,7 @@ def main():
         "calibrate": cmd_calibrate,
         "reconcile": cmd_reconcile,
         "autoresearch": cmd_autoresearch,
+        "autoresearch-nightly": cmd_autoresearch_nightly,
     }
     cmd_func = commands.get(args.command)
     if cmd_func:
