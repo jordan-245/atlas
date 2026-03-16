@@ -34,11 +34,12 @@ def _get_alpaca_client():
 
 
 def _is_us_equity(ticker: str) -> bool:
-    """Return True for plain US equity symbols (no .AX/.HK suffix, no ^ prefix)."""
+    """Return True for plain US equity symbols (no .AX/.HK suffix, no ^ prefix, no futures)."""
     return (
         not ticker.endswith(".AX")
         and not ticker.endswith(".HK")
         and not ticker.startswith("^")
+        and "=F" not in ticker  # Yahoo Finance futures (CL=F, GC=F, etc.)
     )
 
 

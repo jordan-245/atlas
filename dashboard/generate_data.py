@@ -587,9 +587,11 @@ def get_live_prices(tickers):
 
     # Split tickers by market: US equities → Alpaca, ASX/HK → yfinance
     us_tickers = [t for t in ticker_list
-                  if not t.endswith(".AX") and not t.endswith(".HK")]
+                  if not t.endswith(".AX") and not t.endswith(".HK")
+                  and not t.startswith("^") and "=F" not in t]
     non_us_tickers = [t for t in ticker_list
-                      if t.endswith(".AX") or t.endswith(".HK")]
+                      if t.endswith(".AX") or t.endswith(".HK")
+                      or t.startswith("^") or "=F" in t]
 
     # ── US tickers via Alpaca snapshots ──────────────────────────
     if us_tickers:
@@ -3527,6 +3529,13 @@ def generate():
           f"Atlas P&L A${combined_pnl:,.2f} ({combined_pnl_pct:+.2f}%), "
           f"{len(all_positions)} positions across {len(market_data)} markets"
           f" (1 USD = {exchange_rates['USDAUD']:.4f} AUD)")
+
+    # Always regenerate the simple dashboard data that the HTML frontend reads.
+    # This ensures positions/equity update on every refresh cycle (~10s).
+    try:
+        generate_simple_dashboard_data()
+    except Exception as e:
+        print(f"  WARN: simple-dashboard-data.json generation failed: {e}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
