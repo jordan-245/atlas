@@ -274,8 +274,8 @@ function renderPositions(data) {
         ' <span style="font-size:12px;opacity:0.8">(' + fmtPct(pnlPct) + ')</span>' +
       '</div>' +
       '<div class="card-meta">' +
-        (p.days_held != null ? p.days_held + 'd held' : '') +
-        (p.sector && p.sector !== 'Unknown' ? ' · ' + p.sector : '') +
+        (p.days_held ? p.days_held + 'd held' : '') +
+        (p.sector && p.sector !== 'Unknown' ? (p.days_held ? ' · ' : '') + p.sector : '') +
       '</div>' +
       '<div class="sparkline">' + renderSparkline(p.sparkline || [], pnlPct) + '</div>' +
     '</div>';
@@ -299,7 +299,7 @@ function renderSummary(data) {
   // Today P&L
   var today = s.today_pnl_aud || 0;
   var todEl = document.getElementById('stat-today');
-  todEl.textContent = (today >= 0 ? '+' : '') + fmtCcy(today, 'AUD');
+  todEl.textContent = (today >= 0 ? '+' : '-') + fmtCcy(Math.abs(today), 'AUD');
   todEl.className   = 'stat-value ' + pnlClass(today);
 
   // Position count
@@ -446,22 +446,17 @@ function drawChart(curve) {
   canvas.addEventListener('mousemove', onMove);
   canvas.addEventListener('mouseleave', onLeave);
 
-  // Draw-in animation on first load
+  // Draw chart (optionally with draw-in animation via CSS clip-path)
   window._animateChart = function(curve) {
-    if (animDone) { drawChart(curve); return; }
-    animDone = true;
-    var progress = 0;
-    var start = null;
-    var dur = 500;
-    function step(ts) {
-      if (!start) start = ts;
-      progress = Math.min((ts - start) / dur, 1);
-      var partial = curve.slice(0, Math.max(1, Math.round(progress * curve.length)));
-      drawChart(partial);
-      if (progress < 1) requestAnimationFrame(step);
-      else drawChart(curve);
+    drawChart(curve);
+    if (!animDone) {
+      animDone = true;
+      // Use CSS clip-path animation instead of rAF loop (safe for headless)
+      canvas.style.clipPath = 'inset(0 100% 0 0)';
+      canvas.offsetHeight; // force reflow
+      canvas.style.transition = 'clip-path 0.6s ease-out';
+      canvas.style.clipPath = 'inset(0 0% 0 0)';
     }
-    requestAnimationFrame(step);
   };
 })();
 

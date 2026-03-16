@@ -3819,7 +3819,7 @@ def generate_simple_dashboard_data() -> dict:
         pos_ccy = p.get("currency", "USD")
 
         pnl_local = round(float(p.get("pnl", (cp - ep) * shares) or 0), 2)
-        pnl_pct   = round(float(p.get("pnl_pct", 0) or 0), 4)
+        pnl_pct   = round((cp / ep - 1) * 100, 4) if ep > 0 else 0.0
         ccy_sym   = "A$" if pos_ccy == "AUD" else "$"
         sign      = "+" if pnl_local >= 0 else "-"
         pnl_display = f"{sign}{ccy_sym}{abs(pnl_local):,.2f}"
