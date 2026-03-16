@@ -4,22 +4,6 @@
 
 | Date | Strategy | Change | Result | Sharpe Δ | New Sharpe |
 |------|----------|--------|--------|----------|------------|
-| 2026-03-16 05:40 | consecutive_down_days | None → 3 | ❌ discard | +0.0002 | 0.4935 |
-| 2026-03-16 05:40 | consecutive_down_days | None → 5 | ❌ discard | +0.0000 | 0.4933 |
-| 2026-03-16 05:43 | demark_sequential | 7 → 10 | ❌ discard | -0.3113 | -0.2072 |
-| 2026-03-16 05:43 | demark_sequential | 7 → 5 | ❌ discard | -0.4323 | -0.3282 |
-| 2026-03-16 05:43 | demark_sequential | 7 → 15 | ❌ discard | -2.1501 | -2.0460 |
-| 2026-03-16 05:45 | donchian_breakout | 30 → 20 | ❌ discard | -2.5246 | -2.2127 |
-| 2026-03-16 05:45 | donchian_breakout | 30 → 15 | ❌ discard | -0.1079 | 0.2040 |
-| 2026-03-16 05:45 | donchian_breakout | 30 → 10 | ❌ discard | -0.1795 | 0.1324 |
-| 2026-03-16 06:15 | stochastic_oversold | None → 15 | ❌ discard | +0.0000 | 0.4012 |
-| 2026-03-16 06:15 | stochastic_oversold | None → 7 | ❌ discard | +0.0004 | 0.4016 |
-| 2026-03-16 06:15 | stochastic_oversold | None → 10 | ❌ discard | +0.0000 | 0.4012 |
-| 2026-03-16 06:15 | stochastic_oversold | None → 5 | ❌ discard | +0.0001 | 0.4013 |
-| 2026-03-16 06:18 | williams_percent_r | 7 → 10 | ❌ discard | -0.1899 | -0.0123 |
-| 2026-03-16 06:18 | williams_percent_r | 7 → 15 | ❌ discard | -0.1264 | 0.0512 |
-| 2026-03-16 06:18 | williams_percent_r | 7 → 5 | ❌ discard | -1.6665 | -1.4889 |
-| 2026-03-16 06:22 | lower_band_reversion | None → 10 | ❌ discard | +0.0012 | 0.3965 |
 | 2026-03-16 06:22 | lower_band_reversion | None → 7 | ❌ discard | +0.0000 | 0.3953 |
 | 2026-03-16 06:22 | lower_band_reversion | None → 5 | ❌ discard | -0.0182 | 0.3771 |
 | 2026-03-16 06:22 | lower_band_reversion | None → 3 | ❌ discard | -4.0901 | -3.6948 |
@@ -54,3 +38,19 @@
 | 2026-03-16 10:49 | keltner_reversion | 7 → 5 | ❌ discard | -0.7685 | 0.1979 |
 | 2026-03-16 10:49 | keltner_reversion | 7 → 10 | ❌ discard | -0.6391 | 0.3273 |
 | 2026-03-16 10:49 | keltner_reversion | 7 → 15 | ❌ discard | -0.6924 | 0.2740 |
+| 2026-03-16 10:54 | inside_bar_nr7 | None → 10 | ❌ discard | -2.8262 | -1.8430 |
+| 2026-03-16 10:54 | inside_bar_nr7 | None → 7 | ❌ discard | -2.4728 | -1.4896 |
+| 2026-03-16 10:54 | inside_bar_nr7 | None → 3 | ❌ discard | -0.6892 | 0.2940 |
+| 2026-03-16 10:54 | inside_bar_nr7 | None → 5 | ❌ discard | -0.8797 | 0.1035 |
+| 2026-03-16 10:58 | volume_climax | None → 3 | ❌ discard | -2.5759 | -1.6095 |
+| 2026-03-16 10:58 | volume_climax | None → 5 | ❌ discard | -0.5660 | 0.4004 |
+| 2026-03-16 10:58 | volume_climax | None → 7 | ❌ discard | -0.5652 | 0.4012 |
+| 2026-03-16 10:58 | volume_climax | None → 10 | ❌ discard | -0.5651 | 0.4013 |
+| 2026-03-16 11:02 | gap_and_go | None → 10 | ❌ discard | -1.8515 | -0.8849 |
+| 2026-03-16 11:02 | gap_and_go | None → 7 | ❌ discard | -2.1522 | -1.1856 |
+| 2026-03-16 11:02 | gap_and_go | None → 3 | ❌ discard | -2.3705 | -1.4039 |
+| 2026-03-16 11:02 | gap_and_go | None → 5 | ❌ discard | -2.3360 | -1.3694 |
+| 2026-03-16 11:41 | heikin_ashi_reversal | None → 10 | ❌ discard | -2.0810 | -1.1147 |
+| 2026-03-16 11:41 | heikin_ashi_reversal | None → 5 | ❌ discard | -2.1293 | -1.1630 |
+| 2026-03-16 11:41 | heikin_ashi_reversal | None → 15 | ❌ discard | -1.9525 | -0.9862 |
+| 2026-03-16 11:41 | heikin_ashi_reversal | None → 7 | ❌ discard | -2.4603 | -1.4940 |

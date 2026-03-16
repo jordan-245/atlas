@@ -4,12 +4,6 @@
 
 | Date | Strategy | Change | Result | Sharpe Δ | New Sharpe |
 |------|----------|--------|--------|----------|------------|
-| 2026-03-14 10:02 | donchian_breakout | None → True | ❌ discard | +0.0000 | 0.5547 |
-| 2026-03-14 10:10 | williams_percent_r | False → True | ❌ discard | -2.3366 | -2.1398 |
-| 2026-03-14 11:57 | triple_rsi | None → True | ❌ discard | +0.0000 | 0.2065 |
-| 2026-03-14 11:57 | triple_rsi | None → False | ❌ discard | -3.2077 | -3.0012 |
-| 2026-03-14 23:09 | donchian_breakout | None → False | ❌ discard | +0.0083 | 0.5549 |
-| 2026-03-14 23:09 | donchian_breakout | None → True | ❌ discard | +0.0000 | 0.5466 |
 | 2026-03-14 23:12 | williams_percent_r | False → True | ❌ discard | -2.2991 | -2.1023 |
 | 2026-03-14 23:53 | triple_rsi | None → True | ❌ discard | +0.0000 | 0.1988 |
 | 2026-03-14 23:53 | triple_rsi | None → False | ❌ discard | -3.5851 | -3.3863 |
@@ -54,3 +48,9 @@
 | 2026-03-16 10:27 | williams_percent_r | False → True | ❌ discard | -1.4780 | -0.5116 |
 | 2026-03-16 10:50 | keltner_reversion | None → True | ❌ discard | -0.6891 | 0.2773 |
 | 2026-03-16 10:50 | keltner_reversion | None → False | ❌ discard | -0.6783 | 0.2881 |
+| 2026-03-16 10:54 | inside_bar_nr7 | None → False | ❌ discard | -0.8204 | 0.1628 |
+| 2026-03-16 10:54 | inside_bar_nr7 | None → True | ❌ discard | -0.8797 | 0.1035 |
+| 2026-03-16 10:59 | volume_climax | None → True | ❌ discard | -0.5660 | 0.4004 |
+| 2026-03-16 10:59 | volume_climax | None → False | ❌ discard | -0.5657 | 0.4007 |
+| 2026-03-16 11:02 | gap_and_go | None → True | ❌ discard | -2.3360 | -1.3694 |
+| 2026-03-16 11:02 | gap_and_go | None → False | ❌ discard | -2.2184 | -1.2518 |

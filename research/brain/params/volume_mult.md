@@ -9,3 +9,8 @@
 | 2026-03-16 03:58 | volume_climax | None → 3.0 | ❌ discard | -13.6165 | -13.2378 |
 | 2026-03-16 03:58 | volume_climax | None → 2.5 | ❌ discard | +0.0007 | 0.3794 |
 | 2026-03-16 03:58 | volume_climax | None → 1.5 | ❌ discard | +0.0062 | 0.3849 |
+| 2026-03-16 10:57 | volume_climax | None → 4.0 | ❌ discard | -12.2828 | -11.3164 |
+| 2026-03-16 10:57 | volume_climax | None → 3.0 | ❌ discard | -6.1626 | -5.1962 |
+| 2026-03-16 10:57 | volume_climax | None → 2.0 | ❌ discard | -0.5660 | 0.4004 |
+| 2026-03-16 10:57 | volume_climax | None → 2.5 | ❌ discard | -0.5686 | 0.3978 |
+| 2026-03-16 10:57 | volume_climax | None → 1.5 | ❌ discard | -0.5611 | 0.4053 |
