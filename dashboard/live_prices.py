@@ -8,7 +8,7 @@ Price sources (priority order per ticker):
   1. In-memory cache (if fresh, < CACHE_TTL seconds old)
   2. Alpaca snapshot API — US equities only (no 15-min delay, real-time)
   3. Yahoo Finance v8 chart API — fallback for non-US tickers, indices,
-     FX pairs (^GSPC, ^AXJO, AUDUSD=X) that Alpaca does not support.
+     Indices (^GSPC) that Alpaca does not support.
 
 Alpaca is skipped automatically when:
   - The ticker has a non-US suffix (.AX, .HK, =X, ^)
@@ -286,7 +286,7 @@ def fetch_prices(tickers: list[str]) -> dict[str, dict]:
 
 def fetch_index_prices() -> dict[str, dict]:
     """Fetch major index quotes (benchmarks + FX)."""
-    indices = ["^GSPC", "^AXJO", "^HSI", "AUDUSD=X"]
+    indices = ["^GSPC"]
     return fetch_prices(indices)
 
 
@@ -332,12 +332,6 @@ def get_all_tickers_from_dashboard(dashboard_path: str) -> list[str]:
                 if t:
                     tickers.add(t)
 
-    # Manual portfolio positions (Moomoo)
-    for pos in data.get("manual_portfolio", {}).get("positions", []):
-        t = pos.get("ticker", "")
-        if t:
-            tickers.add(t)
-
     return list(tickers)
 
 
@@ -370,8 +364,8 @@ def get_live_prices_with_pnl(simple_data_path: str = "") -> dict:
         {
             "ok": True,
             "timestamp": "2026-03-16T10:30:15",
-            "today_pnl_aud": 148.50,
-            "today_pnl_display": "+A$148.50",
+            "today_pnl": 148.50,
+            "today_pnl_display": "+$148.50",
             "positions": {
                 "OXY": {"price": 61.25, "pnl_local": 5.70, "pnl_pct": 4.88, "pnl_display": "+$5.70"},
                 ...
@@ -402,8 +396,8 @@ def get_live_prices_with_pnl(simple_data_path: str = "") -> dict:
         return {
             "ok": True,
             "timestamp": datetime.now().isoformat(),
-            "today_pnl_aud": 0.0,
-            "today_pnl_display": "+A$0.00",
+            "today_pnl": 0.0,
+            "today_pnl_display": "+$0.00",
             "positions": {},
         }
 
@@ -411,16 +405,9 @@ def get_live_prices_with_pnl(simple_data_path: str = "") -> dict:
     tickers = [p["ticker"] for p in positions_data if p.get("ticker")]
     quotes = fetch_prices(tickers)
 
-    # Get FX rate for AUD conversion
-    fx_quotes = fetch_prices(["AUDUSD=X"])
-    audusd = 0.70  # default fallback
-    if "AUDUSD=X" in fx_quotes:
-        audusd = fx_quotes["AUDUSD=X"].get("price", 0.70)
-    usdaud = 1.0 / audusd if audusd > 0 else 1.43
-
-    # Compute P&L per position
+    # Compute P&L per position (all USD — Alpaca only)
     result_positions = {}
-    total_pnl_aud = 0.0
+    total_pnl_usd = 0.0
 
     for pos in positions_data:
         ticker = pos.get("ticker", "")
@@ -449,10 +436,9 @@ def get_live_prices_with_pnl(simple_data_path: str = "") -> dict:
         if direction == "short":
             pnl_pct = -pnl_pct
 
-        # Format display string
-        ccy_sym = "A$" if currency == "AUD" else "$"
+        # Format display string (USD only)
         sign = "+" if pnl_local >= 0 else "-"
-        pnl_display = f"{sign}{ccy_sym}{abs(pnl_local):,.2f}"
+        pnl_display = f"{sign}${abs(pnl_local):,.2f}"
 
         result_positions[ticker] = {
             "price": round(live_price, 4),
@@ -461,22 +447,16 @@ def get_live_prices_with_pnl(simple_data_path: str = "") -> dict:
             "pnl_display": pnl_display,
         }
 
-        # Accumulate total P&L in AUD
-        if currency == "AUD":
-            total_pnl_aud += pnl_local
-        elif currency == "USD":
-            total_pnl_aud += pnl_local * usdaud
-        else:
-            total_pnl_aud += pnl_local  # unknown currency — pass through
+        total_pnl_usd += pnl_local
 
-    total_pnl_aud = round(total_pnl_aud, 2)
-    sign = "+" if total_pnl_aud >= 0 else "-"
-    today_pnl_display = f"{sign}A${abs(total_pnl_aud):,.2f}"
+    total_pnl_usd = round(total_pnl_usd, 2)
+    sign = "+" if total_pnl_usd >= 0 else "-"
+    today_pnl_display = f"{sign}${abs(total_pnl_usd):,.2f}"
 
     return {
         "ok": True,
         "timestamp": datetime.now().isoformat(),
-        "today_pnl_aud": total_pnl_aud,
+        "today_pnl": total_pnl_usd,
         "today_pnl_display": today_pnl_display,
         "positions": result_positions,
     }
