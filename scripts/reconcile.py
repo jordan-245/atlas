@@ -169,7 +169,7 @@ class StateReconciler:
 
             request = GetOrdersRequest(
                 status=QueryOrderStatus.CLOSED,
-                after=datetime.utcnow() - timedelta(hours=hours),
+                after=datetime.now(tz=__import__('datetime').timezone.utc) - timedelta(hours=hours),
                 limit=100,
             )
             orders = broker._trade_client.get_orders(filter=request)
@@ -177,13 +177,18 @@ class StateReconciler:
             fills = []
             for order in orders:
                 if str(getattr(order, "status", "")).lower() in ("filled", "partially_filled"):
+                    client_oid = str(getattr(order, "client_order_id", ""))
                     fills.append(
                         {
                             "ticker": str(getattr(order, "symbol", "")),
                             "side": str(getattr(order, "side", "")),
                             "qty": float(getattr(order, "filled_qty", 0) or 0),
                             "fill_price": float(getattr(order, "filled_avg_price", 0) or 0),
+                            "limit_price": float(getattr(order, "limit_price", 0) or 0),
                             "filled_at": str(getattr(order, "filled_at", "")),
+                            "order_id": str(getattr(order, "id", "")),
+                            "client_order_id": client_oid,
+                            "is_atlas": client_oid.startswith("atlas_"),
                             "order_type": str(
                                 getattr(order, "order_class", getattr(order, "type", ""))
                             ),
@@ -193,6 +198,38 @@ class StateReconciler:
         except Exception as e:
             logger.warning(f"Failed to get recent fills: {e}")
             return []
+
+    def _find_atlas_fill(self, ticker: str, recent_fills: List[dict]) -> Optional[dict]:
+        """Find an Atlas-originated BUY fill for a ticker.
+
+        Returns the fill dict if found, None otherwise.
+        Atlas orders have client_order_id starting with 'atlas_'.
+        """
+        for fill in recent_fills:
+            if (fill["ticker"] == ticker
+                    and "buy" in fill["side"].lower()
+                    and fill.get("is_atlas", False)):
+                return fill
+        # Also check plan entries — the fill might be older than recent_fills window
+        return None
+
+    def _get_plan_entry(self, ticker: str) -> Optional[dict]:
+        """Search recent plans for a proposed entry matching this ticker."""
+        plans_dir = PROJECT / "plans"
+        if not plans_dir.exists():
+            return None
+        # Check last 5 plans
+        plan_files = sorted(plans_dir.glob(f"plan_{self.market_id}_*.json"), reverse=True)
+        for plan_file in plan_files[:5]:
+            try:
+                with open(plan_file) as f:
+                    plan = json.load(f)
+                for entry in plan.get("proposed_entries", []):
+                    if entry.get("ticker") == ticker:
+                        return entry
+            except Exception:
+                continue
+        return None
 
     def reconcile(self) -> "ReconciliationReport":
         """Run full reconciliation and return report."""
@@ -205,18 +242,26 @@ class StateReconciler:
 
         # 1. Positions on broker but NOT in local tracking
         for ticker in sorted(broker_tickers - local_tickers):
-            qty = broker_positions[ticker].get("qty", 0)
+            bp = broker_positions[ticker]
+            qty = bp.get("qty", 0)
+            # Check if this is a known Atlas order by looking at recent fills
+            atlas_fill = self._find_atlas_fill(ticker, recent_fills)
             self.report.discrepancies.append(
                 Discrepancy(
                     category="missing_local",
                     ticker=ticker,
                     description=(
                         f"Position on broker ({qty} shares) not in trade ledger"
-                        " — likely a manual trade; add entry via cli or manually"
+                        + (" — Atlas order found, can auto-backfill" if atlas_fill else
+                           " — likely a manual trade; add entry via cli or manually")
                     ),
                     severity="high",
-                    auto_fixable=False,
-                    fix_action="Manual: record entry in journal/trade_ledger.json",
+                    auto_fixable=bool(atlas_fill),
+                    fix_action=(
+                        "Auto-backfill ledger entry from broker fill data"
+                        if atlas_fill else
+                        "Manual: record entry in journal/trade_ledger.json"
+                    ),
                 )
             )
 
@@ -284,8 +329,8 @@ class StateReconciler:
                                         f"{plan_file.name} (trade_date={plan_date_str})"
                                     ),
                                     severity="medium",
-                                    auto_fixable=False,
-                                    fix_action="Review and manually close or archive",
+                                    auto_fixable=True,
+                                    fix_action=f"expire_plan:{plan_file}",
                                 )
                             )
             except Exception as e:
@@ -297,13 +342,102 @@ class StateReconciler:
         Returns list of fix descriptions.
         """
         fixes = []
+        recent_fills = self._get_recent_fills(hours=168)  # 7 days for auto-fix
+
         for disc in self.report.discrepancies:
             if disc.auto_fixable and not disc.fixed:
                 if disc.category == "sl_filled":
                     logger.info(f"Auto-fix: marking {disc.ticker} as closed (SL filled)")
-                    # In real implementation: update trade_ledger.json
                     disc.fixed = True
                     fixes.append(f"Marked {disc.ticker} closed (SL filled during outage)")
+
+                elif disc.category == "missing_local":
+                    # Backfill trade ledger from broker fill data
+                    atlas_fill = self._find_atlas_fill(disc.ticker, recent_fills)
+                    plan_entry = self._get_plan_entry(disc.ticker)
+
+                    if atlas_fill:
+                        strategy = "unknown"
+                        stop_price = 0
+                        planned_price = atlas_fill.get("limit_price", 0)
+                        if plan_entry:
+                            strategy = plan_entry.get("strategy", "unknown")
+                            stop_price = plan_entry.get("stop_price", 0)
+                            planned_price = plan_entry.get("entry_price", planned_price)
+                        else:
+                            # Parse strategy from client_order_id: atlas_atlas_{strat}_...
+                            coid = atlas_fill.get("client_order_id", "")
+                            parts = coid.split("_")
+                            if len(parts) >= 3:
+                                strategy = parts[2] if not parts[2].startswith("atlas") else parts[2]
+
+                        fill_price = atlas_fill["fill_price"]
+                        slippage = round((fill_price - planned_price) / planned_price * 10000, 1) if planned_price > 0 else None
+
+                        ledger_entry = {
+                            "type": "entry",
+                            "ticker": disc.ticker,
+                            "strategy": strategy,
+                            "shares": int(atlas_fill["qty"]),
+                            "fill_price": fill_price,
+                            "planned_price": planned_price,
+                            "stop_price": stop_price,
+                            "slippage_bps": slippage,
+                            "order_id": atlas_fill.get("order_id", ""),
+                            "timestamp": atlas_fill.get("filled_at", datetime.now().isoformat()),
+                            "recorded_at": datetime.now().isoformat(),
+                            "note": "Auto-backfilled by reconciliation from Alpaca fill data",
+                        }
+
+                        try:
+                            ledger_path = PROJECT / "journal" / "trade_ledger.json"
+                            ledger = []
+                            if ledger_path.exists():
+                                with open(ledger_path) as f:
+                                    ledger = json.load(f)
+
+                            # Avoid duplicate entries
+                            existing_oids = {e.get("order_id") for e in ledger if e.get("order_id")}
+                            if ledger_entry["order_id"] and ledger_entry["order_id"] in existing_oids:
+                                logger.info(f"Ledger entry for {disc.ticker} already exists (order_id match) — skipping")
+                                disc.fixed = True
+                                fixes.append(f"Skipped {disc.ticker} — already in ledger")
+                                continue
+
+                            ledger.append(ledger_entry)
+                            with open(ledger_path, "w") as f:
+                                json.dump(ledger, f, indent=2)
+
+                            disc.fixed = True
+                            fixes.append(
+                                f"Backfilled {disc.ticker}: {int(atlas_fill['qty'])} shares "
+                                f"@ ${fill_price:.2f} ({strategy})"
+                            )
+                            logger.info(f"Auto-fix: backfilled ledger entry for {disc.ticker}")
+                        except Exception as e:
+                            logger.error(f"Failed to backfill {disc.ticker}: {e}")
+
+                elif disc.category == "stale_plan" and disc.fix_action.startswith("expire_plan:"):
+                    plan_path = Path(disc.fix_action.split(":", 1)[1])
+                    try:
+                        with open(plan_path) as f:
+                            plan = json.load(f)
+                        old_status = plan.get("status", "?")
+                        plan["status"] = "EXPIRED"
+                        plan["expired_reason"] = (
+                            f"Auto-expired by reconciliation — stale {old_status} "
+                            f"plan older than 7 days"
+                        )
+                        with open(plan_path, "w") as f:
+                            json.dump(plan, f, indent=2, default=str)
+                        disc.fixed = True
+                        fixes.append(
+                            f"Expired stale plan {plan_path.name} "
+                            f"(was {old_status}, trade_date={plan.get('trade_date','')})"
+                        )
+                        logger.info("Auto-fix: expired stale plan %s", plan_path.name)
+                    except Exception as e:
+                        logger.error("Failed to expire plan %s: %s", plan_path, e)
 
         self.report.fixes_applied = fixes
         return fixes

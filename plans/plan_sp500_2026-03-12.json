@@ -3,7 +3,7 @@
   "generated_at": "2026-03-12T19:05:35.152667",
   "market_id": "sp500",
   "config_version": "v2.2",
-  "status": "PENDING_APPROVAL",
+  "status": "EXPIRED",
   "portfolio_snapshot": {
     "equity": 4000,
     "cash": 2878.11,
@@ -126,5 +126,6 @@
       "holding_days": 0
     }
   ],
-  "allocation_summary": {}
+  "allocation_summary": {},
+  "expired_reason": "Stale PENDING plan \u2014 never approved, trade_date 7+ days old"
 }

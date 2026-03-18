@@ -3,7 +3,7 @@
   "generated_at": "2026-03-11T19:31:38.704052",
   "market_id": "sp500",
   "config_version": "v2.2",
-  "status": "APPROVED",
+  "status": "EXPIRED",
   "portfolio_snapshot": {
     "equity": 3990.95,
     "cash": 2659.8,
@@ -167,5 +167,6 @@
     }
   ],
   "allocation_summary": {},
-  "approved_at": "2026-03-11T19:45:11.085341"
+  "approved_at": "2026-03-11T19:45:11.085341",
+  "expired_reason": "Stale APPROVED plan \u2014 never executed, trade_date 7+ days old"
 }
