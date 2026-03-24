@@ -455,6 +455,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Enable DEBUG logging",
     )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress output when all positions already protected (for frequent cron). "
+             "Still logs and alerts on errors or new placements.",
+    )
     return parser.parse_args()
 
 
@@ -518,27 +524,46 @@ def main() -> int:
         counts = r.get("counts", {})
         n_checked = counts.get("positions_checked", 0)
         if n_checked == 0:
-            print(f"  {market}: no live positions")
+            if not args.quiet:
+                print(f"  {market}: no live positions")
             continue
         sl_placed = counts.get("sl_placed", 0)
         tp_placed = counts.get("tp_placed", 0)
         errs = counts.get("errors", 0)
-        print(
-            f"  {market}: {n_checked} positions checked | "
-            f"SL placed={sl_placed} | TP placed={tp_placed} | errors={errs}"
-        )
-        for ticker, tresult in r.get("results", {}).items():
-            print(f"    {tresult.get('summary', ticker)}")
+        anything_happened = sl_placed > 0 or tp_placed > 0 or errs > 0
 
-    print()
+        if not args.quiet or anything_happened:
+            print(
+                f"  {market}: {n_checked} positions checked | "
+                f"SL placed={sl_placed} | TP placed={tp_placed} | errors={errs}"
+            )
+            for ticker, tresult in r.get("results", {}).items():
+                print(f"    {tresult.get('summary', ticker)}")
+
+    # In quiet mode, skip telegram/summary when all positions were already protected
+    total_placed = sum(
+        r.get("counts", {}).get("sl_placed", 0) + r.get("counts", {}).get("tp_placed", 0)
+        for r in market_results
+    )
+    total_errors = sum(
+        r.get("counts", {}).get("errors", 0)
+        for r in market_results
+    )
+    nothing_to_report = args.quiet and total_placed == 0 and total_errors == 0
+
+    if not nothing_to_report:
+        print()
 
     # ── Telegram ─────────────────────────────────────────────
-    if not args.no_telegram:
+    # In quiet mode: only send telegram if stops were placed or errors occurred
+    if not args.no_telegram and not nothing_to_report:
         ok = send_telegram_summary(market_results, trade_date, dry_run)
         if ok:
             logger.info("Telegram notification sent")
         else:
             logger.warning("Telegram notification failed (non-fatal)")
+    elif nothing_to_report:
+        logger.debug("Quiet mode: all positions protected, nothing to report")
 
     logger.info("=== sync_protective_orders done (errors=%s) ===", any_error)
     return 1 if any_error else 0
