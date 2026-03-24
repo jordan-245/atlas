@@ -75,8 +75,10 @@ SCHEMA: List[Tuple] = [
     ("trading.order_type",       str,  False, ["market_on_open", "market", "limit"],    "market_on_open","Default order type"),
 
     # trading.live_safety sub-section
-    ("trading.live_safety.max_order_value",  (int, float), False, (0, None), 5000, "Maximum value of a single order in local currency"),
-    ("trading.live_safety.max_daily_orders", int,          False, (0, 1000), 10,   "Maximum number of orders per trading day"),
+    ("trading.live_safety.max_order_value",    (int, float), False, (0, None),       5000, "Maximum value of a single order in local currency"),
+    ("trading.live_safety.max_daily_orders",   int,          False, (0, 1000),       10,   "Maximum number of orders per trading day"),
+    ("trading.live_safety.max_daily_loss_pct", (int, float), False, (0.0, 1.0),      0.02, "Max daily portfolio drawdown fraction before circuit breaker trips (e.g. 0.02 = 2%)"),
+    ("trading.live_safety.halt_on_stale_data", bool,         False, None,            True, "Whether to halt the ingest pipeline when stale data is detected"),
 
     # ---- fees ---------------------------------------------------------------
     ("fees.commission_per_trade", (int, float), False, (0, None),  0,       "Fixed commission charged per trade"),

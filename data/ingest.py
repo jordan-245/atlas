@@ -727,3 +727,238 @@ def cache_stats(market_id: Optional[str] = None) -> Dict:
         "newest": max(mtimes).isoformat(),
         "tickers": sorted(tickers),
     }
+
+
+# ---------------------------------------------------------------------------
+# Stale Data Detection (A5)
+# ---------------------------------------------------------------------------
+
+def _last_trading_day(reference_date: Optional[datetime] = None) -> datetime:
+    """Return the most recent weekday on or before *reference_date* (at midnight).
+
+    Handles weekends by walking back to Friday.  Does NOT account for
+    US market holidays — callers relying on exact holiday-awareness should
+    use a calendar library.  For the stale-data check, "weekend adjustment"
+    is the dominant case and is sufficient for Atlas's needs.
+
+    The returned datetime is always at midnight (00:00:00) so that date
+    comparisons against DataFrame DatetimeIndex values are unambiguous.
+
+    Args:
+        reference_date: Date to anchor from (default: today).
+
+    Returns:
+        datetime at midnight of the last expected trading day.
+    """
+    if reference_date is None:
+        reference_date = datetime.now()
+
+    d = reference_date
+    # Walk back from Sunday (6) and Saturday (5) to Friday (4)
+    while d.weekday() >= 5:  # 5=Saturday, 6=Sunday
+        d -= timedelta(days=1)
+    # Normalise to midnight to avoid time-of-day comparison issues
+    return d.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def check_data_freshness(
+    data: Dict[str, "pd.DataFrame"],
+    market_id: Optional[str] = None,
+    max_lag_days: int = 1,
+) -> dict:
+    """Verify that downloaded data is fresh (not stale/cached from a prior day).
+
+    Checks each ticker's most recent data date against the expected last
+    trading day.  Returns a summary with overall pass/fail, stale ticker list,
+    and the freshest/stalest dates found.
+
+    Args:
+        data:         Dict of ticker -> DataFrame (output of download_universe).
+        market_id:    Market identifier for logging (informational only).
+        max_lag_days: Maximum allowed lag in trading days.  Default 1 allows
+                      for end-of-day data that arrives the morning after
+                      (e.g. data as of yesterday is fresh when running pre-market).
+
+    Returns:
+        Dict with keys:
+            is_fresh (bool):         True if all checked tickers meet freshness.
+            stale_tickers (list):    Tickers whose data is too old.
+            fresh_count (int):       Number of tickers with fresh data.
+            stale_count (int):       Number of tickers with stale data.
+            expected_date (str):     Expected minimum data date (YYYY-MM-DD).
+            newest_date (str | None): Most recent data date across all tickers.
+            oldest_date (str | None): Oldest most-recent-date across all tickers.
+            message (str):           Human-readable summary.
+    """
+    import pandas as _pd
+
+    if not data:
+        return {
+            "is_fresh": False,
+            "stale_tickers": [],
+            "fresh_count": 0,
+            "stale_count": 0,
+            "expected_date": "",
+            "newest_date": None,
+            "oldest_date": None,
+            "message": "No data provided — nothing to check",
+        }
+
+    # expected_dt is the oldest date we still consider "fresh":
+    # max_lag_days=1 → data from yesterday or today is acceptable
+    # max_lag_days=0 → only today's data is acceptable
+    expected_dt = _last_trading_day() - timedelta(days=max_lag_days)
+    expected_date = expected_dt.strftime("%Y-%m-%d")
+
+    stale_tickers = []
+    all_latest_dates = []
+    checked = 0
+
+    for ticker, df in data.items():
+        if df is None or (hasattr(df, "empty") and df.empty):
+            continue
+        checked += 1
+        try:
+            latest = df.index.max()
+            if hasattr(latest, "to_pydatetime"):
+                latest = latest.to_pydatetime()
+            elif not isinstance(latest, datetime):
+                latest = _pd.Timestamp(latest).to_pydatetime()
+            # Strip time component
+            latest_date_str = latest.strftime("%Y-%m-%d")
+            all_latest_dates.append(latest_date_str)
+            if latest < expected_dt:
+                stale_tickers.append(ticker)
+        except Exception as e:
+            logger.debug("Freshness check for %s failed: %s", ticker, e)
+
+    if not all_latest_dates:
+        return {
+            "is_fresh": False,
+            "stale_tickers": [],
+            "fresh_count": 0,
+            "stale_count": 0,
+            "expected_date": expected_date,
+            "newest_date": None,
+            "oldest_date": None,
+            "message": "Could not determine data dates from downloaded data",
+        }
+
+    newest_date = max(all_latest_dates)
+    oldest_date = min(all_latest_dates)
+    stale_count = len(stale_tickers)
+    fresh_count = checked - stale_count
+    is_fresh = stale_count == 0
+
+    if is_fresh:
+        message = (
+            f"Data is FRESH: {fresh_count}/{checked} tickers at or after {expected_date}. "
+            f"Newest: {newest_date}."
+        )
+    else:
+        sample = stale_tickers[:5]
+        more = f" (+{stale_count - 5} more)" if stale_count > 5 else ""
+        message = (
+            f"STALE DATA DETECTED: {stale_count}/{checked} tickers older than "
+            f"{expected_date}. Stale: {sample}{more}. "
+            f"Oldest latest: {oldest_date}."
+        )
+
+    logger.info("Data freshness check: %s", message)
+    return {
+        "is_fresh": is_fresh,
+        "stale_tickers": stale_tickers,
+        "fresh_count": fresh_count,
+        "stale_count": stale_count,
+        "expected_date": expected_date,
+        "newest_date": newest_date,
+        "oldest_date": oldest_date,
+        "message": message,
+    }
+
+
+def verify_ingest_freshness(
+    data: Dict[str, "pd.DataFrame"],
+    config: Optional[dict] = None,
+    market_id: Optional[str] = None,
+) -> bool:
+    """Verify data freshness and optionally halt the pipeline on stale data.
+
+    Sends a Telegram alert when stale data is detected.  If the config
+    option ``trading.live_safety.halt_on_stale_data`` is True (default),
+    raises ``RuntimeError`` to abort the pipeline.
+
+    Args:
+        data:      Dict of ticker -> DataFrame (output of download_universe).
+        config:    Active Atlas config dict (read for halt_on_stale_data).
+        market_id: Market identifier for log/alert messages.
+
+    Returns:
+        True if data is fresh.
+        False if data is stale and halt_on_stale_data is False.
+
+    Raises:
+        RuntimeError: If data is stale and halt_on_stale_data is True.
+    """
+    freshness = check_data_freshness(data, market_id=market_id)
+
+    if freshness["is_fresh"]:
+        logger.info(
+            "Ingest freshness OK [%s]: %d tickers, newest=%s",
+            market_id or "?",
+            freshness["fresh_count"],
+            freshness["newest_date"],
+        )
+        return True
+
+    # Stale data detected
+    market_label = market_id or "?"
+    stale_count = freshness["stale_count"]
+    expected = freshness["expected_date"]
+    oldest = freshness["oldest_date"]
+    stale_sample = freshness["stale_tickers"][:5]
+
+    logger.warning(
+        "STALE DATA DETECTED [%s]: %d tickers older than %s (oldest latest: %s). "
+        "Sample stale: %s",
+        market_label, stale_count, expected, oldest, stale_sample,
+    )
+
+    # Send Telegram alert
+    try:
+        from utils.telegram import send_message
+        alert = (
+            f"⚠️ <b>ATLAS STALE DATA WARNING [{market_label.upper()}]</b>\n\n"
+            f"Stale tickers: <b>{stale_count}</b> older than {expected}\n"
+            f"Oldest latest date: {oldest}\n"
+            f"Sample: {stale_sample}\n\n"
+        )
+        if config:
+            halt = config.get("trading", {}).get(
+                "live_safety", {}
+            ).get("halt_on_stale_data", True)
+            if halt:
+                alert += "🛑 Pipeline HALTED (halt_on_stale_data=true)"
+            else:
+                alert += "⚡ Continuing despite stale data (halt_on_stale_data=false)"
+        send_message(alert)
+    except Exception as tg_exc:
+        logger.warning("Could not send stale data Telegram alert: %s", tg_exc)
+
+    # Decide whether to halt
+    halt = True  # safe default
+    if config:
+        halt = config.get("trading", {}).get(
+            "live_safety", {}
+        ).get("halt_on_stale_data", True)
+
+    if halt:
+        raise RuntimeError(
+            f"STALE DATA: {stale_count} tickers have data older than {expected}. "
+            "Set halt_on_stale_data=false in config to continue despite stale data."
+        )
+
+    logger.warning(
+        "Continuing pipeline with stale data (halt_on_stale_data=false)"
+    )
+    return False
