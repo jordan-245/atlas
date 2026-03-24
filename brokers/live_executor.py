@@ -160,6 +160,9 @@ class LiveExecutor:
         self._daily_date = ""
         self._halted = False
         self._halt_reason = ""
+        # Circuit breaker state (A4)
+        self._circuit_breaker_tripped = False
+        self._daily_start_equity: float = 0.0
 
     @property
     def is_live_enabled(self) -> bool:
@@ -176,6 +179,139 @@ class LiveExecutor:
     @property
     def safety(self) -> dict:
         return self.config.get("trading", {}).get("live_safety", {})
+
+    @property
+    def max_daily_loss_pct(self) -> float:
+        """Maximum allowed daily portfolio drawdown as a fraction (e.g. 0.02 = 2%).
+
+        Read from ``trading.live_safety.max_daily_loss_pct`` (default 0.02).
+        """
+        raw = self.safety.get("max_daily_loss_pct", 0.02)
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return 0.02
+
+    # ── Circuit Breaker (A4) ───────────────────────────────────
+
+    def _reset_circuit_breaker_if_new_day(self, trade_date: str) -> None:
+        """Reset circuit breaker state when a new trading day begins."""
+        if trade_date != self._daily_date:
+            self._circuit_breaker_tripped = False
+            self._daily_start_equity = 0.0
+
+    def _capture_start_equity(self) -> None:
+        """Capture the portfolio equity at the start of execution.
+
+        Called once per execute_plan() call to establish the daily P&L baseline.
+        Does nothing if equity has already been captured today.
+        Silently skips if the broker is unavailable (non-blocking).
+        """
+        if self._daily_start_equity > 0:
+            return  # Already captured for today
+        if not self._broker:
+            return
+        try:
+            account = self._broker.get_account_info()
+            if account and account.equity > 0:
+                self._daily_start_equity = account.equity
+                logger.info(
+                    "Circuit breaker: start equity captured $%.2f",
+                    self._daily_start_equity,
+                )
+        except Exception as e:
+            logger.warning(
+                "Circuit breaker: could not capture start equity (non-fatal): %s", e
+            )
+
+    def _check_circuit_breaker(self, trade_date: str) -> bool:
+        """Check if the daily loss circuit breaker should trip.
+
+        Returns True (BLOCKED) if daily drawdown has exceeded the configured
+        maximum.  Returns False (ALLOWED) if within limits or if the check
+        cannot be completed.
+
+        Side-effects:
+        - Sets ``self._circuit_breaker_tripped = True`` on first trip.
+        - Sends a Telegram alert on trip.
+        - Writes a journal entry on trip.
+        - Logs a warning on every blocked call after trip.
+
+        Args:
+            trade_date: YYYY-MM-DD string for journal entries.
+
+        Returns:
+            True if new entries should be BLOCKED, False if allowed.
+        """
+        # Already tripped — fast path
+        if self._circuit_breaker_tripped:
+            logger.warning(
+                "CIRCUIT BREAKER: daily loss limit already tripped — "
+                "blocking new order placement"
+            )
+            return True
+
+        # No start equity captured — can't calculate P&L, allow through
+        if self._daily_start_equity <= 0:
+            return False
+
+        if not self._broker:
+            return False
+
+        try:
+            account = self._broker.get_account_info()
+        except Exception as e:
+            logger.warning(
+                "Circuit breaker P&L check failed (non-blocking): %s", e
+            )
+            return False
+
+        if not account or account.equity <= 0:
+            return False
+
+        current_equity = account.equity
+        loss = self._daily_start_equity - current_equity
+        loss_pct = loss / self._daily_start_equity if self._daily_start_equity > 0 else 0.0
+        threshold = self.max_daily_loss_pct
+
+        if loss_pct < threshold:
+            return False  # Within limits
+
+        # Trip the breaker
+        self._circuit_breaker_tripped = True
+        msg = (
+            f"CIRCUIT BREAKER TRIPPED: daily loss ${loss:.2f} "
+            f"({loss_pct*100:.2f}%) exceeds limit "
+            f"({threshold*100:.2f}% of ${self._daily_start_equity:.2f}). "
+            "Blocking all new entry orders."
+        )
+        logger.error(msg)
+
+        _journal_entry("circuit_breaker_tripped", {
+            "trade_date": trade_date,
+            "start_equity": self._daily_start_equity,
+            "current_equity": current_equity,
+            "loss": round(loss, 2),
+            "loss_pct": round(loss_pct * 100, 4),
+            "threshold_pct": round(threshold * 100, 4),
+        })
+
+        # Send Telegram alert
+        try:
+            from utils.telegram import send_message
+            alert = (
+                "🔴 <b>ATLAS CIRCUIT BREAKER TRIPPED</b>\n\n"
+                f"Daily loss: <b>${loss:.2f} ({loss_pct*100:.2f}%)</b>\n"
+                f"Limit: {threshold*100:.2f}% of ${self._daily_start_equity:.2f}\n"
+                f"Date: {trade_date}\n\n"
+                "⛔ All new entry orders are BLOCKED for today.\n"
+                "Existing positions and protective stops are unaffected."
+            )
+            send_message(alert)
+        except Exception as tg_exc:
+            logger.warning("Circuit breaker: could not send Telegram alert: %s", tg_exc)
+
+        return True
 
     # ── Lifecycle ──────────────────────────────────────────────
 
@@ -285,7 +421,9 @@ class LiveExecutor:
                         "reason": "not tradable on Alpaca",
                     })
         except Exception as e:
-            logger.warning("Tradability check failed (proceeding anyway): %s", e)
+            logger.warning(
+                "Tradability check failed (proceeding anyway): %s", e, exc_info=True
+            )
 
         # Pre-trade: check market state
         all_plan_tickers = (
@@ -299,10 +437,15 @@ class LiveExecutor:
                 logger.warning("Market state check: %s", mkt_check["message"])
                 # Don't block — just warn (AU state unavailable)
 
-        # Reset daily counter if new day
+        # Reset daily counter and circuit breaker if new day
         if trade_date != self._daily_date:
             self._daily_order_count = 0
             self._daily_date = trade_date
+            self._reset_circuit_breaker_if_new_day(trade_date)
+
+        # Capture starting equity for circuit breaker P&L calculations
+        if not self.is_dry_run:
+            self._capture_start_equity()
 
         report = {
             "trade_date": trade_date,
@@ -353,23 +496,42 @@ class LiveExecutor:
                 })
 
         else:
-            # Proceed with entries — apply size reduction if gate is in "reduce" mode
-            for entry_rec in plan.get("proposed_entries", []):
-                if vol_gate["action"] == "reduce":
-                    # Apply 50% size reduction: halve position_size
-                    original_qty = entry_rec.get("position_size", 0)
-                    reduced_qty = max(1, int(original_qty * vol_gate["size_multiplier"]))
-                    entry_rec = dict(entry_rec)   # shallow copy — don't mutate plan
-                    entry_rec["position_size"] = reduced_qty
-                    entry_rec["vol_gate_reduced"] = True
-                    entry_rec["vol_gate_original_qty"] = original_qty
-                    logger.warning(
-                        "Volatility gate REDUCING %s size: %d → %d (50%%): %s",
-                        entry_rec.get("ticker", ""), original_qty, reduced_qty,
-                        vol_gate["message"],
-                    )
-                result = self._execute_entry(entry_rec, trade_date)
-                report["entries"].append(result)
+            # ── Circuit breaker check before any new entries ─────────────
+            if not self.is_dry_run and self._check_circuit_breaker(trade_date):
+                report["circuit_breaker_tripped"] = True
+                for entry_rec in plan.get("proposed_entries", []):
+                    report["entries"].append({
+                        "ticker": entry_rec.get("ticker", ""),
+                        "side": "BUY",
+                        "qty": entry_rec.get("position_size", 0),
+                        "price": entry_rec.get("entry_price", 0),
+                        "success": False,
+                        "blocked": True,
+                        "reason": "circuit_breaker",
+                        "message": (
+                            f"Daily loss limit exceeded "
+                            f"({self.max_daily_loss_pct*100:.1f}% threshold)"
+                        ),
+                        "dry_run": self.is_dry_run,
+                    })
+            else:
+                # Proceed with entries — apply size reduction if gate is in "reduce" mode
+                for entry_rec in plan.get("proposed_entries", []):
+                    if vol_gate["action"] == "reduce":
+                        # Apply 50% size reduction: halve position_size
+                        original_qty = entry_rec.get("position_size", 0)
+                        reduced_qty = max(1, int(original_qty * vol_gate["size_multiplier"]))
+                        entry_rec = dict(entry_rec)   # shallow copy — don't mutate plan
+                        entry_rec["position_size"] = reduced_qty
+                        entry_rec["vol_gate_reduced"] = True
+                        entry_rec["vol_gate_original_qty"] = original_qty
+                        logger.warning(
+                            "Volatility gate REDUCING %s size: %d → %d (50%%): %s",
+                            entry_rec.get("ticker", ""), original_qty, reduced_qty,
+                            vol_gate["message"],
+                        )
+                    result = self._execute_entry(entry_rec, trade_date)
+                    report["entries"].append(result)
 
         # Place protective stop orders for filled entries
         stop_orders = self.place_stops_for_plan(
@@ -468,8 +630,8 @@ class LiveExecutor:
                         "spread_bps": round((ask - bid) / ask * 10000, 1) if ask else None,
                         "last_trade": snap.get("last_trade", 0),
                     }
-        except Exception:
-            pass  # Never let spread capture block execution
+        except Exception as e:
+            logger.debug("Entry spread capture failed (non-blocking): %s", e)
 
         # Live execution — LIMIT order at (refined) entry price
         _submit_time = datetime.now().isoformat()
@@ -635,8 +797,8 @@ class LiveExecutor:
                 _entry_str = str(pos.entry_date)[:10]
                 _entry_date = _date.fromisoformat(_entry_str)
                 holding_days = (_date.today() - _entry_date).days
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Exit entry date parsing failed (skipping holding_days): %s", e)
 
         exit_side = OrderSide.SELL
         exit_side_label = exit_side.value
@@ -691,8 +853,8 @@ class LiveExecutor:
                         "spread_bps": round((ask - bid) / ask * 10000, 1) if ask else None,
                         "last_trade": snap.get("last_trade", 0),
                     }
-        except Exception:
-            pass  # Never let spread capture block execution
+        except Exception as e:
+            logger.debug("Exit spread capture failed (non-blocking): %s", e)
 
         _submit_time = datetime.now().isoformat()
         order_result = self._broker.place_order(
@@ -778,8 +940,8 @@ class LiveExecutor:
                     result["stop_slippage_bps"] = round(
                         (_stop_price - result["fill_price"]) / _stop_price * 10000, 1
                     )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Stop slippage telemetry failed (non-blocking): %s", e)
 
             # Record exit to TradeLedger — telemetry must never crash execution
             _fill_price = result.get("fill_price") or _exit_price

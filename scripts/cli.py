@@ -28,7 +28,7 @@ import numpy as np
 from markets import get_market, list_markets as list_registered_markets
 from utils.config import get_active_config, save_config_version, list_versions
 from utils.helpers import format_aud, format_pct, format_currency
-from data.ingest import download_ticker, download_universe, get_market_tickers, cache_stats
+from data.ingest import download_ticker, download_universe, get_market_tickers, cache_stats, verify_ingest_freshness
 from universe.builder import build_universe, load_universe, get_universe_tickers
 
 # Default market (can be overridden by --market flag)
@@ -151,6 +151,17 @@ def cmd_ingest(args):
     print("  Tickers downloaded: %d" % len(results))
     file_count = stats.get("file_count", stats.get("total_files", 0))
     print("  Cache: %d files, %.1f MB" % (file_count, stats.get("total_size_mb", 0)))
+    # A5: Verify data freshness after ingestion
+    if results:
+        try:
+            is_fresh = verify_ingest_freshness(results, config=config, market_id=market_id)
+            if not is_fresh:
+                print("  ⚠ WARNING: stale data detected (halt_on_stale_data=false — continuing)")
+        except RuntimeError as freshness_err:
+            print("  ✗ STALE DATA ERROR: %s" % freshness_err)
+            raise SystemExit(1)
+        except Exception as e:
+            logger.warning("Freshness check error (non-fatal): %s", e)
 
 
 def cmd_universe(args):

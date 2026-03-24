@@ -34,6 +34,7 @@ from brokers.base import (
 )
 from brokers.alpaca import mapper
 from brokers.alpaca.market_data import AlpacaMarketData
+from brokers.retry import with_retry
 from brokers.secrets import get_secret
 
 logger = logging.getLogger("atlas.broker.alpaca")
@@ -249,6 +250,27 @@ class AlpacaBroker(BrokerAdapter):
         """Atlas market ID served by this broker."""
         return "sp500"
 
+    # ── Retry helper ──────────────────────────────────────────
+
+    def _broker_call(self, func, *args, **kwargs):
+        """Execute an Alpaca SDK call with exponential backoff retry.
+
+        Retries on transient errors (429, 502, 503, ConnectionError, TimeoutError).
+        Raises immediately on non-retryable errors (400, 401, 403, 422).
+        Raises the original exception after all retries are exhausted.
+
+        Args:
+            func: Callable (e.g. self._trade_client.get_account)
+            *args, **kwargs: Forwarded to *func*.
+
+        Returns:
+            Whatever *func* returns.
+        """
+        _retried = with_retry(label=getattr(func, "__name__", str(func)))(
+            lambda: func(*args, **kwargs)
+        )
+        return _retried()
+
     # ── Lifecycle ──────────────────────────────────────────────
 
     def connect(self) -> bool:
@@ -349,7 +371,7 @@ class AlpacaBroker(BrokerAdapter):
         self._require_connected()
 
         try:
-            account = self._trade_client.get_account()
+            account = self._broker_call(self._trade_client.get_account)
         except Exception as e:
             logger.error("get_account failed: %s", e, exc_info=True)
             return AccountInfo()
@@ -398,7 +420,7 @@ class AlpacaBroker(BrokerAdapter):
         self._require_connected()
 
         try:
-            raw_positions = self._trade_client.get_all_positions()
+            raw_positions = self._broker_call(self._trade_client.get_all_positions)
         except Exception as e:
             logger.error("get_all_positions failed: %s", e, exc_info=True)
             return []
@@ -520,7 +542,7 @@ class AlpacaBroker(BrokerAdapter):
             )
 
         try:
-            order = self._trade_client.submit_order(order_data)
+            order = self._broker_call(self._trade_client.submit_order, order_data)
         except Exception as e:
             logger.error("submit_order failed for %s: %s", ticker, e, exc_info=True)
             return OrderResult(
@@ -548,7 +570,7 @@ class AlpacaBroker(BrokerAdapter):
         self._require_connected()
 
         try:
-            self._trade_client.cancel_order_by_id(order_id)
+            self._broker_call(self._trade_client.cancel_order_by_id, order_id)
             logger.info("Order cancelled: %s", order_id)
             return OrderResult(
                 success=True, order_id=order_id,
@@ -573,7 +595,7 @@ class AlpacaBroker(BrokerAdapter):
         self._require_connected()
 
         try:
-            responses = self._trade_client.cancel_orders()
+            responses = self._broker_call(self._trade_client.cancel_orders)
         except Exception as e:
             logger.error("cancel_orders failed: %s", e, exc_info=True)
             return [OrderResult(
@@ -613,7 +635,7 @@ class AlpacaBroker(BrokerAdapter):
 
         try:
             req = GetOrdersRequest(status=QueryOrderStatus.OPEN)
-            orders = self._trade_client.get_orders(req)
+            orders = self._broker_call(self._trade_client.get_orders, req)
         except Exception as e:
             logger.error("get_orders(open) failed: %s", e, exc_info=True)
             return []
@@ -1029,7 +1051,7 @@ class AlpacaBroker(BrokerAdapter):
         self._require_connected()
 
         try:
-            order = self._trade_client.get_order_by_id(order_id)
+            order = self._broker_call(self._trade_client.get_order_by_id, order_id)
         except Exception as e:
             logger.error("get_order_by_id(%s) failed: %s", order_id, e, exc_info=True)
             return OrderResult(
