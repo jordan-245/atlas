@@ -1598,13 +1598,20 @@ class LiveExecutor:
             t.get("order_id") for t in _ledger.trades if t.get("order_id")
         }
 
-        # Get recent orders from broker (BUY side, all statuses)
+        # Get recent CLOSED orders from broker — use CLOSED status with
+        # explicit lookback window.  The previous QueryOrderStatus.ALL
+        # without an `after` param only returned today's orders, silently
+        # missing fills from prior days.
         try:
-            from alpaca.trading.client import TradingClient
             from alpaca.trading.requests import GetOrdersRequest
             from alpaca.trading.enums import QueryOrderStatus
+            from datetime import timezone, timedelta
             client = self._broker._trade_client
-            req = GetOrdersRequest(status=QueryOrderStatus.ALL, limit=50)
+            req = GetOrdersRequest(
+                status=QueryOrderStatus.CLOSED,
+                after=datetime.now(tz=timezone.utc) - timedelta(days=7),
+                limit=200,
+            )
             orders = client.get_orders(filter=req)
         except Exception as e:
             logger.error("reconcile_entry_fills: cannot fetch orders: %s", e)
@@ -1676,6 +1683,148 @@ class LiveExecutor:
             )
         else:
             logger.info("reconcile_entry_fills: no deferred fills to reconcile")
+
+        return reconciled
+
+    def reconcile_exit_fills(self) -> list:
+        """Reconcile filled SELL orders not recorded in the trade ledger.
+
+        Catches:
+          - Trailing stop fills (protective orders that filled during market hours)
+          - Plan-based exits submitted pre-market as LIMIT orders
+          - Any other sell that filled but wasn't captured at submission time
+
+        Safe to call repeatedly — already-recorded orders are skipped.
+
+        Returns:
+            List of dicts describing each reconciled exit.
+        """
+        if not self._connected or not self._broker:
+            logger.warning("reconcile_exit_fills: not connected")
+            return []
+
+        try:
+            from journal.logger import TradeLedger
+            _ledger = TradeLedger()
+        except Exception as e:
+            logger.error("reconcile_exit_fills: cannot load TradeLedger: %s", e)
+            return []
+
+        # Existing exit order IDs
+        exit_order_ids = {
+            t.get("order_id") for t in _ledger.trades
+            if t.get("type") == "exit" and t.get("order_id")
+        }
+
+        # Build entry lookup for PnL calculation
+        entry_by_ticker: dict = {}
+        for t in _ledger.trades:
+            if t.get("type") == "entry":
+                entry_by_ticker[t["ticker"]] = t
+
+        # Fetch closed orders from last 7 days
+        try:
+            from alpaca.trading.requests import GetOrdersRequest
+            from alpaca.trading.enums import QueryOrderStatus
+            from datetime import timezone, timedelta
+            client = self._broker._trade_client
+            req = GetOrdersRequest(
+                status=QueryOrderStatus.CLOSED,
+                after=datetime.now(tz=timezone.utc) - timedelta(days=7),
+                limit=200,
+            )
+            orders = client.get_orders(filter=req)
+        except Exception as e:
+            logger.error("reconcile_exit_fills: cannot fetch orders: %s", e)
+            return []
+
+        reconciled = []
+        for order in orders:
+            order_id = str(order.id)
+            if order_id in exit_order_ids:
+                continue
+
+            # Only SELL orders that are FILLED
+            if order.side.value.lower() != "sell":
+                continue
+            status_val = (
+                order.status.value.lower()
+                if hasattr(order.status, "value")
+                else str(order.status).lower()
+            )
+            if status_val != "filled":
+                continue
+
+            ticker = str(order.symbol)
+            fill_price = float(order.filled_avg_price or 0)
+            qty = int(float(order.filled_qty or order.qty or 0))
+            if fill_price <= 0 or qty <= 0:
+                continue
+
+            # Only reconcile Atlas-originated orders
+            coid = str(getattr(order, "client_order_id", ""))
+            if not coid.startswith("atlas_"):
+                continue
+
+            # Determine exit reason from client_order_id
+            if "trail" in coid:
+                reason = "trailing_stop_fill"
+            elif "exit" in coid:
+                reason = "signal_exit"
+            elif "sl" in coid or "stop" in coid:
+                reason = "stop_loss"
+            else:
+                reason = "broker_fill"
+
+            # Get entry context
+            entry = entry_by_ticker.get(ticker, {})
+            entry_price = entry.get("fill_price", 0)
+            strategy = entry.get("strategy", "unknown")
+            pnl = (
+                round((fill_price - entry_price) * qty, 2)
+                if entry_price
+                else None
+            )
+            pnl_pct = (
+                round((fill_price - entry_price) / entry_price * 100, 2)
+                if entry_price and entry_price > 0
+                else None
+            )
+
+            exit_record = {
+                "ticker": ticker,
+                "strategy": strategy,
+                "shares": qty,
+                "fill_price": fill_price,
+                "entry_price": entry_price,
+                "pnl": pnl,
+                "pnl_pct": pnl_pct,
+                "exit_reason": reason,
+                "order_id": order_id,
+                "timestamp": str(getattr(order, "filled_at", ""))[:26],
+                "reconciled": True,
+            }
+            try:
+                _ledger.record_exit(exit_record)
+                logger.info(
+                    "Reconciled exit: SELL %s %d @ $%.2f PnL=$%s (order %s)",
+                    ticker, qty, fill_price,
+                    f"{pnl:+.2f}" if pnl is not None else "?",
+                    order_id[:12],
+                )
+                reconciled.append(exit_record)
+            except Exception as e:
+                logger.error(
+                    "Failed to reconcile exit for %s: %s", ticker, e,
+                )
+
+        if reconciled:
+            logger.info(
+                "reconcile_exit_fills: recorded %d deferred exit fills",
+                len(reconciled),
+            )
+        else:
+            logger.info("reconcile_exit_fills: no deferred exits to reconcile")
 
         return reconciled
 

@@ -497,15 +497,12 @@ export default function atlasContextInjector(pi: ExtensionAPI) {
     return cachedSnapshot;
   }
 
-  // --- session_start: Display status widget ---
-  pi.on("session_start", async (_event, ctx) => {
+  // --- session_start: Cache initial snapshot (widget disabled) ---
+  pi.on("session_start", async (_event, _ctx) => {
     try {
-      const state = await getOrRefreshSnapshot();
-      const widgetLines = formatStatusWidget(state);
-      ctx.ui.setWidget("atlas-context", widgetLines);
-    } catch (err) {
-      // Don't crash session on widget failure
-      ctx.ui.setWidget("atlas-context", [`⚠️ Atlas context failed: ${(err as Error).message}`]);
+      await getOrRefreshSnapshot();
+    } catch {
+      // Silently fail — snapshot will be retried on first agent turn
     }
   });
 
@@ -518,10 +515,6 @@ export default function atlasContextInjector(pi: ExtensionAPI) {
       const intent = classifyIntent(prompt);
       const state = await getOrRefreshSnapshot();
       const injection = buildInjection(intent, state);
-
-      // Also refresh widget
-      const widgetLines = formatStatusWidget(state);
-      ctx.ui.setWidget("atlas-context", widgetLines);
 
       return {
         systemPrompt: event.systemPrompt + "\n\n" + injection,

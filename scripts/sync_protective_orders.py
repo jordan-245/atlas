@@ -179,23 +179,33 @@ def sync_market(
             logger.error("Broker connect failed for %s", market_id)
             return result
 
-        # ── Reconcile deferred entry fills ────────────────────
-        # Entry LIMIT orders may fill after submission.  Record any
-        # fills that were not captured at execution time.
+        # ── Reconcile deferred fills (entries + exits) ─────────
+        # LIMIT orders submitted pre-market fill after market open.
+        # Protective stop fills happen asynchronously.  Record any
+        # fills that were not captured at submission time.
         try:
             from brokers.live_executor import LiveExecutor
             _exec = LiveExecutor.__new__(LiveExecutor)
             _exec._broker = broker
             _exec._connected = True
-            reconciled = _exec.reconcile_entry_fills(plan=plan)
-            if reconciled:
+
+            reconciled_entries = _exec.reconcile_entry_fills(plan=plan)
+            if reconciled_entries:
                 logger.info(
                     "Reconciled %d deferred entry fills for %s",
-                    len(reconciled), market_id,
+                    len(reconciled_entries), market_id,
                 )
-                result["reconciled_fills"] = len(reconciled)
+                result["reconciled_fills"] = len(reconciled_entries)
+
+            reconciled_exits = _exec.reconcile_exit_fills()
+            if reconciled_exits:
+                logger.info(
+                    "Reconciled %d deferred exit fills for %s",
+                    len(reconciled_exits), market_id,
+                )
+                result["reconciled_exits"] = len(reconciled_exits)
         except Exception as _recon_exc:
-            logger.warning("Entry fill reconciliation failed (non-fatal): %s", _recon_exc)
+            logger.warning("Fill reconciliation failed (non-fatal): %s", _recon_exc)
 
         # ── Sync protective orders ────────────────────────────
 

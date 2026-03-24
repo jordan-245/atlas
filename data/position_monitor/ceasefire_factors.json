@@ -1,10 +1,10 @@
 {
   "baseline": 12,
-  "probability": 9,
-  "probability_label": "VERY UNLIKELY",
-  "timeline": "4+ weeks",
-  "portfolio_action": "Hold all positions. Thesis intact.",
-  "last_updated": "2026-03-16T23:01:19",
+  "probability": 21,
+  "probability_label": "UNLIKELY",
+  "timeline": "2-4 weeks",
+  "portfolio_action": "Hold but tighten stops. Prepare exit plan.",
+  "last_updated": "2026-03-24T20:00:54",
   "change_log": [
     {
       "timestamp": "2026-03-05T14:05:22",
@@ -113,6 +113,15 @@
       "confidence": "high",
       "reason": "Toggled via CLI",
       "source": "Euronews/BusinessTimes/EconomicTimes March 12 2026: Oil surges above 00 again as Iraq halts ports, IEA release fails to quell rally"
+    },
+    {
+      "timestamp": "2026-03-24T17:05:10",
+      "factor_id": "trump_tone",
+      "old_active": false,
+      "new_active": true,
+      "confidence": "medium",
+      "reason": "Toggled via CLI",
+      "source": "Guardian/NYT March 23 2026: Trump claims 'very strong talks' with Iran, delays strikes 5 days citing negotiations toward ending war; Iran disputes but Trump took concrete off-ramp action"
     }
   ],
   "factors": [
@@ -160,10 +169,10 @@
       "label": "Trump publicly signals desire for off-ramp / deal with Iran",
       "weight": 12,
       "direction": "ceasefire",
-      "active": false,
-      "confidence": "low",
-      "last_checked": null,
-      "source": "",
+      "active": true,
+      "confidence": "medium",
+      "last_checked": "2026-03-24T17:05:10",
+      "source": "Guardian/NYT March 23 2026: Trump claims 'very strong talks' with Iran, delays strikes 5 days citing negotiations toward ending war; Iran disputes but Trump took concrete off-ramp action",
       "description": "",
       "search_keywords": [
         "trump iran ceasefire deal",

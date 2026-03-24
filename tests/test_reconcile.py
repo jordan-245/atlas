@@ -162,28 +162,27 @@ class TestGetLocalPositions:
         monkeypatch.setattr("scripts.reconcile.PROJECT", tmp_path)
         journal_dir = tmp_path / "journal"
         journal_dir.mkdir()
-        ledger = {
-            "open_positions": [
-                {
-                    "ticker": "AAPL",
-                    "status": "open",
-                    "strategy": "momentum_breakout",
-                    "entry_date": "2026-03-01",
-                    "entry_price": 175.0,
-                    "shares": 10,
-                    "direction": "long",
-                },
-                {
-                    "ticker": "MSFT",
-                    "status": "open",
-                    "strategy": "trend_following",
-                    "entry_date": "2026-03-02",
-                    "entry_price": 400.0,
-                    "shares": 5,
-                    "direction": "long",
-                },
-            ]
-        }
+        # Flat list of entry/exit events (current ledger format)
+        ledger = [
+            {
+                "type": "entry",
+                "ticker": "AAPL",
+                "strategy": "momentum_breakout",
+                "timestamp": "2026-03-01T10:00:00",
+                "fill_price": 175.0,
+                "shares": 10,
+                "direction": "long",
+            },
+            {
+                "type": "entry",
+                "ticker": "MSFT",
+                "strategy": "trend_following",
+                "timestamp": "2026-03-02T10:00:00",
+                "fill_price": 400.0,
+                "shares": 5,
+                "direction": "long",
+            },
+        ]
         (journal_dir / "trade_ledger.json").write_text(json.dumps(ledger))
         reconciler = StateReconciler(MINIMAL_CONFIG, "sp500")
         positions = reconciler._get_local_positions()
@@ -196,32 +195,32 @@ class TestGetLocalPositions:
         monkeypatch.setattr("scripts.reconcile.PROJECT", tmp_path)
         journal_dir = tmp_path / "journal"
         journal_dir.mkdir()
-        ledger = {
-            "open_positions": [
-                {"ticker": "AAPL", "status": "open", "strategy": "x", "entry_price": 100, "shares": 1},
-                {"ticker": "GOOG", "status": "closed", "strategy": "x", "entry_price": 200, "shares": 2},
-            ]
-        }
+        # GOOG has entry + exit = net 0 (closed), AAPL has entry only (open)
+        ledger = [
+            {"type": "entry", "ticker": "AAPL", "strategy": "x", "fill_price": 100, "shares": 1},
+            {"type": "entry", "ticker": "GOOG", "strategy": "x", "fill_price": 200, "shares": 2},
+            {"type": "exit", "ticker": "GOOG", "strategy": "x", "fill_price": 210, "shares": 2},
+        ]
         (journal_dir / "trade_ledger.json").write_text(json.dumps(ledger))
         reconciler = StateReconciler(MINIMAL_CONFIG, "sp500")
         positions = reconciler._get_local_positions()
         assert "AAPL" in positions
         assert "GOOG" not in positions
 
-    def test_handles_positions_key_fallback(self, tmp_path, monkeypatch):
-        """Supports 'positions' key (legacy format) as well as 'open_positions'."""
+    def test_handles_partial_exits(self, tmp_path, monkeypatch):
+        """Position with partial exit shows remaining shares as open."""
         monkeypatch.setattr("scripts.reconcile.PROJECT", tmp_path)
         journal_dir = tmp_path / "journal"
         journal_dir.mkdir()
-        ledger = {
-            "positions": [
-                {"ticker": "TSLA", "status": "open", "strategy": "x", "entry_price": 250, "shares": 3},
-            ]
-        }
+        ledger = [
+            {"type": "entry", "ticker": "TSLA", "strategy": "x", "fill_price": 250, "shares": 10},
+            {"type": "exit", "ticker": "TSLA", "strategy": "x", "fill_price": 260, "shares": 7},
+        ]
         (journal_dir / "trade_ledger.json").write_text(json.dumps(ledger))
         reconciler = StateReconciler(MINIMAL_CONFIG, "sp500")
         positions = reconciler._get_local_positions()
         assert "TSLA" in positions
+        assert positions["TSLA"]["shares"] == 3
 
     def test_graceful_on_corrupt_ledger(self, tmp_path, monkeypatch):
         monkeypatch.setattr("scripts.reconcile.PROJECT", tmp_path)
@@ -245,22 +244,21 @@ class TestReconcileLogic:
         monkeypatch.setattr("scripts.reconcile.PROJECT", tmp_path)
         reconciler = StateReconciler(MINIMAL_CONFIG, "sp500")
 
-        # Build local ledger if requested
+        # Build local ledger if requested (flat list of entry/exit events)
         if local_tickers:
             journal_dir = tmp_path / "journal"
             journal_dir.mkdir(exist_ok=True)
-            ledger = {
-                "open_positions": [
-                    {
-                        "ticker": t,
-                        "status": "open",
-                        "strategy": "mock_strat",
-                        "entry_price": 100.0,
-                        "shares": 10,
-                    }
-                    for t in local_tickers
-                ]
-            }
+            ledger = [
+                {
+                    "type": "entry",
+                    "ticker": t,
+                    "strategy": "mock_strat",
+                    "fill_price": 100.0,
+                    "shares": 10,
+                    "timestamp": "2026-03-01T10:00:00",
+                }
+                for t in local_tickers
+            ]
             (journal_dir / "trade_ledger.json").write_text(json.dumps(ledger))
 
         # Mock broker calls (side_effect so report.broker_positions is set correctly)
@@ -308,7 +306,7 @@ class TestReconcileLogic:
         assert d.category == "missing_local"
         assert d.ticker == "NVDA"
         assert d.severity == "high"
-        assert d.auto_fixable is True
+        assert d.auto_fixable is False  # No atlas_fill in recent_fills
 
     def test_missing_broker_discrepancy(self, tmp_path, monkeypatch):
         """Local has AAPL, broker doesn't, no recent fill → missing_broker."""
@@ -376,7 +374,35 @@ class TestReconcileLogic:
 class TestAutoFix:
     def test_auto_fix_sl_filled(self, tmp_path, monkeypatch):
         monkeypatch.setattr("scripts.reconcile.PROJECT", tmp_path)
+        # Create ledger with open TSLA position
+        journal_dir = tmp_path / "journal"
+        journal_dir.mkdir()
+        ledger = [
+            {
+                "type": "entry",
+                "ticker": "TSLA",
+                "strategy": "momentum_breakout",
+                "fill_price": 250.0,
+                "shares": 10,
+                "timestamp": "2026-03-01T10:00:00",
+            }
+        ]
+        (journal_dir / "trade_ledger.json").write_text(json.dumps(ledger))
+        
         reconciler = StateReconciler(MINIMAL_CONFIG, "sp500")
+        # Mock recent fills with a sell order for TSLA
+        reconciler._get_recent_fills = MagicMock(return_value=[
+            {
+                "ticker": "TSLA",
+                "side": "sell",
+                "qty": 10,
+                "fill_price": 240.0,
+                "filled_at": "2026-03-05T14:00:00",
+                "order_type": "stop",
+                "order_id": "test_order_123",
+            }
+        ])
+        
         disc = Discrepancy(
             category="sl_filled",
             ticker="TSLA",
@@ -394,7 +420,37 @@ class TestAutoFix:
 
     def test_auto_fix_missing_local(self, tmp_path, monkeypatch):
         monkeypatch.setattr("scripts.reconcile.PROJECT", tmp_path)
+        # Create empty ledger
+        journal_dir = tmp_path / "journal"
+        journal_dir.mkdir()
+        (journal_dir / "trade_ledger.json").write_text("[]")
+        
         reconciler = StateReconciler(MINIMAL_CONFIG, "sp500")
+        # Mock broker position for NVDA
+        reconciler._get_broker_positions = MagicMock(return_value={
+            "NVDA": {
+                "qty": 5,
+                "market_value": 2500.0,
+                "avg_entry": 500.0,
+                "unrealized_pl": 0,
+                "side": "long",
+            }
+        })
+        # Mock recent fills with an Atlas buy order for NVDA
+        reconciler._get_recent_fills = MagicMock(return_value=[
+            {
+                "ticker": "NVDA",
+                "side": "buy",
+                "qty": 5,
+                "fill_price": 500.0,
+                "filled_at": "2026-03-02T10:00:00",
+                "order_type": "limit",
+                "order_id": "test_order_nvda_123",
+                "client_order_id": "atlas_sp500_momentum_breakout_NVDA_123",
+                "is_atlas": True,
+            }
+        ])
+        
         disc = Discrepancy(
             category="missing_local",
             ticker="NVDA",
@@ -427,7 +483,35 @@ class TestAutoFix:
     def test_auto_fix_idempotent(self, tmp_path, monkeypatch):
         """Calling auto_fix twice doesn't double-apply."""
         monkeypatch.setattr("scripts.reconcile.PROJECT", tmp_path)
+        # Create ledger with open AAPL position
+        journal_dir = tmp_path / "journal"
+        journal_dir.mkdir()
+        ledger = [
+            {
+                "type": "entry",
+                "ticker": "AAPL",
+                "strategy": "trend_following",
+                "fill_price": 175.0,
+                "shares": 8,
+                "timestamp": "2026-03-01T10:00:00",
+            }
+        ]
+        (journal_dir / "trade_ledger.json").write_text(json.dumps(ledger))
+        
         reconciler = StateReconciler(MINIMAL_CONFIG, "sp500")
+        # Mock recent fills with a sell order for AAPL
+        reconciler._get_recent_fills = MagicMock(return_value=[
+            {
+                "ticker": "AAPL",
+                "side": "sell",
+                "qty": 8,
+                "fill_price": 180.0,
+                "filled_at": "2026-03-05T14:00:00",
+                "order_type": "stop",
+                "order_id": "test_order_456",
+            }
+        ])
+        
         disc = Discrepancy(
             category="sl_filled",
             ticker="AAPL",
@@ -443,7 +527,64 @@ class TestAutoFix:
 
     def test_auto_fix_mixed_fixable(self, tmp_path, monkeypatch):
         monkeypatch.setattr("scripts.reconcile.PROJECT", tmp_path)
+        # Create ledger with AAPL and GOOG entries
+        journal_dir = tmp_path / "journal"
+        journal_dir.mkdir()
+        ledger = [
+            {
+                "type": "entry",
+                "ticker": "AAPL",
+                "strategy": "momentum_breakout",
+                "fill_price": 175.0,
+                "shares": 10,
+                "timestamp": "2026-03-01T10:00:00",
+            },
+            {
+                "type": "entry",
+                "ticker": "GOOG",
+                "strategy": "trend_following",
+                "fill_price": 140.0,
+                "shares": 5,
+                "timestamp": "2026-03-01T11:00:00",
+            },
+        ]
+        (journal_dir / "trade_ledger.json").write_text(json.dumps(ledger))
+        
         reconciler = StateReconciler(MINIMAL_CONFIG, "sp500")
+        # Mock recent fills with a sell order for AAPL and a buy order for NVDA
+        reconciler._get_recent_fills = MagicMock(return_value=[
+            {
+                "ticker": "AAPL",
+                "side": "sell",
+                "qty": 10,
+                "fill_price": 180.0,
+                "filled_at": "2026-03-05T14:00:00",
+                "order_type": "stop",
+                "order_id": "test_order_789",
+            },
+            {
+                "ticker": "NVDA",
+                "side": "buy",
+                "qty": 7,
+                "fill_price": 500.0,
+                "filled_at": "2026-03-02T10:00:00",
+                "order_type": "limit",
+                "order_id": "test_order_nvda_789",
+                "client_order_id": "atlas_sp500_trend_following_NVDA_789",
+                "is_atlas": True,
+            }
+        ])
+        # Mock broker position for NVDA (missing_local case)
+        reconciler._get_broker_positions = MagicMock(return_value={
+            "NVDA": {
+                "qty": 7,
+                "market_value": 3500.0,
+                "avg_entry": 500.0,
+                "unrealized_pl": 0,
+                "side": "long",
+            }
+        })
+        
         reconciler.report.discrepancies = [
             Discrepancy(category="sl_filled", ticker="AAPL", description="x", severity="high", auto_fixable=True),
             Discrepancy(category="missing_broker", ticker="GOOG", description="y", severity="high", auto_fixable=False),
