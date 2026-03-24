@@ -224,8 +224,12 @@ class LivePortfolio:
             pos.entry_value = pi.cost_basis or (pi.entry_price * pi.shares)
             self.positions.append(pos)
 
-        # Enrich positions with plan metadata (stop prices, strategy, etc.)
+        # Enrich positions with plan metadata (strategy, entry_date, etc.)
         self._enrich_from_plans()
+
+        # Enrich with LIVE stop prices from broker's open orders
+        # (trailing stops update dynamically — plan files only have initial levels)
+        self._enrich_from_broker_stops()
 
         n_atlas = len(self.atlas_positions)
         n_manual = len(self.manual_positions)
@@ -235,35 +239,54 @@ class LivePortfolio:
                      self.cash, self.equity(), self._broker_equity)
 
     def _enrich_from_plans(self):
-        """Fill in stop_price, strategy, entry_date from recent trade plans.
+        """Fill in stop_price, strategy, entry_date from recent trade plans,
+        with fallback to the state file for authoritative strategy names.
 
         The broker doesn't provide stop/TP levels or Atlas strategy names.
-        We recover them from the plan files that generated the entries.
+        We recover them from: (1) plan files, (2) state file (which has
+        strategy names from Alpaca client_order_id parsing).
         """
-        plans_dir = PROJECT_ROOT / "plans"
-        if not plans_dir.exists():
-            return
-
-        # Build {ticker: plan_entry} from recent plans for this market
         meta: dict[str, dict] = {}
-        for plan_file in sorted(plans_dir.glob(f"plan_{self.market_id}_*.json"), reverse=True)[:30]:
+
+        # Source 1: plan files
+        plans_dir = PROJECT_ROOT / "plans"
+        if plans_dir.exists():
+            for plan_file in sorted(plans_dir.glob(f"plan_{self.market_id}_*.json"), reverse=True)[:30]:
+                try:
+                    with open(plan_file) as f:
+                        plan = json.load(f)
+                except Exception:
+                    continue
+                trade_date = plan.get("trade_date", "")
+                for entry in plan.get("proposed_entries", []):
+                    ticker = entry.get("ticker", "")
+                    if ticker and ticker not in meta:
+                        meta[ticker] = {
+                            "strategy": entry.get("strategy", ""),
+                            "entry_date": trade_date,
+                            "stop_price": entry.get("stop_price", 0),
+                            "take_profit": entry.get("take_profit"),
+                            "confidence": entry.get("confidence", 0),
+                            "sector": entry.get("sector", "Unknown"),
+                        }
+
+        # Source 2: state file (has authoritative strategy names from
+        # Alpaca client_order_id parsing — fills gaps where plans are missing)
+        state_path = self._state_path()
+        if state_path.exists():
             try:
-                with open(plan_file) as f:
-                    plan = json.load(f)
+                with open(state_path) as f:
+                    state = json.load(f)
+                for sp in state.get("positions", []):
+                    ticker = sp.get("ticker", "")
+                    strategy = sp.get("strategy", "")
+                    if ticker and strategy and strategy != "unknown":
+                        if ticker not in meta or not meta[ticker].get("strategy"):
+                            meta.setdefault(ticker, {})["strategy"] = strategy
+                        if sp.get("entry_date"):
+                            meta[ticker].setdefault("entry_date", sp["entry_date"])
             except Exception:
-                continue
-            trade_date = plan.get("trade_date", "")
-            for entry in plan.get("proposed_entries", []):
-                ticker = entry.get("ticker", "")
-                if ticker and ticker not in meta:
-                    meta[ticker] = {
-                        "strategy": entry.get("strategy", ""),
-                        "entry_date": trade_date,
-                        "stop_price": entry.get("stop_price", 0),
-                        "take_profit": entry.get("take_profit"),
-                        "confidence": entry.get("confidence", 0),
-                        "sector": entry.get("sector", "Unknown"),
-                    }
+                pass
 
         enriched = 0
         for pos in self.positions:
@@ -285,7 +308,104 @@ class LivePortfolio:
             enriched += 1
 
         if enriched:
-            logger.info("Enriched %d positions with plan metadata (stops, strategy)", enriched)
+            logger.info("Enriched %d positions with plan/state metadata (stops, strategy)", enriched)
+
+    def _enrich_from_broker_stops(self):
+        """Fill in stop_price from broker's open sell orders.
+
+        The broker's open orders contain the actual, current stop levels
+        (including trailing stops that have ratcheted up).  This is more
+        accurate than plan files which only have the initial stop.
+
+        Also updates the positions list in the state file so the dashboard
+        always has current stop prices without a separate sync step.
+        """
+        if not self._broker:
+            return
+
+        try:
+            open_orders = self._broker.get_open_orders()
+        except Exception as e:
+            logger.debug("Could not fetch open orders for stop enrichment: %s", e)
+            return
+
+        # Build {ticker: stop_price} from sell orders
+        stop_map: dict[str, dict] = {}
+        for o in open_orders:
+            raw = getattr(o, 'raw', {}) or {}
+            side = getattr(o, 'side', raw.get('side', ''))
+            side_str = str(side).lower()
+            if 'sell' not in side_str:
+                continue
+
+            ticker = getattr(o, 'ticker', raw.get('symbol', ''))
+            order_type = str(raw.get('order_type', raw.get('type', ''))).lower()
+            stop_price = raw.get('stop_price')
+            trail_price = raw.get('trail_price')
+            limit_price = raw.get('limit_price')
+
+            if stop_price:
+                stop_map[ticker] = {
+                    'stop_price': float(stop_price),
+                    'type': 'trailing' if 'trail' in order_type else 'stop',
+                }
+            elif limit_price and 'limit' in order_type:
+                stop_map[ticker] = {
+                    'stop_price': float(limit_price),
+                    'type': 'limit_exit',
+                }
+
+        enriched = 0
+        for pos in self.positions:
+            info = stop_map.get(pos.ticker)
+            if info and info['stop_price'] > 0:
+                pos.stop_price = info['stop_price']
+                enriched += 1
+
+        if enriched:
+            logger.info("Enriched %d positions with live broker stop prices", enriched)
+
+        # Persist updated stops to state file so dashboard picks them up
+        if enriched:
+            self._update_state_positions()
+
+    def _update_state_positions(self):
+        """Merge current stop prices into state file without clobbering strategy data.
+
+        The state file may have authoritative strategy names (from Alpaca
+        client_order_id parsing) that the broker doesn't provide. We only
+        update fields where we have better data (stop_price from live
+        broker orders), and preserve everything else.
+        """
+        path = self._state_path()
+        if not path.exists():
+            return
+        try:
+            with open(path) as f:
+                state = json.load(f)
+
+            # Build lookup from existing state
+            existing = {p.get("ticker"): p for p in state.get("positions", [])}
+
+            merged = []
+            for pos in self.positions:
+                prev = existing.get(pos.ticker, {})
+                merged.append({
+                    "ticker": pos.ticker,
+                    # Prefer existing strategy if broker returns unknown/empty
+                    "strategy": prev.get("strategy") if pos.strategy in ("unknown", "") and prev.get("strategy") else pos.strategy,
+                    "entry_date": prev.get("entry_date") or pos.entry_date,
+                    "entry_price": pos.entry_price,
+                    "shares": pos.shares,
+                    # Always use live broker stop (more current than state)
+                    "stop_price": pos.stop_price if pos.stop_price > 0 else prev.get("stop_price", 0),
+                    "order_id": prev.get("order_id", getattr(pos, 'order_id', '')),
+                })
+            state["positions"] = merged
+            with open(path, "w") as f:
+                json.dump(state, f, indent=2)
+        except Exception as e:
+            logger.debug("Could not update state positions: %s", e)
 
     # ── Portfolio interface ──────────────────────
 

@@ -186,6 +186,13 @@ def _order_to_result(order, atlas_ticker: str, side: OrderSide) -> OrderResult:
             "filled_at": str(getattr(order, "filled_at", "")),
             "submitted_at": str(getattr(order, "submitted_at", "")),
             "order_market": "US",
+            # Price levels for stop/trailing stop/limit orders
+            "stop_price": str(getattr(order, "stop_price", "") or ""),
+            "limit_price": str(getattr(order, "limit_price", "") or ""),
+            "trail_price": str(getattr(order, "trail_price", "") or ""),
+            "trail_percent": str(getattr(order, "trail_percent", "") or ""),
+            "qty": str(requested_qty_raw or ""),
+            "side": str(getattr(getattr(order, "side", None), "value", "")).lower(),
         },
     )
 
