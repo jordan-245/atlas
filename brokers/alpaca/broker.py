@@ -717,9 +717,10 @@ class AlpacaBroker(BrokerAdapter):
                 "errors": 0, "per_ticker": {},
             }
 
-        # Fetch all open orders directly so we can inspect order_type
+        # Fetch all open orders directly so we can inspect order_type.
+        # nested=True includes OCO/OTO child legs that are otherwise invisible.
         try:
-            req = GetOrdersRequest(status=QueryOrderStatus.OPEN)
+            req = GetOrdersRequest(status=QueryOrderStatus.OPEN, nested=True)
             open_orders_raw = self._trade_client.get_orders(req)
         except Exception as e:
             logger.error("sync_all_protective_orders: get_orders failed: %s", e, exc_info=True)
@@ -729,10 +730,19 @@ class AlpacaBroker(BrokerAdapter):
                 "errors": len(positions), "per_ticker": {},
             }
 
+        # Flatten order list to include OCO/OTO child legs.
+        # E.g. an OCO LIMIT SELL (TP) may have a child STOP SELL (SL)
+        # with status=HELD that only appears in the parent's .legs list.
+        all_scan_orders: list = []
+        for order in (open_orders_raw or []):
+            all_scan_orders.append(order)
+            if hasattr(order, "legs") and order.legs:
+                all_scan_orders.extend(order.legs)
+
         # Build sets of tickers with existing SL and TP orders
         tickers_with_stop: set = set()
         tickers_with_tp: dict[str, float] = {}  # ticker → existing TP limit price
-        for order in (open_orders_raw or []):
+        for order in all_scan_orders:
             order_type_raw = getattr(order, "order_type", None)
             order_type_str = str(
                 order_type_raw.value if hasattr(order_type_raw, "value") else order_type_raw
@@ -900,6 +910,19 @@ class AlpacaBroker(BrokerAdapter):
                         logger.debug(
                             "sync_protective: %s already has LIMIT SELL @ %.2f (matches TP %.2f) — skipping",
                             ticker, tickers_with_tp[ticker], take_profit,
+                        )
+                    elif has_existing_stop or ticker_result.get("sl_action") in ("placed",):
+                        # On Alpaca, each SELL order claims position qty.
+                        # A stop order holding all shares prevents placing an
+                        # independent TP LIMIT SELL.  Position IS protected by SL.
+                        # TODO: use OCO pair for combined SL+TP placement.
+                        ticker_result["tp_action"] = "skipped"
+                        ticker_result["tp_reason"] = "qty_held_by_stop"
+                        logger.info(
+                            "sync_protective: %s TP skipped — stop order holds all "
+                            "qty (Alpaca does not allow independent SL+TP). "
+                            "Position protected by SL @ %.2f",
+                            ticker, stop_price,
                         )
                     elif dry_run:
                         logger.info(

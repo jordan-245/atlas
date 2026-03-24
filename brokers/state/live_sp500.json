@@ -152,7 +152,7 @@
   "daily_high_water": 3519.83,
   "halted": false,
   "halt_reason": "",
-  "last_saved": "2026-03-14T08:00:55.993745",
+  "last_saved": "2026-03-25T01:36:22.984618",
   "positions": [
     {
       "ticker": "COP",
@@ -160,7 +160,7 @@
       "entry_date": "2026-03-25",
       "entry_price": 121.06,
       "shares": 1,
-      "stop_price": 122.03,
+      "stop_price": 122.13,
       "order_id": ""
     },
     {
@@ -187,7 +187,7 @@
       "entry_date": "2026-03-25",
       "entry_price": 257.03,
       "shares": 4,
-      "stop_price": 258.17,
+      "stop_price": 258.605,
       "order_id": ""
     },
     {
@@ -205,7 +205,7 @@
       "entry_date": "2026-03-25",
       "entry_price": 670.0,
       "shares": 1,
-      "stop_price": 673.94,
+      "stop_price": 677.75,
       "order_id": ""
     },
     {
