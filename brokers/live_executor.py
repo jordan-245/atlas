@@ -968,6 +968,33 @@ class LiveExecutor:
             except Exception as _ledger_exc:
                 logger.warning("TradeLedger exit record failed (non-fatal): %s", _ledger_exc)
 
+            # Record to LivePortfolio closed_trades for dashboard display
+            try:
+                from brokers.live_portfolio import LivePortfolio
+                _market_id = self.config.get("market_id", "sp500")
+                _portfolio = LivePortfolio(self.config, market_id=_market_id)
+                _portfolio.load_state()
+                _closed_trade = {
+                    "ticker": ticker,
+                    "strategy": _exit_record.get("strategy", "unknown"),
+                    "entry_price": _exit_record.get("entry_price", 0),
+                    "exit_price": _exit_record.get("fill_price", 0),
+                    "shares": _exit_record.get("shares", 0),
+                    "pnl": _exit_record.get("pnl", 0),
+                    "pnl_pct": _exit_record.get("pnl_pct", 0),
+                    "holding_days": _exit_record.get("holding_days", 0),
+                    "exit_reason": _exit_record.get("exit_reason", "unknown"),
+                    "exit_date": trade_date,
+                    "order_id": _exit_record.get("order_id", ""),
+                }
+                _portfolio.record_closed_trade(_closed_trade)
+                logger.debug(
+                    "Recorded exit to LivePortfolio: %s PnL=$%.2f",
+                    ticker, _exit_record.get("pnl", 0),
+                )
+            except Exception as _portfolio_exc:
+                logger.warning("LivePortfolio exit record failed (non-fatal): %s", _portfolio_exc)
+
             # Record round-trip trade for post-trade analysis
             try:
                 from journal.round_trip import RoundTripStore
