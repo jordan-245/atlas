@@ -1,10 +1,10 @@
 {
   "baseline": 12,
-  "probability": 21,
-  "probability_label": "UNLIKELY",
-  "timeline": "2-4 weeks",
-  "portfolio_action": "Hold but tighten stops. Prepare exit plan.",
-  "last_updated": "2026-03-24T20:00:54",
+  "probability": 35,
+  "probability_label": "COIN FLIP",
+  "timeline": "1-2 weeks",
+  "portfolio_action": "\u26a0\ufe0f Reduce energy concentration. Trim INSW, partial XOP profits.",
+  "last_updated": "2026-03-25T00:01:30",
   "change_log": [
     {
       "timestamp": "2026-03-05T14:05:22",
@@ -122,6 +122,15 @@
       "confidence": "medium",
       "reason": "Toggled via CLI",
       "source": "Guardian/NYT March 23 2026: Trump claims 'very strong talks' with Iran, delays strikes 5 days citing negotiations toward ending war; Iran disputes but Trump took concrete off-ramp action"
+    },
+    {
+      "timestamp": "2026-03-24T23:06:44",
+      "factor_id": "backchannel",
+      "old_active": false,
+      "new_active": true,
+      "confidence": "medium",
+      "reason": "Toggled via CLI",
+      "source": "WSJ/Statesman/CBS March 24 2026: Confirmed back-channel diplomacy through Oman+Egypt mediators - Egypt called IRGC directly, Iran receiving US messages; Trump 5-day energy-strike pause follows"
     }
   ],
   "factors": [
@@ -150,10 +159,10 @@
       "label": "Confirmed backchannel talks (Oman/Qatar mediation, both sides participating)",
       "weight": 14,
       "direction": "ceasefire",
-      "active": false,
-      "confidence": "low",
-      "last_checked": "2026-03-05T12:53:22",
-      "source": "revert",
+      "active": true,
+      "confidence": "medium",
+      "last_checked": "2026-03-24T23:07:03",
+      "source": "WSJ/Statesman/CBS March 24 2026: Egypt called IRGC directly; Oman mediated; Trump 5-day energy strike pause follows back-channel contact",
       "description": "",
       "search_keywords": [
         "iran backchannel talks",

@@ -3,7 +3,7 @@
   "generated_at": "2026-03-24T19:03:12.806154",
   "market_id": "sp500",
   "config_version": "v3.0",
-  "status": "APPROVED",
+  "status": "EXECUTED",
   "portfolio_snapshot": {
     "equity": 5016.87,
     "cash": 1524.66,
@@ -2929,5 +2929,12 @@
       "cap": 1
     }
   },
-  "approved_at": "2026-03-24T19:07:24.063176"
+  "approved_at": "2026-03-24T19:07:24.063176",
+  "executed_at": "2026-03-24T23:15:54.545845",
+  "execution_report": {
+    "successful_entries": 3,
+    "successful_exits": 0,
+    "total_entries": 3,
+    "total_exits": 0
+  }
 }
