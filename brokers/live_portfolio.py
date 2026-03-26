@@ -109,7 +109,7 @@ class LivePortfolio:
                 logger.warning("Failed to load live state: %s", e)
 
     def save_state(self):
-        """Persist closed-trade history and equity curve.
+        """Persist closed-trade history, equity curve, and current positions.
 
         Refuses to write if broker_data_valid is False to prevent
         corrupting state with zeroed broker data.
@@ -123,9 +123,25 @@ class LivePortfolio:
 
         path = self._state_path()
         path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Serialize current positions so reconciliation and dashboard
+        # can read them without a live broker connection.
+        positions_list = []
+        for pos in self.positions:
+            positions_list.append({
+                "ticker": pos.ticker,
+                "strategy": pos.strategy,
+                "entry_date": pos.entry_date,
+                "entry_price": pos.entry_price,
+                "shares": pos.shares,
+                "stop_price": pos.stop_price,
+                "order_id": getattr(pos, 'order_id', ''),
+            })
+
         state = {
             "market_id": self.market_id,
             "mode": "live",
+            "positions": positions_list,
             "closed_trades": self.closed_trades,
             "equity_history": self.equity_history,
             "daily_high_water": self.daily_high_water,
@@ -349,11 +365,10 @@ class LivePortfolio:
                     'stop_price': float(stop_price),
                     'type': 'trailing' if 'trail' in order_type else 'stop',
                 }
-            elif limit_price and 'limit' in order_type:
-                stop_map[ticker] = {
-                    'stop_price': float(limit_price),
-                    'type': 'limit_exit',
-                }
+            # NOTE: limit sell orders (take-profits) are intentionally ignored.
+            # In OCO pairs, the limit leg is the take-profit target, not a stop.
+            # Previously an elif here treated limit_price as stop_price, which
+            # caused false stop_hit exits when TP was above current price.
 
         enriched = 0
         for pos in self.positions:

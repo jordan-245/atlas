@@ -49,6 +49,7 @@ try:
         TrailingStopOrderRequest,
         GetOrdersRequest,
         StopLossRequest,
+        TakeProfitRequest,
     )
     from alpaca.trading.enums import (
         OrderSide as AlpacaSide,
@@ -630,25 +631,35 @@ class AlpacaBroker(BrokerAdapter):
         return results
 
     def get_open_orders(self) -> list[OrderResult]:
-        """Return all currently open/working orders.
+        """Return all currently open/working orders, including OCO legs.
 
-        Queries Alpaca with status=open, which returns orders in:
-        new, partially_filled, pending states.
+        Queries Alpaca with status=open and nested=True so that OCO/OTO
+        child legs (which have status=HELD) are included.  Without this,
+        the stop leg of an OCO pair is invisible because Alpaca only
+        returns the active limit leg at the top level.
 
         Returns:
-            List of OrderResult for open orders.
+            List of OrderResult for open orders (including HELD legs).
         """
         self._require_connected()
 
         try:
-            req = GetOrdersRequest(status=QueryOrderStatus.OPEN)
+            req = GetOrdersRequest(status=QueryOrderStatus.OPEN, nested=True)
             orders = self._broker_call(self._trade_client.get_orders, req)
         except Exception as e:
             logger.error("get_orders(open) failed: %s", e, exc_info=True)
             return []
 
-        results = []
+        # Flatten: include OCO/OTO child legs that sit inside .legs
+        # (e.g. a HELD stop sell inside an OCO limit sell parent).
+        all_orders: list = []
         for order in (orders or []):
+            all_orders.append(order)
+            if hasattr(order, "legs") and order.legs:
+                all_orders.extend(order.legs)
+
+        results = []
+        for order in all_orders:
             symbol = str(getattr(order, "symbol", ""))
             atlas_ticker = mapper.to_atlas(symbol)
             side_raw = getattr(order, "side", None)
@@ -656,7 +667,7 @@ class AlpacaBroker(BrokerAdapter):
             side = OrderSide.BUY if side_str == "buy" else OrderSide.SELL
             results.append(_order_to_result(order, atlas_ticker, side))
 
-        logger.debug("get_open_orders: %d open orders", len(results))
+        logger.debug("get_open_orders: %d open orders (incl. OCO legs)", len(results))
         return results
 
     def sync_all_protective_orders(
@@ -739,9 +750,18 @@ class AlpacaBroker(BrokerAdapter):
             if hasattr(order, "legs") and order.legs:
                 all_scan_orders.extend(order.legs)
 
-        # Build sets of tickers with existing SL and TP orders
-        tickers_with_stop: set = set()
-        tickers_with_tp: dict[str, float] = {}  # ticker → existing TP limit price
+        # Strategy trailing stop ATR multipliers for Path A stop tightening
+        _TRAILING_MULTS = {
+            "trend_following": 2.5,
+            "momentum_breakout": 4.0,
+            "sector_rotation": 3.5,
+        }
+
+        # Build dicts of tickers with existing SL and TP orders
+        # tickers_with_stop: {ticker: {"price": X, "order_id": Y}}
+        # tickers_with_tp: {ticker: {"price": X, "order_id": Y}}
+        tickers_with_stop: dict[str, dict] = {}
+        tickers_with_tp: dict[str, dict] = {}
         for order in all_scan_orders:
             order_type_raw = getattr(order, "order_type", None)
             order_type_str = str(
@@ -756,17 +776,20 @@ class AlpacaBroker(BrokerAdapter):
 
             if side_str == "sell":
                 if order_type_str in ("stop", "stop_limit", "trailing_stop"):
-                    tickers_with_stop.add(atlas_ticker)
+                    stop_price = float(getattr(order, "stop_price", 0) or 0)
+                    order_id = str(getattr(order, "id", ""))
+                    tickers_with_stop[atlas_ticker] = {"price": stop_price, "order_id": order_id}
                     logger.debug(
-                        "sync_protective: found existing stop SELL for %s (type=%s)",
-                        atlas_ticker, order_type_str,
+                        "sync_protective: found existing stop SELL for %s (type=%s, price=%.2f, id=%s)",
+                        atlas_ticker, order_type_str, stop_price, order_id,
                     )
                 elif order_type_str == "limit":
                     limit_price = float(getattr(order, "limit_price", 0) or 0)
-                    tickers_with_tp[atlas_ticker] = limit_price
+                    order_id = str(getattr(order, "id", ""))
+                    tickers_with_tp[atlas_ticker] = {"price": limit_price, "order_id": order_id}
                     logger.debug(
-                        "sync_protective: found existing LIMIT SELL for %s @ %.2f (TP candidate)",
-                        atlas_ticker, limit_price,
+                        "sync_protective: found existing LIMIT SELL for %s @ %.2f (TP candidate, id=%s)",
+                        atlas_ticker, limit_price, order_id,
                     )
 
         # Normalise plan into {ticker: entry_dict} for stop/tp-price lookup
@@ -846,127 +869,341 @@ class AlpacaBroker(BrokerAdapter):
                 has_existing_stop = ticker in tickers_with_stop
 
                 if has_tp:
-                    # ═══ Path A: Strategy has TP → fixed SL (GTC) + fixed TP (GTC) ═══
+                    # ═══ Path A: Strategy has TP → OCO order (SL + TP, one-cancels-other) ═══
                     take_profit = round(float(take_profit), 2)
                     ticker_result["take_profit"] = take_profit
 
-                    # ── SL (fixed STOP SELL GTC) ───────────────
-                    if has_existing_stop:
-                        sl_already_exists += 1
-                        ticker_result["sl_action"] = "skipped"
-                        ticker_result["sl_reason"] = "stop_exists"
-                        logger.debug("sync_protective: %s already has stop order — skipping SL", ticker)
+                    # Check if both SL and TP already exist
+                    has_existing_tp = ticker in tickers_with_tp and _prices_match(
+                        tickers_with_tp[ticker]["price"], take_profit
+                    )
+
+                    if has_existing_stop and has_existing_tp:
+                        # Both already exist → check if we should tighten the stop
+                        existing_stop_price = tickers_with_stop[ticker]["price"]
+                        existing_stop_order_id = tickers_with_stop[ticker]["order_id"]
+                        existing_tp_price = tickers_with_tp[ticker]["price"]
+                        existing_tp_order_id = tickers_with_tp[ticker]["order_id"]
+                        
+                        # Get strategy's trailing stop multiplier
+                        strategy_name = plan_entry.get("strategy", "")
+                        trailing_mult = _TRAILING_MULTS.get(strategy_name, 0)
+                        
+                        should_tighten = False
+                        ideal_stop = existing_stop_price
+                        
+                        if trailing_mult > 0 and pos.current_price > pos.entry_price * 1.005:
+                            # Position is profitable — compute trailing stop
+                            # Derive ATR from original stop distance (conservative estimate)
+                            atr_stop_mult = plan_entry.get("atr_stop_mult", 2.0)
+                            if atr_stop_mult <= 0:
+                                atr_stop_mult = 2.0
+                            estimated_atr = (pos.entry_price - stop_price) / atr_stop_mult
+                            
+                            # Compute ideal trailing stop from current price
+                            # (In production, would track highest_price; here we use current_price conservatively)
+                            ideal_stop = pos.current_price - (trailing_mult * estimated_atr)
+                            
+                            # Only tighten if:
+                            # 1. New stop is meaningfully higher (1% or $0.50, whichever is larger)
+                            # 2. New stop doesn't exceed TP (must stay below)
+                            min_improvement = max(existing_stop_price * 0.01, 0.50)
+                            if (ideal_stop > existing_stop_price + min_improvement 
+                                and ideal_stop < take_profit * 0.995):
+                                should_tighten = True
+                        
+                        if should_tighten:
+                            # Tighten the stop by canceling existing OCO and placing new one
+                            if dry_run:
+                                logger.info(
+                                    "sync_protective [DRY RUN]: would tighten %s stop from $%.2f to $%.2f "
+                                    "(trailing stop ratchet, strategy=%s)",
+                                    ticker, existing_stop_price, ideal_stop, strategy_name,
+                                )
+                                ticker_result["sl_action"] = "dry_run_tightened"
+                                ticker_result["sl_tightened_from"] = existing_stop_price
+                                ticker_result["sl_tightened_to"] = ideal_stop
+                            else:
+                                # Cancel existing OCO (both legs)
+                                cancel_success = True
+                                try:
+                                    # Cancel the stop order
+                                    cancel_result = self.cancel_order(existing_stop_order_id)
+                                    if not cancel_result.success:
+                                        logger.warning(
+                                            "sync_protective: failed to cancel stop order %s for %s: %s",
+                                            existing_stop_order_id, ticker, cancel_result.error,
+                                        )
+                                        cancel_success = False
+                                    else:
+                                        logger.info(
+                                            "sync_protective: canceled existing stop order %s for %s (tightening)",
+                                            existing_stop_order_id, ticker,
+                                        )
+                                    
+                                    # Cancel the TP order
+                                    cancel_result = self.cancel_order(existing_tp_order_id)
+                                    if not cancel_result.success:
+                                        logger.warning(
+                                            "sync_protective: failed to cancel TP order %s for %s: %s",
+                                            existing_tp_order_id, ticker, cancel_result.error,
+                                        )
+                                        cancel_success = False
+                                    else:
+                                        logger.info(
+                                            "sync_protective: canceled existing TP order %s for %s (tightening)",
+                                            existing_tp_order_id, ticker,
+                                        )
+                                except Exception as cancel_err:
+                                    logger.error(
+                                        "sync_protective: error canceling orders for %s: %s",
+                                        ticker, cancel_err, exc_info=True,
+                                    )
+                                    cancel_success = False
+                                
+                                if cancel_success:
+                                    # Place new OCO with tightened stop
+                                    try:
+                                        request = MarketOrderRequest(
+                                            symbol=ticker,
+                                            qty=pos.shares,
+                                            side=AlpacaSide.SELL,
+                                            order_class=OrderClass.OCO,
+                                            take_profit=TakeProfitRequest(limit_price=take_profit),
+                                            stop_loss=StopLossRequest(stop_price=round(ideal_stop, 2)),
+                                            time_in_force=TimeInForce.GTC,
+                                        )
+                                        order = self._client.submit_order(request)
+                                        
+                                        logger.info(
+                                            "sync_protective: tightened %s stop from $%.2f to $%.2f "
+                                            "(trailing stop ratchet, strategy=%s) → OCO id=%s",
+                                            ticker, existing_stop_price, ideal_stop, strategy_name, order.id,
+                                        )
+                                        ticker_result["sl_action"] = "tightened"
+                                        ticker_result["sl_tightened_from"] = existing_stop_price
+                                        ticker_result["sl_tightened_to"] = round(ideal_stop, 2)
+                                        ticker_result["oco_order_id"] = str(order.id)
+                                        sl_placed += 1
+                                        tp_placed += 1
+                                    except Exception as oco_err:
+                                        logger.error(
+                                            "sync_protective: failed to place tightened OCO for %s: %s",
+                                            ticker, oco_err, exc_info=True,
+                                        )
+                                        ticker_result["sl_action"] = "error_tightening"
+                                        ticker_result["sl_error"] = str(oco_err)
+                                        errors += 1
+                                else:
+                                    # Cancel failed — don't place new OCO
+                                    logger.warning(
+                                        "sync_protective: skipping tightening for %s — cancel failed",
+                                        ticker,
+                                    )
+                                    ticker_result["sl_action"] = "cancel_failed"
+                                    errors += 1
+                        else:
+                            # Both already exist and no tightening needed → skip
+                            sl_already_exists += 1
+                            tp_already_exists += 1
+                            ticker_result["sl_action"] = "skipped"
+                            ticker_result["sl_reason"] = "stop_exists"
+                            ticker_result["tp_action"] = "skipped"
+                            ticker_result["tp_reason"] = "tp_exists"
+                            logger.debug(
+                                "sync_protective: %s already has both SL @ %.2f and TP @ %.2f — skipping",
+                                ticker, existing_stop_price, take_profit,
+                            )
                     elif dry_run:
+                        # Dry run: log what would happen
                         logger.info(
-                            "sync_protective [DRY RUN]: would place STOP SELL %s "
-                            "qty=%d stop=%.2f (GTC)",
-                            ticker, pos.shares, stop_price,
+                            "sync_protective [DRY RUN]: would place OCO SELL %s "
+                            "qty=%d stop=%.2f tp=%.2f (GTC)",
+                            ticker, pos.shares, stop_price, take_profit,
                         )
                         sl_placed += 1
-                        ticker_result["sl_action"] = "dry_run_placed"
-                    else:
-                        sl_result = self.place_order(
-                            ticker=ticker,
-                            side=OrderSide.SELL,
-                            qty=pos.shares,
-                            price=0.0,
-                            order_type=OrderType.STOP,
-                            stop_price=stop_price,
-                            remark="sync_sl",
-                            tif="gtc",
-                        )
-                        if sl_result.success:
-                            sl_placed += 1
-                            ticker_result["sl_action"] = "placed"
-                            ticker_result["sl_order_id"] = sl_result.order_id
-                            logger.info(
-                                "sync_protective: placed STOP SELL GTC %s qty=%d stop=%.2f → id=%s",
-                                ticker, pos.shares, stop_price, sl_result.order_id,
-                            )
-                        elif _is_pdt_error(sl_result.message):
-                            pdt_deferred += 1
-                            ticker_result["sl_action"] = "pdt_deferred"
-                            ticker_result["sl_message"] = sl_result.message
-                            logger.warning(
-                                "sync_protective: SL deferred for %s — PDT protection "
-                                "(same-day entry, account < $25k). "
-                                "Stop will be placed at next pre-market sync.",
-                                ticker,
-                            )
-                        else:
-                            errors += 1
-                            ticker_result["sl_action"] = "error"
-                            ticker_result["sl_message"] = sl_result.message
-                            logger.error(
-                                "sync_protective: SL place_order failed for %s: %s",
-                                ticker, sl_result.message,
-                            )
-
-                    # ── TP (LIMIT SELL GTC) ────────────────────
-                    if ticker in tickers_with_tp and _prices_match(tickers_with_tp[ticker], take_profit):
-                        tp_already_exists += 1
-                        ticker_result["tp_action"] = "skipped"
-                        ticker_result["tp_reason"] = "tp_exists"
-                        logger.debug(
-                            "sync_protective: %s already has LIMIT SELL @ %.2f (matches TP %.2f) — skipping",
-                            ticker, tickers_with_tp[ticker], take_profit,
-                        )
-                    elif has_existing_stop or ticker_result.get("sl_action") in ("placed",):
-                        # On Alpaca, each SELL order claims position qty.
-                        # A stop order holding all shares prevents placing an
-                        # independent TP LIMIT SELL.  Position IS protected by SL.
-                        # TODO: use OCO pair for combined SL+TP placement.
-                        ticker_result["tp_action"] = "skipped"
-                        ticker_result["tp_reason"] = "qty_held_by_stop"
-                        logger.info(
-                            "sync_protective: %s TP skipped — stop order holds all "
-                            "qty (Alpaca does not allow independent SL+TP). "
-                            "Position protected by SL @ %.2f",
-                            ticker, stop_price,
-                        )
-                    elif dry_run:
-                        logger.info(
-                            "sync_protective [DRY RUN]: would place LIMIT SELL %s "
-                            "qty=%d tp=%.2f (GTC)",
-                            ticker, pos.shares, take_profit,
-                        )
                         tp_placed += 1
-                        ticker_result["tp_action"] = "dry_run_placed"
+                        ticker_result["sl_action"] = "dry_run_oco"
+                        ticker_result["tp_action"] = "dry_run_oco"
                     else:
-                        tp_result = self.place_order(
-                            ticker=ticker,
-                            side=OrderSide.SELL,
-                            qty=pos.shares,
-                            price=take_profit,
-                            order_type=OrderType.LIMIT,
-                            remark="sync_tp",
-                            tif="gtc",
-                        )
-                        if tp_result.success:
+                        # Need to place OCO. First cancel any existing individual orders.
+                        canceled_orders = []
+                        if has_existing_stop:
+                            # Cancel existing stop orders for this ticker
+                            stop_orders = [
+                                o for o in all_scan_orders
+                                if o.symbol == ticker and o.order_type == "stop"
+                            ]
+                            for order in stop_orders:
+                                cancel_result = self.cancel_order(order.id)
+                                if cancel_result.success:
+                                    canceled_orders.append(f"stop:{order.id}")
+                                    logger.info(
+                                        "sync_protective: canceled existing stop order %s for %s",
+                                        order.id, ticker,
+                                    )
+
+                        if ticker in tickers_with_tp:
+                            # Cancel existing TP (limit sell) orders for this ticker
+                            tp_orders = [
+                                o for o in all_scan_orders
+                                if o.symbol == ticker
+                                and o.order_type == "limit"
+                                and o.side == "sell"
+                            ]
+                            for order in tp_orders:
+                                cancel_result = self.cancel_order(order.id)
+                                if cancel_result.success:
+                                    canceled_orders.append(f"tp:{order.id}")
+                                    logger.info(
+                                        "sync_protective: canceled existing TP order %s for %s",
+                                        order.id, ticker,
+                                    )
+
+                        # Now place OCO order with both legs
+                        try:
+                            request = MarketOrderRequest(
+                                symbol=ticker,
+                                qty=pos.shares,
+                                side=AlpacaSide.SELL,
+                                order_class=OrderClass.OCO,
+                                take_profit=TakeProfitRequest(limit_price=take_profit),
+                                stop_loss=StopLossRequest(stop_price=stop_price),
+                                time_in_force=TimeInForce.GTC,
+                            )
+                            order = self._client.submit_order(request)
+
+                            # Success
+                            sl_placed += 1
                             tp_placed += 1
-                            ticker_result["tp_action"] = "placed"
-                            ticker_result["tp_order_id"] = tp_result.order_id
+                            ticker_result["sl_action"] = "oco_placed"
+                            ticker_result["tp_action"] = "oco_placed"
+                            ticker_result["oco_order_id"] = str(order.id)
+                            if canceled_orders:
+                                ticker_result["canceled_orders"] = canceled_orders
                             logger.info(
-                                "sync_protective: placed LIMIT SELL GTC %s qty=%d tp=%.2f → id=%s",
-                                ticker, pos.shares, take_profit, tp_result.order_id,
+                                "sync_protective: placed OCO SELL GTC %s qty=%d stop=%.2f tp=%.2f → id=%s",
+                                ticker, pos.shares, stop_price, take_profit, order.id,
                             )
-                        elif _is_pdt_error(tp_result.message):
-                            pdt_deferred += 1
-                            ticker_result["tp_action"] = "pdt_deferred"
-                            ticker_result["tp_message"] = tp_result.message
-                            logger.warning(
-                                "sync_protective: TP deferred for %s — PDT protection "
-                                "(same-day entry, account < $25k).",
-                                ticker,
-                            )
-                        else:
-                            errors += 1
-                            ticker_result["tp_action"] = "error"
-                            ticker_result["tp_message"] = tp_result.message
-                            logger.error(
-                                "sync_protective: TP place_order failed for %s: %s",
-                                ticker, tp_result.message,
-                            )
+                        except Exception as oco_err:
+                            oco_error_msg = str(oco_err)
+
+                            # Check if it's a PDT error
+                            if _is_pdt_error(oco_error_msg):
+                                # OCO rejected due to PDT. The TP leg makes the
+                                # entire OCO look like a potential day trade.
+                                # Try placing JUST the SL as a fallback — a stop
+                                # well below market is less likely to trigger PDT
+                                # than the full OCO, and at minimum protects downside.
+                                logger.warning(
+                                    "sync_protective: OCO deferred for %s — PDT. "
+                                    "Attempting SL-only fallback.",
+                                    ticker,
+                                )
+                                try:
+                                    sl_result = self.place_order(
+                                        ticker=ticker,
+                                        side=OrderSide.SELL,
+                                        qty=pos.shares,
+                                        price=0.0,
+                                        order_type=OrderType.STOP,
+                                        stop_price=stop_price,
+                                        remark="sync_sl_pdt_fallback",
+                                        tif="gtc",
+                                    )
+                                    if sl_result.success:
+                                        sl_placed += 1
+                                        ticker_result["sl_action"] = "placed_pdt_fallback"
+                                        ticker_result["sl_order_id"] = sl_result.order_id
+                                        ticker_result["tp_action"] = "pdt_deferred"
+                                        ticker_result["tp_message"] = "OCO PDT-rejected, SL placed alone"
+                                        logger.info(
+                                            "sync_protective: SL-only placed for %s stop=%.2f "
+                                            "(TP deferred to next sync) → id=%s",
+                                            ticker, stop_price, sl_result.order_id,
+                                        )
+                                    elif _is_pdt_error(sl_result.message):
+                                        # Both OCO and standalone SL rejected by PDT
+                                        pdt_deferred += 1
+                                        ticker_result["sl_action"] = "pdt_deferred"
+                                        ticker_result["tp_action"] = "pdt_deferred"
+                                        ticker_result["sl_message"] = oco_error_msg
+                                        logger.warning(
+                                            "sync_protective: both OCO and SL deferred for %s "
+                                            "— PDT (account < $25k, same-day entry). "
+                                            "Orders will be placed at next pre-market sync.",
+                                            ticker,
+                                        )
+                                    else:
+                                        errors += 1
+                                        ticker_result["sl_action"] = "error"
+                                        ticker_result["tp_action"] = "pdt_deferred"
+                                        ticker_result["sl_message"] = sl_result.message
+                                        logger.error(
+                                            "sync_protective: SL fallback also failed for %s: %s",
+                                            ticker, sl_result.message,
+                                        )
+                                except Exception as sl_err:
+                                    pdt_deferred += 1
+                                    ticker_result["sl_action"] = "pdt_deferred"
+                                    ticker_result["tp_action"] = "pdt_deferred"
+                                    ticker_result["sl_message"] = str(sl_err)
+                                    logger.warning(
+                                        "sync_protective: SL fallback exception for %s: %s — "
+                                        "full deferral to next sync",
+                                        ticker, sl_err,
+                                    )
+                            else:
+                                # OCO failed with non-PDT error. Fallback: try placing just SL
+                                logger.warning(
+                                    "sync_protective: OCO order failed for %s: %s — falling back to SL-only",
+                                    ticker, oco_error_msg,
+                                )
+
+                                try:
+                                    sl_result = self.place_order(
+                                        ticker=ticker,
+                                        side=OrderSide.SELL,
+                                        qty=pos.shares,
+                                        price=0.0,
+                                        order_type=OrderType.STOP,
+                                        stop_price=stop_price,
+                                        remark="sync_sl_fallback",
+                                        tif="gtc",
+                                    )
+                                    if sl_result.success:
+                                        sl_placed += 1
+                                        ticker_result["sl_action"] = "placed_fallback"
+                                        ticker_result["sl_order_id"] = sl_result.order_id
+                                        ticker_result["tp_action"] = "skipped"
+                                        ticker_result["tp_reason"] = "oco_failed_sl_fallback"
+                                        ticker_result["oco_error"] = oco_error_msg
+                                        logger.info(
+                                            "sync_protective: fallback SL placed for %s stop=%.2f → id=%s",
+                                            ticker, stop_price, sl_result.order_id,
+                                        )
+                                    else:
+                                        errors += 1
+                                        ticker_result["sl_action"] = "error"
+                                        ticker_result["tp_action"] = "error"
+                                        ticker_result["sl_message"] = sl_result.message
+                                        ticker_result["oco_error"] = oco_error_msg
+                                        logger.error(
+                                            "sync_protective: OCO and fallback SL both failed for %s. "
+                                            "OCO: %s, SL: %s",
+                                            ticker, oco_error_msg, sl_result.message,
+                                        )
+                                except Exception as fallback_err:
+                                    errors += 1
+                                    ticker_result["sl_action"] = "error"
+                                    ticker_result["tp_action"] = "error"
+                                    ticker_result["sl_message"] = str(fallback_err)
+                                    ticker_result["oco_error"] = oco_error_msg
+                                    logger.error(
+                                        "sync_protective: OCO and fallback SL both failed for %s. "
+                                        "OCO: %s, Fallback: %s",
+                                        ticker, oco_error_msg, str(fallback_err),
+                                    )
 
                 else:
                     # ═══ Path B: No TP → trailing stop GTC (combined SL + profit capture) ═══
