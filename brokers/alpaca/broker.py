@@ -420,7 +420,12 @@ class AlpacaBroker(BrokerAdapter):
         )
 
     def get_positions(self) -> list[PositionInfo]:
-        """Return all open positions from Alpaca.
+        """Return all open positions from Alpaca, enriched with Tiingo prices.
+
+        Alpaca's position ``current_price`` can be stale or incorrect
+        (observed 8%+ deviations).  We fetch authoritative prices from
+        Tiingo IEX and recalculate PnL fields.  Falls back to Alpaca
+        prices if Tiingo is unavailable.
 
         Returns:
             List of PositionInfo in Atlas format.
@@ -433,6 +438,30 @@ class AlpacaBroker(BrokerAdapter):
             logger.error("get_all_positions failed: %s", e, exc_info=True)
             return []
 
+        # ── Fetch authoritative prices from Tiingo ───────────────
+        tiingo_prices: dict[str, float] = {}
+        tickers_for_tiingo = []
+        for pos in (raw_positions or []):
+            symbol = str(getattr(pos, "symbol", ""))
+            if symbol and not symbol.endswith(".AX"):
+                tickers_for_tiingo.append(symbol)
+        if tickers_for_tiingo:
+            try:
+                from data.tiingo import get_tiingo_client
+                tiingo = get_tiingo_client()
+                if tiingo is not None:
+                    quotes = tiingo.get_quotes(tickers_for_tiingo)
+                    for t, q in quotes.items():
+                        price = q.get("price", 0)
+                        if price and float(price) > 0:
+                            tiingo_prices[t.upper()] = float(price)
+                    logger.debug(
+                        "get_positions: Tiingo enrichment for %d/%d tickers",
+                        len(tiingo_prices), len(tickers_for_tiingo),
+                    )
+            except Exception as e:
+                logger.warning("get_positions: Tiingo price fetch failed (using Alpaca): %s", e)
+
         positions = []
         for pos in (raw_positions or []):
             symbol = str(getattr(pos, "symbol", ""))
@@ -444,21 +473,36 @@ class AlpacaBroker(BrokerAdapter):
                 continue
 
             avg_entry = float(getattr(pos, "avg_entry_price", 0) or 0)
-            current_price = float(getattr(pos, "current_price", 0) or 0)
-            market_value = float(getattr(pos, "market_value", 0) or 0)
+            alpaca_price = float(getattr(pos, "current_price", 0) or 0)
             cost_basis = float(getattr(pos, "cost_basis", 0) or 0)
-            unrealized_pl = float(getattr(pos, "unrealized_pl", 0) or 0)
-            unrealized_plpc = float(getattr(pos, "unrealized_plpc", 0) or 0)
-            # Alpaca gives unrealized_plpc as a decimal (e.g. 0.05 = 5%)
-            unrealized_plpc_pct = round(unrealized_plpc * 100, 2)
+
+            # Use Tiingo price if available; fall back to Alpaca
+            tiingo_price = tiingo_prices.get(symbol.upper(), 0)
+            if tiingo_price > 0:
+                current_price = tiingo_price
+                if alpaca_price > 0 and abs(tiingo_price - alpaca_price) / alpaca_price > 0.02:
+                    logger.warning(
+                        "get_positions: %s price mismatch — Tiingo=$%.2f Alpaca=$%.2f "
+                        "(using Tiingo)",
+                        atlas_ticker, tiingo_price, alpaca_price,
+                    )
+            else:
+                current_price = alpaca_price
+
+            # Recalculate PnL from authoritative price
+            market_value = round(current_price * qty, 2)
+            unrealized_pl = round(market_value - cost_basis, 2)
+            unrealized_plpc_pct = round(
+                (unrealized_pl / cost_basis * 100) if cost_basis > 0 else 0, 2
+            )
 
             positions.append(PositionInfo(
                 ticker=atlas_ticker,
                 entry_price=round(avg_entry, 4),
                 shares=qty,
                 current_price=round(current_price, 4),
-                market_value=round(market_value, 2),
-                unrealized_pnl=round(unrealized_pl, 2),
+                market_value=market_value,
+                unrealized_pnl=unrealized_pl,
                 unrealized_pnl_pct=unrealized_plpc_pct,
                 cost_basis=round(cost_basis, 2),
             ))
@@ -963,11 +1007,14 @@ class AlpacaBroker(BrokerAdapter):
                                 
                                 if cancel_success:
                                     # Place new OCO with tightened stop
+                                    # Alpaca OCO requires a LIMIT order as parent (TP leg),
+                                    # with both take_profit and stop_loss parameters.
                                     try:
-                                        request = MarketOrderRequest(
+                                        request = LimitOrderRequest(
                                             symbol=ticker,
                                             qty=pos.shares,
                                             side=AlpacaSide.SELL,
+                                            limit_price=take_profit,
                                             order_class=OrderClass.OCO,
                                             take_profit=TakeProfitRequest(limit_price=take_profit),
                                             stop_loss=StopLossRequest(stop_price=round(ideal_stop, 2)),
@@ -1030,9 +1077,10 @@ class AlpacaBroker(BrokerAdapter):
                         canceled_orders = []
                         if has_existing_stop:
                             # Cancel existing stop orders for this ticker
+                            # (includes trailing_stop which also holds shares)
                             stop_orders = [
                                 o for o in all_scan_orders
-                                if o.symbol == ticker and o.order_type == "stop"
+                                if o.symbol == ticker and o.order_type in ("stop", "stop_limit", "trailing_stop")
                             ]
                             for order in stop_orders:
                                 cancel_result = self.cancel_order(order.id)
@@ -1060,12 +1108,15 @@ class AlpacaBroker(BrokerAdapter):
                                         order.id, ticker,
                                     )
 
-                        # Now place OCO order with both legs
+                        # Now place OCO order with both legs.
+                        # Alpaca OCO requires a LIMIT order as parent (TP leg),
+                        # with both take_profit and stop_loss parameters.
                         try:
-                            request = MarketOrderRequest(
+                            request = LimitOrderRequest(
                                 symbol=ticker,
                                 qty=pos.shares,
                                 side=AlpacaSide.SELL,
+                                limit_price=take_profit,
                                 order_class=OrderClass.OCO,
                                 take_profit=TakeProfitRequest(limit_price=take_profit),
                                 stop_loss=StopLossRequest(stop_price=stop_price),
