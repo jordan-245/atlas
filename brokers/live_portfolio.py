@@ -679,6 +679,45 @@ class LivePortfolio:
         return trade_record
 
     def record_closed_trade(self, trade_record: dict):
-        """Append a closed trade and persist."""
+        """Append a closed trade and persist.
+
+        Also triggers an asynchronous dashboard refresh so strategy
+        performance metrics are always current after any position close.
+        """
         self.closed_trades.append(trade_record)
         self.save_state()
+        self._trigger_dashboard_refresh()
+
+    # Class-level debounce: skip if another refresh was triggered within 60s
+    _last_dashboard_trigger: float = 0.0
+
+    def _trigger_dashboard_refresh(self):
+        """Fire-and-forget dashboard data regeneration.
+
+        Runs generate_data.py in a detached subprocess so the caller
+        (execution, EOD settlement, etc.) is never blocked.  Debounced
+        at 60 s so batch exits (e.g. 5 stops in one EOD run) only spawn
+        one refresh.  Failures are logged but never propagated —
+        dashboard staleness must not break the trading pipeline.
+        """
+        import subprocess
+        import time
+
+        now = time.monotonic()
+        if now - LivePortfolio._last_dashboard_trigger < 60:
+            logger.debug("Dashboard refresh skipped (debounce)")
+            return
+        LivePortfolio._last_dashboard_trigger = now
+
+        try:
+            project = Path(__file__).resolve().parent.parent
+            subprocess.Popen(
+                ["python3", str(project / "dashboard" / "generate_data.py")],
+                cwd=str(project),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,  # fully detached
+            )
+            logger.debug("Dashboard refresh triggered (async)")
+        except Exception as exc:
+            logger.warning("Dashboard refresh trigger failed (non-fatal): %s", exc)
