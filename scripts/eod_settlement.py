@@ -418,6 +418,16 @@ def main():
         except Exception as e:
             log.warning(f"Protective order sync failed (non-fatal): {e}")
 
+    # Reconcile broker-side fills (trailing stops, etc.)
+    log.info("Reconciling broker-side fills...")
+    broker_fills = portfolio.reconcile_broker_fills(trade_date)
+    if broker_fills:
+        for bf in broker_fills:
+            log.info(f"  RECONCILED: {bf['ticker']} exited at ${bf['exit_price']:.2f} "
+                     f"({bf['exit_reason']}) — PnL ${bf['pnl']:.2f}")
+    else:
+        log.info("  No unreconciled broker fills found.")
+
     # Check stop-losses
     log.info("Checking stop-losses...")
     stop_exits = check_stop_losses(portfolio, prices, lows, trade_date, args.dry_run)
@@ -481,6 +491,13 @@ def main():
 
     # Today's closed trades
     today_closed = [t for t in portfolio.closed_trades if t.get("exit_date") == trade_date]
+
+    # Include reconciled fills from previous days that weren't recorded
+    reconciled_closed = [t for t in portfolio.closed_trades if t.get("reconciled")]
+    for rc in reconciled_closed:
+        if rc not in today_closed:
+            today_closed.append(rc)
+
     realized_today = round(sum(t.get("pnl", 0) for t in today_closed), 2)
 
     summary = {

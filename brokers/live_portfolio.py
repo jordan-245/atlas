@@ -422,6 +422,123 @@ class LivePortfolio:
         except Exception as e:
             logger.debug("Could not update state positions: %s", e)
 
+    def reconcile_broker_fills(self, trade_date: str) -> list[dict]:
+        """Detect positions that were closed by broker-side orders (trailing stops, etc.)
+
+        Compares local state positions against current broker positions.
+        Any position in local state but NOT on broker was filled — look up
+        the fill details and record as a closed trade.
+
+        Returns list of newly recorded closed-trade dicts.
+        """
+        if not self._broker:
+            return []
+
+        # Load local state to get positions we THINK we have
+        path = self._state_path()
+        if not path.exists():
+            return []
+
+        try:
+            with open(path) as f:
+                state = json.load(f)
+        except Exception:
+            return []
+
+        local_tickers = {p.get("ticker") for p in state.get("positions", []) if p.get("ticker")}
+        broker_tickers = {pos.ticker for pos in self.positions}
+
+        # Positions in local state but NOT on broker = closed by broker
+        vanished = local_tickers - broker_tickers
+        if not vanished:
+            return []
+
+        logger.info("reconcile_broker_fills: %d position(s) vanished from broker: %s",
+                    len(vanished), vanished)
+
+        # Look up fill details from broker order history
+        reconciled = []
+        try:
+            recent_orders = self._broker.get_history_orders(days=7)
+        except Exception as e:
+            logger.warning("reconcile_broker_fills: could not fetch order history: %s", e)
+            recent_orders = []
+
+        # Build fill lookup: ticker -> most recent SELL fill
+        sell_fills = {}
+        for order in recent_orders:
+            if (order.ticker in vanished
+                    and order.side.value.upper() == 'SELL'
+                    and order.status.value.upper() == 'FILLED'):
+                # Keep the most recent fill per ticker
+                prev = sell_fills.get(order.ticker)
+                if prev is None:
+                    sell_fills[order.ticker] = order
+                else:
+                    # Compare filled_at timestamps from raw dict
+                    prev_time = prev.raw.get('filled_at', '')
+                    curr_time = order.raw.get('filled_at', '')
+                    if curr_time > prev_time:
+                        sell_fills[order.ticker] = order
+
+        for ticker in vanished:
+            # Find the local state position data
+            local_pos = next((p for p in state.get("positions", []) if p.get("ticker") == ticker), {})
+            entry_price = local_pos.get("entry_price", 0)
+            shares = local_pos.get("shares", 0)
+            strategy = local_pos.get("strategy", "unknown")
+            entry_date = local_pos.get("entry_date", "")
+
+            fill = sell_fills.get(ticker)
+            if fill:
+                exit_price = fill.fill_price
+                order_type = fill.raw.get('order_type', 'unknown')
+                filled_at = fill.raw.get('filled_at', trade_date)
+                # Extract date from filled_at timestamp
+                exit_date = filled_at[:10] if filled_at and len(filled_at) >= 10 else trade_date
+                exit_reason = f"broker_{order_type}"  # e.g. "broker_trailing_stop"
+            else:
+                # No fill found — use closing price as estimate
+                logger.warning("reconcile_broker_fills: no sell fill found for %s, using trade_date", ticker)
+                exit_price = entry_price  # conservative: assume breakeven if no data
+                exit_date = trade_date
+                exit_reason = "broker_unknown"
+
+            pnl = round((exit_price - entry_price) * shares, 2)
+
+            trade_record = {
+                "ticker": ticker,
+                "strategy": strategy,
+                "entry_date": entry_date,
+                "entry_price": entry_price,
+                "exit_date": exit_date,
+                "exit_price": exit_price,
+                "shares": shares,
+                "pnl": pnl,
+                "pnl_pct": round((exit_price - entry_price) / entry_price * 100, 2) if entry_price else 0.0,
+                "exit_type": exit_reason,
+                "exit_reason": exit_reason,
+                "reconciled": True,  # Flag that this was auto-detected, not locally triggered
+            }
+
+            # Don't double-record — check if already in closed_trades
+            already_recorded = any(
+                t.get("ticker") == ticker and t.get("exit_date") == exit_date
+                for t in self.closed_trades
+            )
+            if already_recorded:
+                logger.info("reconcile_broker_fills: %s already recorded as closed trade, skipping", ticker)
+                continue
+
+            self.record_closed_trade(trade_record)
+            reconciled.append(trade_record)
+            logger.info(
+                "reconcile_broker_fills: RECORDED %s exit at $%.2f (%s) — PnL $%.2f",
+                ticker, exit_price, exit_reason, pnl
+            )
+
+        return reconciled
+
     # ── Portfolio interface ──────────────────────
 
     def update_positions(self, prices: dict[str, float]):

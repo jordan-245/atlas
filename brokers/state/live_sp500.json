@@ -5,64 +5,64 @@
     {
       "ticker": "AMT",
       "strategy": "mean_reversion",
-      "entry_date": "2026-03-27",
+      "entry_date": "2026-03-31",
       "entry_price": 167.53,
       "shares": 4,
       "stop_price": 159.8,
       "order_id": ""
     },
     {
+      "ticker": "CARR",
+      "strategy": "short_term_mr",
+      "entry_date": "2026-03-31",
+      "entry_price": 54.65,
+      "shares": 5,
+      "stop_price": 51.53,
+      "order_id": ""
+    },
+    {
       "ticker": "COP",
       "strategy": "sector_rotation",
-      "entry_date": "2026-03-27",
+      "entry_date": "2026-03-31",
       "entry_price": 121.06,
       "shares": 1,
-      "stop_price": 124.68,
+      "stop_price": 127.0,
       "order_id": ""
     },
     {
       "ticker": "CVX",
       "strategy": "momentum_breakout",
-      "entry_date": "2026-03-27",
+      "entry_date": "2026-03-31",
       "entry_price": 205.32,
       "shares": 3,
-      "stop_price": 203.4099,
+      "stop_price": 208.91,
       "order_id": ""
     },
     {
       "ticker": "D",
       "strategy": "mean_reversion",
-      "entry_date": "2026-03-27",
+      "entry_date": "2026-03-31",
       "entry_price": 59.38,
       "shares": 13,
-      "stop_price": 57.48,
+      "stop_price": 60.62,
       "order_id": ""
     },
     {
       "ticker": "DOW",
       "strategy": "sector_rotation",
-      "entry_date": "2026-03-27",
+      "entry_date": "2026-03-31",
       "entry_price": 36.39,
       "shares": 3,
-      "stop_price": 37.5814,
+      "stop_price": 40.68,
       "order_id": ""
     },
     {
       "ticker": "NFLX",
       "strategy": "trend_following",
-      "entry_date": "2026-03-27",
+      "entry_date": "2026-03-31",
       "entry_price": 94.38,
       "shares": 3,
       "stop_price": 90.38,
-      "order_id": ""
-    },
-    {
-      "ticker": "NOC",
-      "strategy": "connors_rsi2",
-      "entry_date": "2026-03-27",
-      "entry_price": 670.0,
-      "shares": 1,
-      "stop_price": 685.39,
       "order_id": ""
     }
   ],
@@ -264,6 +264,37 @@
       "exit_reason": "stop_loss",
       "exit_date": "2026-03-25",
       "order_id": "e8cf100a-a1cf-42e4-9080-c06e5ff7de40"
+    },
+    {
+      "ticker": "CVX",
+      "strategy": "momentum_breakout",
+      "entry_date": "2026-03-28",
+      "entry_price": 205.32,
+      "exit_date": "2026-03-27",
+      "exit_price": 206.65,
+      "shares": 3,
+      "pnl": 3.99,
+      "pnl_pct": 0.65,
+      "exit_type": "stop_loss",
+      "exit_reason": "stop_loss",
+      "mae": 0.0,
+      "mfe": 0.028394700954607503,
+      "sector": "Energy",
+      "holding_days": -1
+    },
+    {
+      "ticker": "MSFT",
+      "strategy": "connors_rsi2",
+      "entry_date": "2026-03-27",
+      "entry_price": 361.88,
+      "exit_date": "2026-03-30",
+      "exit_price": 358.99,
+      "shares": 1,
+      "pnl": -2.89,
+      "pnl_pct": -0.8,
+      "exit_type": "broker_trailing_stop",
+      "exit_reason": "broker_trailing_stop",
+      "reconciled": true
     }
   ],
   "equity_history": [
@@ -541,10 +572,186 @@
           "holding_days": -1
         }
       ]
+    },
+    {
+      "date": "2026-03-27",
+      "equity": 5055.32,
+      "cash": 1935.87,
+      "positions_value": 3119.45,
+      "num_positions": 7,
+      "total_realized_pnl": 437.45,
+      "total_closed_trades": 15,
+      "positions": [
+        {
+          "ticker": "AMT",
+          "strategy": "mean_reversion",
+          "shares": 4,
+          "entry_price": 167.53,
+          "current_price": 169.52,
+          "unrealized_pnl": 7.96,
+          "mae": 0.0,
+          "mfe": 1.19,
+          "holding_days": -1
+        },
+        {
+          "ticker": "CARR",
+          "strategy": "short_term_mr",
+          "shares": 5,
+          "entry_price": 54.65,
+          "current_price": 54.25,
+          "unrealized_pnl": -2.0,
+          "mae": -0.73,
+          "mfe": 0.0,
+          "holding_days": -1
+        },
+        {
+          "ticker": "COP",
+          "strategy": "sector_rotation",
+          "shares": 1,
+          "entry_price": 121.06,
+          "current_price": 133.8,
+          "unrealized_pnl": 12.74,
+          "mae": 0.0,
+          "mfe": 10.52,
+          "holding_days": -1
+        },
+        {
+          "ticker": "D",
+          "strategy": "mean_reversion",
+          "shares": 13,
+          "entry_price": 59.38,
+          "current_price": 60.88,
+          "unrealized_pnl": 19.5,
+          "mae": 0.0,
+          "mfe": 2.53,
+          "holding_days": -1
+        },
+        {
+          "ticker": "DOW",
+          "strategy": "sector_rotation",
+          "shares": 3,
+          "entry_price": 36.39,
+          "current_price": 40.82,
+          "unrealized_pnl": 13.29,
+          "mae": 0.0,
+          "mfe": 12.17,
+          "holding_days": -1
+        },
+        {
+          "ticker": "MSFT",
+          "strategy": "connors_rsi2",
+          "shares": 1,
+          "entry_price": 361.88,
+          "current_price": 356.77,
+          "unrealized_pnl": -5.11,
+          "mae": -1.41,
+          "mfe": 0.0,
+          "holding_days": -1
+        },
+        {
+          "ticker": "NFLX",
+          "strategy": "trend_following",
+          "shares": 3,
+          "entry_price": 94.38,
+          "current_price": 93.43,
+          "unrealized_pnl": -2.85,
+          "mae": -1.01,
+          "mfe": 0.0,
+          "holding_days": -1
+        }
+      ]
+    },
+    {
+      "date": "2026-03-30",
+      "equity": 5094.56,
+      "cash": 2294.85,
+      "positions_value": 2799.71,
+      "num_positions": 7,
+      "total_realized_pnl": 437.45,
+      "total_closed_trades": 15,
+      "positions": [
+        {
+          "ticker": "AMT",
+          "strategy": "mean_reversion",
+          "shares": 4,
+          "entry_price": 167.53,
+          "current_price": 170.37,
+          "unrealized_pnl": 11.36,
+          "mae": 0.0,
+          "mfe": 1.7,
+          "holding_days": -1
+        },
+        {
+          "ticker": "CARR",
+          "strategy": "short_term_mr",
+          "shares": 5,
+          "entry_price": 54.65,
+          "current_price": 54.36,
+          "unrealized_pnl": -1.45,
+          "mae": -0.53,
+          "mfe": 0.0,
+          "holding_days": -1
+        },
+        {
+          "ticker": "COP",
+          "strategy": "sector_rotation",
+          "shares": 1,
+          "entry_price": 121.06,
+          "current_price": 132.85,
+          "unrealized_pnl": 11.79,
+          "mae": 0.0,
+          "mfe": 9.74,
+          "holding_days": -1
+        },
+        {
+          "ticker": "CVX",
+          "strategy": "momentum_breakout",
+          "shares": 3,
+          "entry_price": 205.32,
+          "current_price": 210.95,
+          "unrealized_pnl": 16.89,
+          "mae": 0.0,
+          "mfe": 2.74,
+          "holding_days": -1
+        },
+        {
+          "ticker": "D",
+          "strategy": "mean_reversion",
+          "shares": 13,
+          "entry_price": 59.38,
+          "current_price": 61.86,
+          "unrealized_pnl": 32.24,
+          "mae": 0.0,
+          "mfe": 4.18,
+          "holding_days": -1
+        },
+        {
+          "ticker": "DOW",
+          "strategy": "sector_rotation",
+          "shares": 3,
+          "entry_price": 36.39,
+          "current_price": 41.87,
+          "unrealized_pnl": 16.44,
+          "mae": 0.0,
+          "mfe": 15.06,
+          "holding_days": -1
+        },
+        {
+          "ticker": "NFLX",
+          "strategy": "trend_following",
+          "shares": 3,
+          "entry_price": 94.38,
+          "current_price": 92.88,
+          "unrealized_pnl": -4.5,
+          "mae": -1.59,
+          "mfe": 0.0,
+          "holding_days": -1
+        }
+      ]
     }
   ],
-  "daily_high_water": 5084.76,
+  "daily_high_water": 5094.56,
   "halted": false,
   "halt_reason": "",
-  "last_saved": "2026-03-27T08:00:46.625563"
+  "last_saved": "2026-03-31T08:00:29.603397"
 }
