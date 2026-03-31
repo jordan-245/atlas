@@ -1,0 +1,11 @@
+{
+  "checks": [
+    {
+      "date": "2026-03-31",
+      "passed": true,
+      "details": "5/5 pass"
+    }
+  ],
+  "consecutive_passes": 1,
+  "gate_target": 5
+}
