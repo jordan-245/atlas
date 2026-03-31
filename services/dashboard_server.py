@@ -202,6 +202,12 @@ class AuthHandler(SimpleHTTPRequestHandler):
             return self._handle_snapshot()
         if self.path.startswith("/api/monitor"):
             return self._send_json(410, {"error": "Monitor tab removed"})
+        if self.path.startswith("/api/db/portfolio"):
+            return self._handle_db_portfolio()
+        if self.path.startswith("/api/db/trades"):
+            return self._handle_db_trades()
+        if self.path.startswith("/api/db/performance"):
+            return self._handle_db_performance()
         super().do_GET()
 
     def do_HEAD(self):
@@ -375,6 +381,55 @@ class AuthHandler(SimpleHTTPRequestHandler):
             self._send_json(status, result)
         except Exception as e:
             traceback.print_exc()
+            self._send_json(500, {"error": str(e)})
+
+    def _handle_db_portfolio(self):
+        """GET /api/db/portfolio — positions + equity from SQLite."""
+        try:
+            sys.path.insert(0, str(PROJECT_ROOT))
+            from db import atlas_db
+            positions = atlas_db.get_open_positions()
+            regime = atlas_db.get_current_regime()
+            # Get latest equity from equity_curve
+            with atlas_db.get_db() as db:
+                row = db.execute(
+                    "SELECT * FROM equity_curve ORDER BY date DESC LIMIT 1"
+                ).fetchone()
+                equity = dict(row) if row else None
+            self._send_json(200, {
+                "positions": positions,
+                "regime": regime,
+                "equity": equity,
+            })
+        except Exception as e:
+            self._send_json(500, {"error": str(e)})
+
+    def _handle_db_trades(self):
+        """GET /api/db/trades?days=30&universe=sp500&strategy=mean_reversion"""
+        try:
+            sys.path.insert(0, str(PROJECT_ROOT))
+            from db import atlas_db
+            parsed = urlparse(self.path)
+            params = parse_qs(parsed.query)
+            days = int(params.get("days", [0])[0]) or None
+            strategy = params.get("strategy", [None])[0]
+            universe = params.get("universe", [None])[0]
+            trades = atlas_db.get_closed_trades(days=days, strategy=strategy, universe=universe)
+            self._send_json(200, {"trades": trades, "count": len(trades)})
+        except Exception as e:
+            self._send_json(500, {"error": str(e)})
+
+    def _handle_db_performance(self):
+        """GET /api/db/performance?days=30"""
+        try:
+            sys.path.insert(0, str(PROJECT_ROOT))
+            from db import atlas_db
+            parsed = urlparse(self.path)
+            params = parse_qs(parsed.query)
+            days = int(params.get("days", [0])[0]) or None
+            summary = atlas_db.performance_summary(days=days)
+            self._send_json(200, summary)
+        except Exception as e:
             self._send_json(500, {"error": str(e)})
 
     # ── Monitor API handlers ─────────────────────────────────
