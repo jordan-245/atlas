@@ -253,6 +253,221 @@ class TradePlanGenerator:
         except Exception as e:
             logger.warning(f"SQLite plan dual-write failed: {e}")
 
+    # ──────────────────────────────────────────────────────────────────────
+    # Regime-aware plan generation pipeline
+    # ──────────────────────────────────────────────────────────────────────
+
+    def generate_regime_plan(
+        self,
+        strategies: list,
+        prices: dict,
+        trade_date: str,
+        equity: float,
+        existing_positions: list = None,
+        exit_recommendations: list = None,
+        sp500_data: dict = None,
+    ) -> dict:
+        """Orchestrate signal generation and plan building with an optional regime layer.
+
+        Config switch: ``config.get("regime_enabled", False)``
+
+        **False (default)**:
+            Run *strategies* against *sp500_data* and call :meth:`generate_plan` —
+            identical to the existing ``cli.py`` flow.  *sp500_data* should be the
+            same ``{ticker: DataFrame}`` dict that cli.py loads from cache.
+
+        **True**:
+            a. Read current regime via ``RegimeModel().classify_current()``.
+            b. Derive ``active_universes`` from the regime classification.
+            c. Load universe data: ``build_multi_universe(active_universes)``.
+            d. Filter *strategies* to those matching the regime's
+               ``enabled_strategies`` list (``["all"]`` → run all).
+            e. Run each active strategy on each universe's data.
+            f. Tag every signal: ``signal.universe = universe_name``.
+            g. Route all signals through :class:`PortfolioConstructor`.
+            h. Enrich the returned plan dict with regime metadata.
+
+        On any regime-layer exception the method logs a warning and falls back
+        to the SP500-only path (same as ``regime_enabled=False``).
+
+        Parameters
+        ----------
+        strategies:
+            Instantiated strategy objects (each exposes ``.name`` and
+            ``.generate_signals(data, equity, existing_positions)``).
+        prices:
+            Latest close prices ``{ticker: float}``.
+        trade_date:
+            ISO date string (``"YYYY-MM-DD"``).
+        equity:
+            Current portfolio equity in USD.
+        existing_positions:
+            Open position objects or dicts from ``portfolio.positions``.
+            Defaults to empty list.
+        exit_recommendations:
+            Pre-computed exit recommendations list.  Defaults to empty list.
+        sp500_data:
+            Pre-loaded ``{ticker: DataFrame}`` data for the SP500-only fallback
+            path.  Ignored when ``regime_enabled=True`` (data is loaded
+            internally).  Defaults to empty dict.
+        """
+        existing_positions = existing_positions or []
+        exit_recommendations = exit_recommendations or []
+        sp500_data = sp500_data or {}
+
+        if not self.config.get("regime_enabled", False):
+            return self._run_sp500_plan(
+                strategies, sp500_data, prices, trade_date, equity,
+                existing_positions, exit_recommendations,
+            )
+
+        # Regime-aware path — fall back to SP500-only on any error.
+        try:
+            return self._run_regime_aware_plan(
+                strategies, prices, trade_date, equity,
+                existing_positions, exit_recommendations,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Regime-aware plan generation failed (%s) — "
+                "falling back to SP500-only mode",
+                exc,
+            )
+            return self._run_sp500_plan(
+                strategies, sp500_data, prices, trade_date, equity,
+                existing_positions, exit_recommendations,
+            )
+
+    def _run_sp500_plan(
+        self,
+        strategies: list,
+        sp500_data: dict,
+        prices: dict,
+        trade_date: str,
+        equity: float,
+        existing_positions: list,
+        exit_recommendations: list,
+    ) -> dict:
+        """Original SP500-only plan pipeline (regime disabled).
+
+        Runs each strategy against *sp500_data*, collects signals, and
+        delegates to :meth:`generate_plan`.  Identical in behaviour to the
+        current ``cli.py`` flow.
+        """
+        all_signals: list = []
+        for strat in strategies:
+            try:
+                sigs = strat.generate_signals(sp500_data, equity, existing_positions)
+                all_signals.extend(sigs)
+            except Exception as exc:
+                logger.error("Strategy %s error: %s", strat.name, exc)
+        return self.generate_plan(all_signals, exit_recommendations, prices, trade_date)
+
+    def _run_regime_aware_plan(
+        self,
+        strategies: list,
+        prices: dict,
+        trade_date: str,
+        equity: float,
+        existing_positions: list,
+        exit_recommendations: list,
+    ) -> dict:
+        """Execute the full regime-aware plan pipeline.
+
+        Raises any exception so that :meth:`generate_regime_plan` can catch
+        it and fall back to SP500-only mode.
+        """
+        # Late imports keep the regime/universe modules optional when running
+        # in SP500-only mode and avoid circular-import issues at module load.
+        from regime.model import RegimeModel
+        from universe.builder import build_multi_universe
+        from portfolio.constructor import PortfolioConstructor
+
+        # a. Classify current regime.
+        model = RegimeModel()
+        regime = model.classify_current()
+        logger.info(
+            "Regime classified: %s (universes=%s, sizing=%.2f)",
+            regime.state.value, regime.active_universes, regime.sizing_multiplier,
+        )
+
+        # b. Get active universes from the classification.
+        active_universes: list = regime.active_universes
+
+        # c. Load data for each active universe.
+        multi_data: dict = build_multi_universe(active_universes)
+
+        # d. Filter strategies to those permitted by the current regime.
+        enabled_types: list = regime.enabled_strategies  # e.g. ["all"] or ["mean_reversion"]
+        if "all" in enabled_types:
+            active_strategies = list(strategies)
+        else:
+            active_strategies = [s for s in strategies if s.name in enabled_types]
+        logger.info(
+            "Regime strategy filter: %d/%d strategies active (types=%s)",
+            len(active_strategies), len(strategies), enabled_types,
+        )
+
+        # e + f. Run active strategies on each universe, tagging signals.
+        all_signals: list = []
+        for universe_name, universe_data in multi_data.items():
+            for strat in active_strategies:
+                try:
+                    sigs = strat.generate_signals(universe_data, equity, existing_positions)
+                    for sig in sigs:
+                        sig.universe = universe_name  # f. tag with originating universe
+                    all_signals.extend(sigs)
+                except Exception as exc:
+                    logger.error(
+                        "Strategy %s / universe %s error: %s",
+                        strat.name, universe_name, exc,
+                    )
+
+        logger.info(
+            "Regime-aware signal generation: %d raw signals across %d universes",
+            len(all_signals), len(multi_data),
+        )
+
+        # g. Route all signals through PortfolioConstructor.
+        portfolio_positions = (
+            self.portfolio.positions
+            if hasattr(self.portfolio, "positions") else []
+        )
+        constructor = PortfolioConstructor(regime_classification=regime)
+        constructed = constructor.construct(
+            all_signals, equity=equity, existing_positions=portfolio_positions
+        )
+        logger.info(
+            "Portfolio construction: %d signals selected, %d rejected",
+            len(constructed.signals), len(constructed.rejected),
+        )
+
+        # Record today's regime to SQLite (non-fatal).
+        try:
+            model.classify_and_record()
+        except Exception as exc:
+            logger.warning("classify_and_record failed (non-fatal): %s", exc)
+
+        # Build the plan from constructor-selected signals.
+        plan = self.generate_plan(
+            constructed.signals, exit_recommendations, prices, trade_date
+        )
+
+        # h. Enrich plan with regime metadata.
+        plan["regime_state"] = regime.state.value
+        plan["active_universes"] = list(active_universes)
+        plan["sizing_multiplier"] = regime.sizing_multiplier
+        plan["regime_reasoning"] = regime.reasoning
+
+        # Re-persist the plan now that regime fields are present.
+        self._save_plan(plan, trade_date)
+
+        return plan
+
+    # ──────────────────────────────────────────────────────────────────────
+    # Plan I/O helpers
+    # ──────────────────────────────────────────────────────────────────────
+
     def load_plan(self, trade_date: str, market_id: str = "") -> Optional[dict]:
         plans_dir = PROJECT_ROOT / self.PLANS_DIR
         market_id = market_id or self.config.get("market", "")
