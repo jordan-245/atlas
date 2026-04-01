@@ -639,6 +639,281 @@ def download_universe(
     return results
 
 
+# ---------------------------------------------------------------------------
+# Multi-Universe Ingest (v2.0)
+# ---------------------------------------------------------------------------
+
+def _sqlite_batch_write(
+    ticker: str,
+    df: "pd.DataFrame",
+    universe_name: str,
+    source: str = "yfinance",
+) -> int:
+    """Write a DataFrame of OHLCV rows to the SQLite ohlcv table.
+
+    Uses INSERT OR REPLACE so the universe column reflects the *calling*
+    universe, regardless of what prior ingests wrote.  Returns row count.
+    """
+    try:
+        from db.atlas_db import get_db as _get_db
+        rows = []
+        for idx, row in df.iterrows():
+            date_str = (
+                idx.strftime("%Y-%m-%d")
+                if hasattr(idx, "strftime")
+                else str(idx)[:10]
+            )
+            rows.append((
+                ticker,
+                date_str,
+                float(row.get("open", 0) or 0),
+                float(row.get("high", 0) or 0),
+                float(row.get("low", 0) or 0),
+                float(row.get("close", 0) or 0),
+                None,  # adj_close — not stored in canonical format
+                int(row.get("volume", 0) or 0),
+                universe_name,
+                source,
+            ))
+        if rows:
+            with _get_db() as db:
+                db.executemany(
+                    """
+                    INSERT OR REPLACE INTO ohlcv
+                        (ticker, date, open, high, low, close, adj_close,
+                         volume, universe, source)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    rows,
+                )
+            logger.debug(
+                "SQLite batch write: %d rows for %s (universe=%s)",
+                len(rows), ticker, universe_name,
+            )
+        return len(rows)
+    except Exception as exc:
+        logger.warning(
+            "SQLite batch write failed for %s (universe=%s): %s",
+            ticker, universe_name, exc,
+        )
+        return 0
+
+
+def ingest_universe(
+    universe_name: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    force: bool = False,
+) -> dict:
+    """Fetch OHLCV data for all tickers in a static universe and write to SQLite.
+
+    Args:
+        universe_name: One of the 6 universe names from universe/definitions.py.
+                       Must be a static universe (raises ValueError for 'sp500').
+        start_date:    ISO date string (default: 7 years ago).
+        end_date:      ISO date string (default: today).
+        force:         If True, bypass parquet cache and re-fetch from API.
+
+    Returns:
+        dict with keys:
+            universe        — universe name
+            tickers_fetched — list of tickers successfully ingested
+            tickers_failed  — list of tickers that failed (delisted, no data, etc.)
+            rows_written    — total OHLCV rows written to SQLite
+            start_date      — start date used
+            end_date        — end date used
+    """
+    from universe.definitions import get_universe_tickers, get_universe
+
+    # Validate universe and get ticker list (raises KeyError/ValueError for sp500)
+    defn = get_universe(universe_name)
+    if defn["method"] != "static":
+        raise ValueError(
+            f"ingest_universe() only supports static ETF universes; "
+            f"{universe_name!r} uses method {defn['method']!r}. "
+            f"Use the dedicated SP500 pipeline for dynamic universes."
+        )
+    tickers = get_universe_tickers(universe_name)
+
+    # Resolve date range
+    if end_date is None:
+        end_date = datetime.now().strftime("%Y-%m-%d")
+    if start_date is None:
+        # Default: 7 years of history for ETFs
+        start_date = (datetime.now() - timedelta(days=7 * 365)).strftime("%Y-%m-%d")
+
+    total = len(tickers)
+    tickers_fetched: List[str] = []
+    tickers_failed: List[str] = []
+    rows_written = 0
+
+    logger.info(
+        "ingest_universe(%r): %d tickers, %s → %s (force=%s)",
+        universe_name, total, start_date, end_date, force,
+    )
+    print(
+        f"[ingest] {universe_name}: {total} tickers, "
+        f"{start_date} → {end_date}, force={force}"
+    )
+
+    for i, ticker in enumerate(tickers, 1):
+        try:
+            # ETF universes are US-listed and are best served by yfinance.
+            # We bypass download_ticker() here because its _normalize_ticker()
+            # call requires the market_id to be registered in the markets
+            # registry (which only knows 'asx' and 'sp500'). Instead we
+            # call the internal helpers directly:
+            #   _load_cache / _download_via_yfinance / _save_cache
+            # This avoids any market-registry dependency while still using
+            # universe-namespaced parquet caches (data/cache/sector_etfs/...).
+
+            df: pd.DataFrame = pd.DataFrame()
+
+            # Step 1: try parquet cache (skip when force=True)
+            if not force:
+                cached = _load_cache(ticker, universe_name)
+                if cached is not None and not cached.empty:
+                    mask = (cached.index >= start_date) & (cached.index <= end_date)
+                    filtered = cached[mask]
+                    if not filtered.empty:
+                        df = filtered
+                        logger.debug("%s: served from cache (%d rows)", ticker, len(df))
+
+            # Step 2: download from yfinance if cache missed
+            if df.empty:
+                df = _download_via_yfinance(ticker, start_date, end_date)
+                if not df.empty:
+                    # Save parquet cache under the universe-namespaced directory
+                    _save_cache(ticker, df, universe_name)
+
+            # Step 3: explicit SQLite write with correct universe tag
+            # (covers both the fresh-download AND cache-hit paths, ensuring
+            # cross-universe tickers like GLD are tagged for THIS universe)
+            if not df.empty:
+                n = _sqlite_batch_write(ticker, df, universe_name)
+                tickers_fetched.append(ticker)
+                rows_written += n
+                logger.debug("%s: %d rows written (universe=%s)", ticker, n, universe_name)
+            else:
+                logger.warning("%s: no data returned — adding to failed list", ticker)
+                tickers_failed.append(ticker)
+
+        except Exception as exc:
+            logger.warning("%s: fetch failed: %s", ticker, exc)
+            tickers_failed.append(ticker)
+
+        if i % 5 == 0 or i == total:
+            print(
+                f"[ingest] {universe_name}: {i}/{total} done "
+                f"(fetched={len(tickers_fetched)}, failed={len(tickers_failed)})"
+            )
+            logger.info(
+                "%s progress: %d/%d (fetched=%d, failed=%d)",
+                universe_name, i, total,
+                len(tickers_fetched), len(tickers_failed),
+            )
+
+        # Rate-limit courtesy delay — yfinance is generally tolerant but
+        # avoids hammering the endpoint when running large batches.
+        if i < total:
+            time.sleep(0.5)
+
+    result = {
+        "universe": universe_name,
+        "tickers_fetched": tickers_fetched,
+        "tickers_failed": tickers_failed,
+        "rows_written": rows_written,
+        "start_date": start_date,
+        "end_date": end_date,
+    }
+    logger.info(
+        "ingest_universe(%r) complete: fetched=%d failed=%d rows=%d",
+        universe_name,
+        len(tickers_fetched),
+        len(tickers_failed),
+        rows_written,
+    )
+    print(
+        f"[ingest] {universe_name} DONE: "
+        f"fetched={len(tickers_fetched)}, "
+        f"failed={len(tickers_failed)}, "
+        f"rows={rows_written}"
+    )
+    return result
+
+
+def ingest_all_etf_universes(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    force: bool = False,
+) -> dict:
+    """Ingest all 5 static ETF universes (excludes sp500 which has its own pipeline).
+
+    Calls ingest_universe() for each ETF universe in definition order and
+    aggregates the results.
+
+    Args:
+        start_date: ISO date string passed to each ingest_universe() call
+                    (default: 7 years ago).
+        end_date:   ISO date string (default: today).
+        force:      If True, bypass parquet cache for all universes.
+
+    Returns:
+        dict with keys:
+            universes_ingested     — list of universe names ingested
+            total_tickers_fetched  — total successful ticker count
+            total_tickers_failed   — deduplicated list of failed tickers
+            total_rows_written     — total SQLite rows written
+            results                — per-universe result dicts
+    """
+    from universe.definitions import list_universes
+
+    etf_universes = [u for u in list_universes() if u != "sp500"]
+    logger.info(
+        "ingest_all_etf_universes: %d universes: %s", len(etf_universes), etf_universes
+    )
+    print(f"[ingest] Starting all ETF universes: {etf_universes}")
+
+    aggregate: dict = {
+        "universes_ingested": [],
+        "total_tickers_fetched": 0,
+        "total_tickers_failed": [],
+        "total_rows_written": 0,
+        "results": {},
+    }
+
+    failed_seen: set = set()
+    for universe_name in etf_universes:
+        result = ingest_universe(
+            universe_name,
+            start_date=start_date,
+            end_date=end_date,
+            force=force,
+        )
+        aggregate["universes_ingested"].append(universe_name)
+        aggregate["total_tickers_fetched"] += len(result["tickers_fetched"])
+        aggregate["total_rows_written"] += result["rows_written"]
+        for t in result["tickers_failed"]:
+            if t not in failed_seen:
+                failed_seen.add(t)
+                aggregate["total_tickers_failed"].append(t)
+        aggregate["results"][universe_name] = result
+
+    print(
+        f"[ingest] ALL ETF UNIVERSES DONE: "
+        f"universes={len(aggregate['universes_ingested'])}, "
+        f"tickers_fetched={aggregate['total_tickers_fetched']}, "
+        f"tickers_failed={len(aggregate['total_tickers_failed'])}, "
+        f"rows={aggregate['total_rows_written']}"
+    )
+    logger.info(
+        "ingest_all_etf_universes complete: universes=%d rows=%d",
+        len(aggregate["universes_ingested"]),
+        aggregate["total_rows_written"],
+    )
+    return aggregate
+
+
 def clear_cache(ticker: Optional[str] = None, market_id: Optional[str] = None) -> int:
     """Clear cached parquet files.
 
@@ -993,3 +1268,67 @@ def verify_ingest_freshness(
         "Continuing pipeline with stale data (halt_on_stale_data=false)"
     )
     return False
+
+
+# ---------------------------------------------------------------------------
+# CLI entry point
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    import argparse
+    import sys
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
+    parser = argparse.ArgumentParser(
+        description="Atlas data ingestion CLI",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python3 -m data.ingest --universe sector_etfs
+  python3 -m data.ingest --universe all_etfs
+  python3 -m data.ingest --universe all_etfs --start 2019-01-01
+  python3 -m data.ingest --universe gold_etfs --force
+        """,
+    )
+    parser.add_argument(
+        "--universe",
+        required=True,
+        help=(
+            "Universe to ingest: one of the 6 named universes from definitions.py, "
+            "or 'all_etfs' to ingest all 5 static ETF universes."
+        ),
+    )
+    parser.add_argument("--start", dest="start_date", default=None, help="Start date YYYY-MM-DD (default: 7 years ago)")
+    parser.add_argument("--end", dest="end_date", default=None, help="End date YYYY-MM-DD (default: today)")
+    parser.add_argument("--force", action="store_true", default=False, help="Bypass parquet cache and re-fetch from API")
+
+    args = parser.parse_args()
+
+    if args.universe == "all_etfs":
+        result = ingest_all_etf_universes(
+            start_date=args.start_date,
+            end_date=args.end_date,
+            force=args.force,
+        )
+        print("\n=== Summary ===")
+        print(f"Universes ingested : {result['universes_ingested']}")
+        print(f"Total rows written : {result['total_rows_written']}")
+        print(f"Total failed       : {result['total_tickers_failed']}")
+    else:
+        result = ingest_universe(
+            args.universe,
+            start_date=args.start_date,
+            end_date=args.end_date,
+            force=args.force,
+        )
+        print("\n=== Summary ===")
+        print(f"Universe       : {result['universe']}")
+        print(f"Tickers fetched: {len(result['tickers_fetched'])}")
+        print(f"Tickers failed : {result['tickers_failed']}")
+        print(f"Rows written   : {result['rows_written']}")
+
+    sys.exit(0 if not result.get("tickers_failed") else 1)

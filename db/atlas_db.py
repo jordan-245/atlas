@@ -366,7 +366,28 @@ def get_universe_data(
 ) -> Dict[str, Any]:
     """
     Return all OHLCV data for a universe as ``{ticker: DataFrame}``.
+
+    For static ETF universes the ticker list is sourced from
+    ``universe.definitions.get_universe_tickers()`` so that cross-universe
+    tickers (e.g. GLD appears in both commodity_etfs and gold_etfs) are
+    always returned for each universe regardless of which universe last
+    wrote the SQLite row.
+
+    For dynamic universes (sp500) or when definitions is unavailable, falls
+    back to querying ``WHERE universe=?`` as before.
     """
+    # Prefer definitions-based ticker list for static universes
+    try:
+        from universe.definitions import get_universe  # type: ignore
+        defn = get_universe(universe_name)
+        if defn.get("method") == "static":
+            from universe.definitions import get_universe_tickers
+            tickers = get_universe_tickers(universe_name)
+            return {t: get_ohlcv(t, start_date=start_date) for t in tickers}
+    except (KeyError, ImportError):
+        pass
+
+    # Fallback: query by universe column (sp500 and unknown universes)
     with get_db() as db:
         tickers = [
             r[0]
