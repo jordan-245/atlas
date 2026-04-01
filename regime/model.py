@@ -22,6 +22,7 @@ Usage
 """
 from __future__ import annotations
 
+import datetime
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -232,10 +233,14 @@ class RegimeModel:
             return RegimeState.BEAR_CAPITULATION
 
         # Rule 2 — bear_risk_off: trend broken, risk elevated.
-        # Thresholds relaxed from < -0.3 to <= -0.25: the asymmetric below-200DMA
-        # weight caps trend at -0.42 (slope=0), and the composite is bounded
-        # similarly, so -0.3 was borderline unreachable on mild bear days.
-        if composite <= -0.25 and trend <= -0.25:
+        # Two paths to bear_risk_off:
+        #   (a) composite clearly negative + trend negative (original rule)
+        #   (b) trend strongly negative + any risk present (catches 2022-style
+        #       bear where VIX term structure stays in contango, muting the
+        #       composite but SPY is well below 200 DMA for months)
+        if (composite <= -0.25 and trend <= -0.25) or (
+            trend <= -0.35 and risk <= -0.05
+        ):
             return RegimeState.BEAR_RISK_OFF
 
         # Rule 3 — recovery_early: trend turning positive after a bear period.
@@ -393,10 +398,14 @@ class RegimeModel:
                     ).fetchone()
                     start_date = row["d"]
 
+            # Upper bound: use anchor_date (or today) to avoid reading future
+            # regime entries during sequential backfill.
+            end_date = anchor_date or datetime.date.today().isoformat()
+
             with get_db() as conn:
                 rows = conn.execute(
-                    "SELECT regime_state FROM regime_history WHERE date >= ? ORDER BY date DESC",
-                    (start_date,),
+                    "SELECT regime_state FROM regime_history WHERE date >= ? AND date < ? ORDER BY date DESC",
+                    (start_date, end_date),
                 ).fetchall()
 
             bear_states = {
