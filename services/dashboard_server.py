@@ -554,6 +554,7 @@ class AuthHandler(SimpleHTTPRequestHandler):
         result: dict = {}
 
         # Portfolio summary from live broker
+        positions: list = []
         try:
             from brokers.registry import get_live_broker
             broker = get_live_broker(config)
@@ -565,6 +566,23 @@ class AuthHandler(SimpleHTTPRequestHandler):
                 account = dataclasses.asdict(account_info)
                 positions = [dataclasses.asdict(p) for p in positions_info]
                 orders = [dataclasses.asdict(o) for o in orders_info]
+
+                # ── 1. Enrich positions with Atlas trade metadata ──────────
+                with get_db() as db:
+                    open_trades = db.execute(
+                        "SELECT ticker, strategy, entry_date, stop_price, entry_price "
+                        "FROM trades WHERE exit_date IS NULL"
+                    ).fetchall()
+                trade_meta = {t["ticker"]: dict(t) for t in open_trades}
+                for p in positions:
+                    meta = trade_meta.get(p.get("ticker", ""))
+                    if meta:
+                        if not p.get("strategy"):
+                            p["strategy"] = meta.get("strategy", "")
+                        if not p.get("entry_date"):
+                            p["entry_date"] = meta.get("entry_date", "")
+                        if not p.get("stop_price") and meta.get("stop_price"):
+                            p["stop_price"] = meta["stop_price"]
 
                 result["account"] = account
                 result["positions"] = positions
@@ -581,6 +599,21 @@ class AuthHandler(SimpleHTTPRequestHandler):
             result["recent_orders"] = []
             result["summary"] = {}
 
+        # ── 2. Market clock ───────────────────────────────────────────────
+        try:
+            from brokers.alpaca.broker import AlpacaBroker
+            ab = AlpacaBroker(config)
+            if ab.connect():
+                clock = ab._trade_client.get_clock()
+                result["market_clock"] = {
+                    "is_open": clock.is_open,
+                    "next_open": str(clock.next_open),
+                    "next_close": str(clock.next_close),
+                    "timestamp": str(clock.timestamp),
+                }
+        except Exception:
+            result["market_clock"] = {"is_open": False}
+
         # Equity curve from SQLite
         with get_db() as db:
             equity_rows = db.execute(
@@ -590,13 +623,13 @@ class AuthHandler(SimpleHTTPRequestHandler):
             result["portfolio_history"] = [dict(r) for r in equity_rows]
 
             # Strategy performance aggregated from closed trades
-            trades = db.execute(
+            trades_rows = db.execute(
                 "SELECT strategy, pnl, pnl_pct FROM trades "
                 "WHERE exit_date IS NOT NULL"
             ).fetchall()
 
             by_strategy: dict = {}
-            for t in trades:
+            for t in trades_rows:
                 s = t["strategy"] or "unknown"
                 if s not in by_strategy:
                     by_strategy[s] = {"trades": 0, "pnl": 0.0, "wins": 0}
@@ -606,6 +639,76 @@ class AuthHandler(SimpleHTTPRequestHandler):
                     by_strategy[s]["wins"] += 1
 
             result["strategy_performance"] = {"by_strategy": by_strategy}
+
+            # ── 6. Overall performance metrics ────────────────────────────
+            closed_rows = db.execute(
+                "SELECT pnl FROM trades WHERE exit_date IS NOT NULL"
+            ).fetchall()
+            if closed_rows:
+                pnls = [c["pnl"] for c in closed_rows if c["pnl"] is not None]
+                wins = [p for p in pnls if p > 0]
+                losses = [p for p in pnls if p <= 0]
+                loss_sum = sum(losses)
+                result["strategy_performance"]["overall"] = {
+                    "trades": len(pnls),
+                    "win_rate": len(wins) / len(pnls) if pnls else 0,
+                    "avg_win": sum(wins) / len(wins) if wins else 0,
+                    "avg_loss": sum(losses) / len(losses) if losses else 0,
+                    "profit_factor": abs(sum(wins) / loss_sum) if loss_sum != 0 else float("inf"),
+                    "expectancy": sum(pnls) / len(pnls) if pnls else 0,
+                }
+
+            # ── 3. Benchmark (SPY) curve ───────────────────────────────────
+            spy_rows = db.execute(
+                "SELECT date, close FROM ohlcv WHERE ticker = 'SPY' "
+                "ORDER BY date DESC LIMIT 30"
+            ).fetchall()
+            if spy_rows:
+                spy_data = list(reversed(spy_rows))
+                port_start = config.get("risk", {}).get("starting_equity", 1)
+                spy_start = spy_data[0]["close"]
+                scale = port_start / spy_start if spy_start else 1
+                bench_curve = [
+                    {"date": r["date"], "equity": round(r["close"] * scale, 2)}
+                    for r in spy_data
+                ]
+                spy_return = ((spy_data[-1]["close"] / spy_data[0]["close"]) - 1) * 100
+                result["benchmark"] = {
+                    "ticker": "SPY",
+                    "curve": bench_curve,
+                    "return_pct": round(spy_return, 2),
+                }
+
+        # ── 4. Strategy allocation breakdown ──────────────────────────────
+        alloc_map: dict = {}
+        total_mv = 0.0
+        for p in positions:
+            s = p.get("strategy") or "manual"
+            if s not in alloc_map:
+                alloc_map[s] = {"value": 0.0, "positions": 0}
+            mv = p.get("market_value") or 0
+            alloc_map[s]["value"] += mv
+            alloc_map[s]["positions"] += 1
+            total_mv += mv
+        result["strategy_allocation"] = [
+            {
+                "strategy": s,
+                "value": round(v["value"], 2),
+                "pct": round(v["value"] / total_mv * 100, 1) if total_mv > 0 else 0,
+                "positions": v["positions"],
+            }
+            for s, v in sorted(alloc_map.items(), key=lambda x: -x[1]["value"])
+        ]
+
+        # ── 5. Enrich summary with today_pnl + max_positions ──────────────
+        if "summary" not in result:
+            result["summary"] = {}
+        result["summary"]["today_pnl"] = round(
+            sum(p.get("today_pnl", 0) or 0 for p in positions), 2
+        )
+        result["summary"]["max_positions"] = (
+            config.get("risk", {}).get("max_open_positions", 10)
+        )
 
         result["timestamp"] = datetime.now().isoformat()
         return result
