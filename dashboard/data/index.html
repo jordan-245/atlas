@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="atlas.css">
 </head>
 <body>
@@ -128,53 +128,42 @@
   <!-- ── Finance Tab ── -->
   <div id="tab-finance" class="tab-content">
 
-    <!-- Row 1: Net Worth hero + 3 stats -->
-    <div class="fin-row-1">
-      <div class="fin-nw">
-        <div class="fin-nw-amount" id="fin-stat-total">—</div>
-        <div class="fin-nw-sub" id="fin-nw-sub"></div>
-      </div>
-      <div class="fin-kpis">
-        <div class="fin-kpi">
-          <div class="fin-kpi-val" id="fin-stat-spent">—</div>
-          <div class="fin-kpi-label">spent</div>
-        </div>
-        <div class="fin-kpi-sep"></div>
-        <div class="fin-kpi">
-          <div class="fin-kpi-val" id="fin-stat-daily">—</div>
-          <div class="fin-kpi-label">/ day</div>
-        </div>
-        <div class="fin-kpi-sep"></div>
-        <div class="fin-kpi">
-          <div class="fin-kpi-val" id="fin-stat-runway">—</div>
-          <div class="fin-kpi-label">runway</div>
-        </div>
+    <!-- Hero -->
+    <div class="f-hero">
+      <div class="f-amount" id="fin-stat-total">—</div>
+      <div class="f-sub" id="fin-nw-sub"></div>
+      <div class="f-metrics">
+        <span class="f-metric"><b id="fin-stat-spent">—</b> spent</span>
+        <span class="f-dot"></span>
+        <span class="f-metric"><b id="fin-stat-daily">—</b> / day</span>
+        <span class="f-dot"></span>
+        <span class="f-metric"><b id="fin-stat-runway">—</b> runway</span>
       </div>
     </div>
 
-    <!-- Row 2: Pace chart (full width) -->
-    <div class="fin-card">
-      <div class="fin-card-header">
-        <span id="pace-chart-title">April 2026</span>
-        <span class="fin-badge" id="fin-pace-badge"></span>
+    <!-- Pace Chart -->
+    <div class="f-chart">
+      <div class="f-chart-top">
+        <span class="f-chart-title" id="pace-chart-title">April 2026</span>
+        <span class="f-badge" id="fin-pace-badge"></span>
       </div>
       <canvas id="pace-canvas"></canvas>
-      <div class="pace-legend" id="pace-legend"></div>
+      <div class="f-legend" id="pace-legend"></div>
     </div>
 
-    <!-- Row 3: Categories + Transactions side by side -->
-    <div class="fin-row-3">
-      <div class="fin-card fin-card-cats">
-        <div class="fin-card-header">Categories</div>
+    <!-- Bottom -->
+    <div class="f-bottom">
+      <div class="f-col-cats">
+        <div class="f-col-title">Categories</div>
         <div id="fin-spending-bars"></div>
       </div>
-      <div class="fin-card fin-card-txns">
-        <div class="fin-card-header">Transactions</div>
+      <div class="f-col-txns">
+        <div class="f-col-title">Transactions</div>
         <div id="fin-txns-list"></div>
       </div>
     </div>
 
-    <div class="fin-footer" id="fin-updated"></div>
+    <div class="f-footer" id="fin-updated"></div>
 
   </div><!-- /tab-finance -->
 
@@ -1138,21 +1127,21 @@ var _paceChartData = null;
 function loadFinance() {
   window._financeLoaded = true;
   fetch('/finance-data.json')
-    .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function(r) { if (!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
     .then(function(d) {
-      _renderFinHero(d);
-      _drawPace(d.insights || {});
-      _renderCats(d.monthly_spending || {});
-      _renderTxns(d.recent_transactions || []);
+      _finHero(d);
+      _finPace(d.insights || {});
+      _finCats(d.monthly_spending || {});
+      _finTxns(d.recent_transactions || []);
       var u = document.getElementById('fin-updated');
       if (u && d.last_updated) u.textContent = 'Updated ' + fmtRelativeTime(d.last_updated);
     })
     .catch(function(e) { console.error('Finance load failed:', e); });
 }
 
-function _renderFinHero(d) {
-  var nw = d.net_worth || {}, perf = d.performance || {},
-      ins = d.insights || {}, ms = d.monthly_spending || {};
+function _finHero(d) {
+  var nw = d.net_worth || {}, perf = d.performance || {};
+  var ins = d.insights || {}, ms = d.monthly_spending || {};
 
   var el = document.getElementById('fin-stat-total');
   if (el) el.textContent = fmtCcy(nw.total_aud, 0);
@@ -1170,50 +1159,48 @@ function _renderFinHero(d) {
   if (r) r.textContent = perf.runway_months != null ? Math.round(perf.runway_months) + ' mo' : '—';
 }
 
-function _drawPace(insights) {
+function _finPace(insights) {
   var cur = insights.pace_data || [], hist = insights.pace_history || [];
   var status = insights.pace_status || 'under';
   _paceChartData = insights;
 
-  // Title
   var te = document.getElementById('pace-chart-title');
   if (te) {
     var mn = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-    var now = new Date();
-    te.textContent = mn[now.getMonth()] + ' ' + now.getFullYear();
+    te.textContent = mn[new Date().getMonth()] + ' ' + new Date().getFullYear();
   }
 
-  // Badge
   var be = document.getElementById('fin-pace-badge');
   if (be && cur.length > 0) {
     var last = cur[cur.length - 1], diff = Math.abs(last.actual - last.budget);
     var over = last.actual > last.budget;
     be.textContent = (over ? '+' : '-') + fmtCcy(diff, 0) + ' ' + (over ? 'over' : 'under');
-    be.className = 'fin-badge ' + (over ? 'fin-badge-red' : 'fin-badge-green');
+    be.className = 'f-badge ' + (over ? 'f-badge-over' : 'f-badge-under');
   }
 
   var canvas = document.getElementById('pace-canvas');
   if (!canvas) return;
   var dpr = window.devicePixelRatio || 1;
-  var w = canvas.offsetWidth || 800, h = parseInt(getComputedStyle(canvas).height) || 200;
+  var w = canvas.offsetWidth || 800;
+  var h = parseInt(getComputedStyle(canvas).height) || 220;
   canvas.width = w * dpr; canvas.height = h * dpr;
   canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
   var ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
 
   var dk = document.documentElement.getAttribute('data-theme') !== 'light';
-  var grid = dk ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.05)';
-  var lbl  = dk ? '#52525b' : '#a1a1aa';
-  var budC = dk ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.10)';
-  var curC = status === 'over' ? (dk ? '#ef4444' : '#dc2626') : (dk ? '#22c55e' : '#16a34a');
+  var grid = dk ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.04)';
+  var lbl  = dk ? '#3f3f46' : '#a1a1aa';
+  var budC = dk ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+  var curC = status === 'over' ? (dk ? '#f87171' : '#dc2626') : (dk ? '#4ade80' : '#16a34a');
   var curF = status === 'over'
-    ? (dk ? 'rgba(239,68,68,0.06)' : 'rgba(220,38,38,0.04)')
-    : (dk ? 'rgba(34,197,94,0.06)' : 'rgba(22,163,74,0.04)');
+    ? (dk ? 'rgba(248,113,113,0.05)' : 'rgba(220,38,38,0.04)')
+    : (dk ? 'rgba(74,222,128,0.05)' : 'rgba(22,163,74,0.04)');
   var bg = dk ? '#131316' : '#ffffff';
   var hc = [
-    dk ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
-    dk ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.09)',
-    dk ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.13)',
+    dk ? 'rgba(212,168,74,0.12)' : 'rgba(180,140,60,0.10)',
+    dk ? 'rgba(212,168,74,0.20)' : 'rgba(180,140,60,0.16)',
+    dk ? 'rgba(212,168,74,0.30)' : 'rgba(180,140,60,0.24)',
   ];
 
   var mxD = 31, allV = [];
@@ -1222,35 +1209,32 @@ function _drawPace(insights) {
   var bpd = 0;
   if (cur.length > 0) { bpd = cur[cur.length-1].budget / cur.length; allV.push(bpd * mxD); }
   else if (hist.length > 0) allV.push(hist[0].total_budget || 5000);
-  var mxV = (Math.max.apply(null, allV) || 5000) * 1.08;
+  var mxV = (Math.max.apply(null, allV) || 5000) * 1.06;
 
-  var p = {t:10, r:10, b:28, l:48}, cw = w-p.l-p.r, ch = h-p.t-p.b;
+  var p = {t:8, r:8, b:24, l:44}, cw = w-p.l-p.r, ch = h-p.t-p.b;
   function xOf(d){ return p.l+((d-1)/(mxD-1))*cw; }
   function yOf(v){ return p.t+ch-(v/mxV)*ch; }
-
   ctx.clearRect(0,0,w,h);
 
-  // Y grid
-  ctx.font = '10px JetBrains Mono, monospace'; ctx.textAlign = 'right';
+  // Horizontal grid — very subtle
+  ctx.font = '9px JetBrains Mono, monospace'; ctx.textAlign = 'right';
   for (var i=0;i<=4;i++){
     var yv=(i/4)*mxV, yp=yOf(yv);
-    ctx.strokeStyle=grid; ctx.lineWidth=1; ctx.setLineDash([2,4]);
+    ctx.strokeStyle=grid; ctx.lineWidth=1; ctx.setLineDash([]);
     ctx.beginPath(); ctx.moveTo(p.l,yp); ctx.lineTo(p.l+cw,yp); ctx.stroke();
-    ctx.setLineDash([]);
     ctx.fillStyle=lbl;
-    ctx.fillText(yv>=1000?'$'+(yv/1000).toFixed(1)+'k':'$'+Math.round(yv), p.l-6, yp+3);
+    ctx.fillText(yv>=1000?'$'+(yv/1000).toFixed(1)+'k':'$'+Math.round(yv), p.l-5, yp+3);
   }
-  // X labels
   ctx.textAlign='center';
-  [1,10,20,31].forEach(function(d){ ctx.fillStyle=lbl; ctx.fillText(d+'',xOf(d),h-6); });
+  [1,10,20,31].forEach(function(d){ ctx.fillStyle=lbl; ctx.fillText(d+'',xOf(d),h-5); });
 
   // Budget dashed
   if(bpd>0){
     ctx.beginPath(); ctx.moveTo(xOf(1),yOf(bpd)); ctx.lineTo(xOf(mxD),yOf(bpd*mxD));
-    ctx.strokeStyle=budC; ctx.lineWidth=1.5; ctx.setLineDash([6,4]); ctx.stroke(); ctx.setLineDash([]);
+    ctx.strokeStyle=budC; ctx.lineWidth=1; ctx.setLineDash([4,6]); ctx.stroke(); ctx.setLineDash([]);
   }
 
-  // History lines
+  // History — warm amber, increasing opacity
   hist.forEach(function(m,mi){
     var pd=m.pace_data||[]; if(pd.length<2) return;
     ctx.beginPath(); ctx.moveTo(xOf(1),yOf(pd[0].actual));
@@ -1258,22 +1242,24 @@ function _drawPace(insights) {
     ctx.strokeStyle=hc[mi%hc.length]; ctx.lineWidth=1.5; ctx.lineJoin='round'; ctx.lineCap='round'; ctx.stroke();
   });
 
-  // Current month
+  // Current month — area + line
   if(cur.length>=1){
-    // Area
     ctx.beginPath(); ctx.moveTo(xOf(1),yOf(cur[0].actual));
     for(var c=1;c<cur.length;c++) ctx.lineTo(xOf(c+1),yOf(cur[c].actual));
     ctx.lineTo(xOf(cur.length),yOf(0)); ctx.lineTo(xOf(1),yOf(0));
     ctx.closePath(); ctx.fillStyle=curF; ctx.fill();
-    // Line
+
     ctx.beginPath(); ctx.moveTo(xOf(1),yOf(cur[0].actual));
     for(var c2=1;c2<cur.length;c2++) ctx.lineTo(xOf(c2+1),yOf(cur[c2].actual));
-    ctx.strokeStyle=curC; ctx.lineWidth=2.5; ctx.lineJoin='round'; ctx.lineCap='round'; ctx.stroke();
-    // End dot
-    var li=cur.length-1;
-    ctx.beginPath(); ctx.arc(xOf(li+1),yOf(cur[li].actual),4,0,Math.PI*2);
+    ctx.strokeStyle=curC; ctx.lineWidth=2; ctx.lineJoin='round'; ctx.lineCap='round'; ctx.stroke();
+
+    // Glow dot at end
+    var li=cur.length-1, lx=xOf(li+1), ly=yOf(cur[li].actual);
+    ctx.beginPath(); ctx.arc(lx,ly,6,0,Math.PI*2);
+    ctx.fillStyle=curC.replace(')',',0.15)').replace('rgb','rgba'); ctx.fill();
+    ctx.beginPath(); ctx.arc(lx,ly,3,0,Math.PI*2);
     ctx.fillStyle=curC; ctx.fill();
-    ctx.beginPath(); ctx.arc(xOf(li+1),yOf(cur[li].actual),1.5,0,Math.PI*2);
+    ctx.beginPath(); ctx.arc(lx,ly,1.2,0,Math.PI*2);
     ctx.fillStyle=bg; ctx.fill();
   }
 
@@ -1281,47 +1267,51 @@ function _drawPace(insights) {
   var le=document.getElementById('pace-legend');
   if(le){
     var ma=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    var h2='<span class="pl-i"><span class="pl-l" style="height:1.5px;background:repeating-linear-gradient(90deg,'+budC+' 0 5px,transparent 5px 9px)"></span>Budget</span>';
+    var h2='<span class="fl-i"><i class="fl-l" style="background:repeating-linear-gradient(90deg,'+budC+' 0 3px,transparent 3px 7px)"></i>Budget</span>';
     hist.forEach(function(m,mi){
-      h2+='<span class="pl-i"><span class="pl-l" style="background:'+hc[mi%hc.length]+'"></span>'+(m.label?m.label.split(' ')[0].substring(0,3):m.month)+'</span>';
+      h2+='<span class="fl-i"><i class="fl-l" style="background:'+hc[mi%hc.length]+'"></i>'+(m.label?m.label.split(' ')[0].substring(0,3):m.month)+'</span>';
     });
-    h2+='<span class="pl-i"><span class="pl-l" style="background:'+curC+';height:3px"></span>'+ma[new Date().getMonth()]+'</span>';
+    h2+='<span class="fl-i"><i class="fl-l" style="background:'+curC+';height:2.5px"></i>'+ma[new Date().getMonth()]+'</span>';
     le.innerHTML=h2;
   }
 }
 
-function _renderCats(spending) {
+function _finCats(spending) {
   var el = document.getElementById('fin-spending-bars');
   if (!el) return;
   var cats = spending.by_parent_category || [], total = spending.total || 0;
-  if (!cats.length) { el.innerHTML = '<div class="fin-empty">No data yet</div>'; return; }
+  if (!cats.length) { el.innerHTML = '<div class="f-empty">No data yet</div>'; return; }
   var mx = Math.max.apply(null, cats.map(function(c){ return c.amount||0; })) || 1;
-  el.innerHTML = cats.map(function(c) {
+  var colors = ['#6366f1','#8b5cf6','#d946ef','#f43f5e','#f97316','#eab308'];
+  el.innerHTML = cats.map(function(c, i) {
     var pct = c.amount / mx * 100;
-    return '<div class="cat-row">' +
-      '<span class="cat-name">' + (c.label||c.category) + '</span>' +
-      '<div class="cat-bar"><div class="cat-fill" style="width:'+pct.toFixed(1)+'%"></div></div>' +
-      '<span class="cat-amt">' + fmtCcy(c.amount, 0) + '</span>' +
+    var clr = colors[i % colors.length];
+    return '<div class="fc-row">' +
+      '<div class="fc-dot" style="background:'+clr+'"></div>' +
+      '<span class="fc-name">' + (c.label||c.category) + '</span>' +
+      '<div class="fc-bar"><div class="fc-fill" style="width:'+pct.toFixed(1)+'%;background:'+clr+'"></div></div>' +
+      '<span class="fc-amt">' + fmtCcy(c.amount, 0) + '</span>' +
     '</div>';
   }).join('') +
-  '<div class="cat-total"><span>Total</span><span>' + fmtCcy(total, 0) + '</span></div>';
+  '<div class="fc-total"><span>Total</span><span>' + fmtCcy(total, 0) + '</span></div>';
 }
 
-function _renderTxns(txns) {
+function _finTxns(txns) {
   var el = document.getElementById('fin-txns-list');
   if (!el) return;
-  var rows = (txns || []).slice(0, 8);
-  if (!rows.length) { el.innerHTML = '<div class="fin-empty">No transactions</div>'; return; }
+  var rows = (txns || []).slice(0, 7);
+  if (!rows.length) { el.innerHTML = '<div class="f-empty">No transactions</div>'; return; }
   el.innerHTML = rows.map(function(t) {
     var a = t.amount || 0;
-    var cls = a > 0 ? 'green' : a < 0 ? 'red' : '';
+    var cls = a > 0 ? 'pos' : 'neg';
     var sign = a >= 0 ? '+' : '-';
-    return '<div class="txn-row">' +
-      '<div class="txn-left">' +
-        '<span class="txn-desc">' + (t.description || '—') + '</span>' +
-        '<span class="txn-meta">' + fmtDateShort(t.date) + '</span>' +
+    return '<div class="ft-row">' +
+      '<div class="ft-dot ft-'+cls+'"></div>' +
+      '<div class="ft-info">' +
+        '<span class="ft-name">' + (t.description || '—') + '</span>' +
+        '<span class="ft-date">' + fmtDateShort(t.date) + '</span>' +
       '</div>' +
-      '<span class="txn-amt ' + cls + '">' + sign + '$' + Math.abs(a).toFixed(2) + '</span>' +
+      '<span class="ft-amt ft-'+cls+'">' + sign + '$' + Math.abs(a).toFixed(2) + '</span>' +
     '</div>';
   }).join('');
 }
