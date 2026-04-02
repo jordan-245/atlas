@@ -457,6 +457,27 @@ def send_premarket_summary(plan_path: Optional[str] = None, market_id: str = "sp
     if not entries and not exits:
         msg += "  → <b>Hold all positions</b>\n"
     msg += f"\nStatus: <b>awaiting approval</b>"
+
+    # Overlay context (log-only annotation — present when overlay module ran today)
+    overlay = plan.get("overlay_context", {})
+    if overlay and overlay.get("action") == "tighten":
+        msg += "\n\n\U0001f9e0 <b>AI Overlay (log-only):</b>\n"
+        msg += "  Action: <b>TIGHTEN</b>\n"
+        sizing = overlay.get("sizing_override")
+        msg += f"  Sizing: {sizing if sizing is not None else 'N/A'}\n"
+        universes_off = overlay.get("universes_deactivated") or []
+        if universes_off:
+            msg += f"  Universes off: {_esc(', '.join(universes_off))}\n"
+        tickers_avoid = overlay.get("tickers_to_avoid") or []
+        if tickers_avoid:
+            msg += f"  Avoid: {_esc(', '.join(tickers_avoid))}\n"
+        reasoning = overlay.get("reasoning") or "N/A"
+        confidence = overlay.get("confidence")
+        msg += f"  Reason: {_esc(str(reasoning))}\n"
+        msg += f"  Confidence: {confidence if confidence is not None else 'N/A'}\n"
+    elif overlay:
+        msg += "\n\n\U0001f9e0 AI Overlay: \u2705 No tightening needed\n"
+
     return send_message(msg)
 
 

@@ -13,6 +13,20 @@ from typing import Optional
 
 from utils.allocation import build_allocation_pool
 
+
+def _get_latest_overlay() -> Optional[dict]:
+    """Return the most recent overlay decision from the last 24 h, or None.
+
+    Non-fatal — any error returns None so plan generation is never blocked.
+    """
+    try:
+        from db.atlas_db import get_overlay_decisions
+        decisions = get_overlay_decisions(days=1)
+        return decisions[0] if decisions else None
+    except Exception as exc:
+        logger.debug("_get_latest_overlay: %s", exc)
+        return None
+
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -316,27 +330,51 @@ class TradePlanGenerator:
         sp500_data = sp500_data or {}
 
         if not self.config.get("regime_enabled", False):
-            return self._run_sp500_plan(
+            plan = self._run_sp500_plan(
                 strategies, sp500_data, prices, trade_date, equity,
                 existing_positions, exit_recommendations,
             )
+        else:
+            # Regime-aware path — fall back to SP500-only on any error.
+            try:
+                plan = self._run_regime_aware_plan(
+                    strategies, prices, trade_date, equity,
+                    existing_positions, exit_recommendations,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Regime-aware plan generation failed (%s) — "
+                    "falling back to SP500-only mode",
+                    exc,
+                )
+                plan = self._run_sp500_plan(
+                    strategies, sp500_data, prices, trade_date, equity,
+                    existing_positions, exit_recommendations,
+                )
 
-        # Regime-aware path — fall back to SP500-only on any error.
+        # Annotate plan with latest overlay decision (log-only — never modifies signals).
         try:
-            return self._run_regime_aware_plan(
-                strategies, prices, trade_date, equity,
-                existing_positions, exit_recommendations,
-            )
+            overlay = _get_latest_overlay()
+            if overlay:
+                plan["overlay_context"] = {
+                    "action": overlay.get("action", "no_change"),
+                    "sizing_override": overlay.get("sizing_override"),
+                    "universes_deactivated": overlay.get("universes_deactivated") or [],
+                    "tickers_to_avoid": overlay.get("tickers_avoided") or [],
+                    "reasoning": overlay.get("reasoning", ""),
+                    "confidence": overlay.get("confidence"),
+                }
+                logger.info(
+                    "Overlay context attached to plan: action=%s confidence=%s",
+                    plan["overlay_context"]["action"],
+                    plan["overlay_context"]["confidence"],
+                )
+            else:
+                logger.debug("No overlay decision in last 24h — plan unannotated")
         except Exception as exc:
-            logger.warning(
-                "Regime-aware plan generation failed (%s) — "
-                "falling back to SP500-only mode",
-                exc,
-            )
-            return self._run_sp500_plan(
-                strategies, sp500_data, prices, trade_date, equity,
-                existing_positions, exit_recommendations,
-            )
+            logger.warning("Overlay annotation failed (non-fatal): %s", exc)
+
+        return plan
 
     def _run_sp500_plan(
         self,

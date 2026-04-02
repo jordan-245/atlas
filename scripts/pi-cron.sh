@@ -154,6 +154,23 @@ ${CONFIG_ERRORS}"
             VOL_CONTEXT="✅ Volatility gate: OK — no macro flags."
         fi
 
+        # ── AI overlay (log-only mode) ─────────────────────────────────────
+        # Runs BEFORE the planning agent so the decision is in SQLite when
+        # generate_regime_plan() annotates the plan with overlay_context.
+        echo "$(date -Iseconds) Running AI overlay (log_only)..." >> "$LOG_DIR/pi-cron.log"
+        _IN_SET_PLUS_E=1
+        set +e
+        cd "$PROJECT" && python3 -m overlay.cron --mode log_only \
+            >> "$LOG_DIR/overlay_$(date +%Y%m%d).log" 2>&1
+        OVERLAY_EXIT=$?
+        set -e
+        _IN_SET_PLUS_E=0
+        if [ "$OVERLAY_EXIT" -ne 0 ]; then
+            echo "$(date -Iseconds) WARNING: overlay cron exited $OVERLAY_EXIT — continuing" >> "$LOG_DIR/pi-cron.log"
+        else
+            echo "$(date -Iseconds) Overlay run complete" >> "$LOG_DIR/pi-cron.log"
+        fi
+
         # Canonical prompt: .pi/prompts/premarket.md
         # This inline version adds dynamic context (VOL_CONTEXT, CONFIG_CONTEXT)
         # that can't be passed via slash commands in non-interactive mode.
@@ -191,6 +208,23 @@ NOTE: A Telegram summary is sent automatically after this workflow completes —
             echo "$(date -Iseconds) Research daemon health: $HEARTBEAT" >> "$LOG_DIR/pi-cron.log"
         else
             echo "$(date -Iseconds) WARNING: Research daemon is not running" >> "$LOG_DIR/pi-cron.log"
+        fi
+
+        # ── Weekly overlay evaluation (Saturdays — end of trading week) ───
+        if [ "$(date +%u)" = "6" ]; then
+            echo "$(date -Iseconds) Running weekly overlay evaluation..." >> "$LOG_DIR/pi-cron.log"
+            _IN_SET_PLUS_E=1
+            set +e
+            cd "$PROJECT" && python3 -m overlay.cron --evaluate \
+                >> "$LOG_DIR/overlay_eval_$(date +%Y%m%d).log" 2>&1
+            OVERLAY_EVAL_EXIT=$?
+            set -e
+            _IN_SET_PLUS_E=0
+            if [ "$OVERLAY_EVAL_EXIT" -ne 0 ]; then
+                echo "$(date -Iseconds) WARNING: overlay evaluation exited $OVERLAY_EVAL_EXIT" >> "$LOG_DIR/pi-cron.log"
+            else
+                echo "$(date -Iseconds) Overlay evaluation complete" >> "$LOG_DIR/pi-cron.log"
+            fi
         fi
         ;;
     research)
