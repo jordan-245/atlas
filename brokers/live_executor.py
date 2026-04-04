@@ -943,20 +943,39 @@ class LiveExecutor:
                         ticker, _max_wait, order_result.order_id,
                     )
 
+            # ── GUARD: Do NOT record exit if the order was not filled ──
+            # A LIMIT sell that expires unfilled must not be written to the
+            # trade ledger.  The reconcile_exit_fills path will pick it up
+            # once the broker confirms the fill.  Recording with a fake
+            # fill_price creates a phantom exit that desynchronises the
+            # ledger from the broker (root cause of the 2026-04-04 MSI
+            # discrepancy — order a685c1f4 ACCEPTED but never filled).
+            _actual_fill = result.get("fill_price", 0) or 0
+            if _actual_fill == 0:
+                logger.warning(
+                    "EXIT ORDER UNFILLED — %s order %s accepted but fill_price=0 "
+                    "after polling. Skipping ledger/portfolio recording. "
+                    "The deferred-fill reconciliation will record it once filled.",
+                    ticker, order_result.order_id,
+                )
+                result["deferred_fill"] = True
+                _journal_entry("exit_deferred_fill", result)
+                return result
+
             # Track protective stop fill quality — telemetry, never blocks execution
             try:
                 _stop_price = pos.stop_price if pos else 0
-                if reason in ("stop_loss", "protective_stop") and _stop_price and result.get("fill_price", 0) > 0:
+                if reason in ("stop_loss", "protective_stop") and _stop_price and _actual_fill > 0:
                     result["stop_expected_price"] = _stop_price
-                    result["stop_fill_price"] = result["fill_price"]
+                    result["stop_fill_price"] = _actual_fill
                     result["stop_slippage_bps"] = round(
-                        (_stop_price - result["fill_price"]) / _stop_price * 10000, 1
+                        (_stop_price - _actual_fill) / _stop_price * 10000, 1
                     )
             except Exception as e:
                 logger.debug("Stop slippage telemetry failed (non-blocking): %s", e)
 
-            # Record exit to TradeLedger — telemetry must never crash execution
-            _fill_price = result.get("fill_price") or _exit_price
+            # Record exit to TradeLedger — only reached when fill is confirmed
+            _fill_price = _actual_fill
             _pnl = round((_fill_price - entry_price) * qty, 2) if entry_price else None
             _pnl_pct = round((_fill_price - entry_price) / entry_price * 100, 2) if entry_price and entry_price > 0 else None
             _exit_record = {
