@@ -153,7 +153,7 @@ class PiSessionManager:
             stderr_task = asyncio.create_task(_drain_stderr())
 
             try:
-                async with asyncio.timeout(120):  # 2-minute hard cap per message
+                async with asyncio.timeout(300):  # 5-minute hard cap per message (Opus + big sessions need time)
                     async for line in self.process.stdout:  # type: ignore[union-attr]
                         decoded = line.decode("utf-8", errors="replace").strip()
                         if not decoded:
@@ -166,8 +166,8 @@ class PiSessionManager:
                             await self._broadcast(evt)
                             yield evt
             except asyncio.TimeoutError:
-                logger.warning("Pi subprocess timed out after 120 s")
-                timeout_err = PiEvent("error", {"message": "Response timed out after 2 minutes"})
+                logger.warning("Pi subprocess timed out after 300 s")
+                timeout_err = PiEvent("error", {"message": "Response timed out after 5 minutes. Try starting a new session — long history slows Opus down."})
                 await self._broadcast(timeout_err)
                 yield timeout_err
                 if self.process:
@@ -265,9 +265,10 @@ class PiSessionManager:
             "--no-themes",
         ]
 
-        # Explicitly load multi-team extension (provides agent teams + spawn_worker).
-        # Do NOT pass --no-extensions: swarm, subagent, and atlas tools must
-        # still be auto-discovered from the user's extensions directory.
+        # Explicitly load multi-team extension only.
+        # Use --no-extensions to prevent auto-discovering other heavy extensions
+        # (swarm, subagent etc. are available through the multi-team orchestrator).
+        cmd.append("--no-extensions")
         if MULTI_TEAM_EXT.exists():
             cmd += ["-e", str(MULTI_TEAM_EXT)]
 
