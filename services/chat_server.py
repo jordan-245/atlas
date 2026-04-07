@@ -1293,7 +1293,14 @@ def serve_agent_page(
     file_path = SERVE_DIR / "agent.html"
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Agent page not found")
-    return FileResponse(str(file_path), headers={"Cache-Control": "no-cache"})
+    return FileResponse(
+        str(file_path),
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 
 # Static file catch-all  (MUST be last — fallback after all API routes)
