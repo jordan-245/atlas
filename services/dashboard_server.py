@@ -211,6 +211,14 @@ class AuthHandler(SimpleHTTPRequestHandler):
             return self._handle_system_health()
         if self.path.startswith("/api/dashboard-data"):
             return self._handle_dashboard_data()
+        if self.path.startswith("/api/signals"):
+            return self._handle_signals()
+        if self.path.startswith("/api/strategy-health"):
+            return self._handle_strategy_health()
+        if self.path.startswith("/api/heartbeats"):
+            return self._handle_heartbeats()
+        if self.path.startswith("/api/plans"):
+            return self._handle_plans()
         # Legacy /api/db/* routes — kept for backward compat
         if self.path.startswith("/api/db/portfolio"):
             return self._handle_db_portfolio()
@@ -757,8 +765,117 @@ class AuthHandler(SimpleHTTPRequestHandler):
             config.get("risk", {}).get("max_open_positions", 10)
         )
 
+        # ── 7. Vol scaling diagnostics ────────────────────────────────────────
+        try:
+            vol_cfg = config.get("vol_scaling", {})
+            if vol_cfg.get("enabled"):
+                result["vol_scaling"] = {
+                    "enabled": True,
+                    "lookback": vol_cfg.get("lookback", 60),
+                    "half_life": vol_cfg.get("half_life", 20),
+                    "target_vol": vol_cfg.get("target_vol", 0.12),
+                    "conditional": vol_cfg.get("conditional", True),
+                    "percentile_threshold": vol_cfg.get("percentile_threshold", 80),
+                }
+            else:
+                result["vol_scaling"] = {"enabled": False}
+        except Exception:
+            result["vol_scaling"] = {"enabled": False}
+
+        # ── 8. Heartbeat status ─────────────────────────────────────────────────
+        try:
+            from db.atlas_db import get_heartbeats
+            heartbeats = get_heartbeats()
+            now = datetime.now()
+            hb_summary = []
+            for hb in heartbeats:
+                entry = {
+                    "service": hb.get("service", "unknown"),
+                    "status": hb.get("status", "unknown"),
+                    "timestamp": hb.get("timestamp"),
+                }
+                if hb.get("timestamp"):
+                    try:
+                        ts = datetime.fromisoformat(hb["timestamp"])
+                        entry["age_seconds"] = int((now - ts).total_seconds())
+                    except (ValueError, TypeError):
+                        entry["age_seconds"] = None
+                hb_summary.append(entry)
+            result["heartbeats"] = hb_summary
+        except Exception:
+            result["heartbeats"] = []
+
         result["timestamp"] = datetime.now().isoformat()
         return result
+
+    def _handle_signals(self):
+        """GET /api/signals?days=7&strategy=mean_reversion&ticker=AAPL&action=buy"""
+        try:
+            sys.path.insert(0, str(PROJECT_ROOT))
+            from db.atlas_db import get_signals
+            params = parse_qs(urlparse(self.path).query)
+            days = int(params.get("days", ["7"])[0])
+            strategy = params.get("strategy", [None])[0]
+            ticker = params.get("ticker", [None])[0]
+            action = params.get("action", [None])[0]
+            signals = get_signals(days=days, strategy=strategy, ticker=ticker, action=action)
+            self._send_json(200, {"signals": signals, "count": len(signals)})
+        except Exception as e:
+            self._send_json(500, {"error": str(e)})
+
+    def _handle_strategy_health(self):
+        """GET /api/strategy-health?market=sp500 — per-strategy health report."""
+        try:
+            sys.path.insert(0, str(PROJECT_ROOT))
+            from monitor.strategy_health import StrategyHealthMonitor
+            from utils.config import get_active_config
+            params = parse_qs(urlparse(self.path).query)
+            market = params.get("market", ["sp500"])[0]
+            config = get_active_config(market)
+            monitor = StrategyHealthMonitor(config, market)
+            report = monitor.full_health_report(market)
+            self._send_json(200, report.to_dict())
+        except Exception as e:
+            self._send_json(500, {"error": str(e)})
+
+    def _handle_heartbeats(self):
+        """GET /api/heartbeats?service=premarket — service heartbeats with age."""
+        try:
+            sys.path.insert(0, str(PROJECT_ROOT))
+            from db.atlas_db import get_heartbeats
+            params = parse_qs(urlparse(self.path).query)
+            service = params.get("service", [None])[0]
+            heartbeats = get_heartbeats(service=service)
+            # Compute age for each heartbeat
+            now = datetime.now()
+            for hb in heartbeats:
+                if hb.get("timestamp"):
+                    try:
+                        ts = datetime.fromisoformat(hb["timestamp"])
+                        hb["age_seconds"] = int((now - ts).total_seconds())
+                    except (ValueError, TypeError):
+                        hb["age_seconds"] = None
+            self._send_json(200, {
+                "heartbeats": heartbeats,
+                "count": len(heartbeats),
+                "timestamp": now.isoformat(),
+            })
+        except Exception as e:
+            self._send_json(500, {"error": str(e)})
+
+    def _handle_plans(self):
+        """GET /api/plans?days=30&status=executed&market=sp500 — recent plan history."""
+        try:
+            sys.path.insert(0, str(PROJECT_ROOT))
+            from db.atlas_db import get_plans
+            params = parse_qs(urlparse(self.path).query)
+            days = int(params.get("days", ["30"])[0])
+            status = params.get("status", [None])[0]
+            market = params.get("market", [None])[0]
+            plans = get_plans(days=days, status=status, market_id=market)
+            self._send_json(200, {"plans": plans, "count": len(plans)})
+        except Exception as e:
+            self._send_json(500, {"error": str(e)})
 
     # ── Monitor API handlers ─────────────────────────────────
 
