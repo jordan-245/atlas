@@ -311,7 +311,7 @@
       "enabled": false
     },
     "volatility_scaling": {
-      "enabled": false
+      "enabled": true
     },
     "equity_curve_scaling": {
       "enabled": true,
@@ -330,6 +330,14 @@
         }
       ]
     }
+  },
+  "vol_scaling": {
+    "enabled": true,
+    "lookback": 60,
+    "half_life": 20,
+    "target_vol": 0.12,
+    "conditional": true,
+    "percentile_threshold": 80
   },
   "fee_aware_filter": {
     "enabled": false

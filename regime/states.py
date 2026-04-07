@@ -91,27 +91,30 @@ REGIME_CONFIGS: dict[RegimeState, RegimeConfig] = {
     },
     RegimeState.TRANSITION_UNCERTAIN: {
         # Signals conflicting — de-risk materially.
-        # Focus on lower-beta defensive universes and short-duration mean-rev.
-        "active_universes": ["sector_etfs", "treasury_etfs", "gold_etfs"],
-        "strategy_types": ["mean_reversion", "short_term_mr"],
+        # SP500 stays active (manage existing positions + mean-rev opportunities)
+        # plus lower-beta defensive universes for diversification.
+        # All strategies active — sizing_multiplier handles risk reduction.
+        "active_universes": ["sp500", "sector_etfs", "treasury_etfs", "gold_etfs"],
+        "strategy_types": ["all"],
         "sizing_multiplier": 0.5,
-        "max_positions": 3,
+        "max_positions": 5,
     },
     RegimeState.BEAR_RISK_OFF: {
         # Trend broken, volatility elevated.  Capital preservation mode.
-        # Only trend-follow safe-haven assets (treasuries, gold, defensives).
-        "active_universes": ["treasury_etfs", "gold_etfs", "defensive_etfs"],
-        "strategy_types": ["trend_following"],
+        # SP500 stays active (exit management) + safe-haven trend-following.
+        "active_universes": ["sp500", "treasury_etfs", "gold_etfs", "defensive_etfs"],
+        "strategy_types": ["all"],
         "sizing_multiplier": 0.5,
-        "max_positions": 3,
+        "max_positions": 4,
     },
     RegimeState.BEAR_CAPITULATION: {
         # Panic regime — VIX > 35, credit blowout.
         # Minimal deployment; preserve capital; small safe-haven positions only.
-        "active_universes": ["treasury_etfs", "gold_etfs"],
-        "strategy_types": ["trend_following"],
+        # SP500 stays active for exit management of existing positions.
+        "active_universes": ["sp500", "treasury_etfs", "gold_etfs"],
+        "strategy_types": ["mean_reversion", "short_term_mr"],
         "sizing_multiplier": 0.3,
-        "max_positions": 2,
+        "max_positions": 3,
     },
     RegimeState.RECOVERY_EARLY: {
         # Early signs of recovery: SPY reclaiming 200-DMA, VIX declining.

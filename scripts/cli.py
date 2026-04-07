@@ -276,35 +276,30 @@ def cmd_plan(args):
     else:
         logger.warning("No sector map found — sector concentration checks will use 'Unknown'")
 
-    all_signals = []
     exit_recommendations = []
     existing_positions = [p.to_dict() for p in portfolio.positions]
     for strat in strategies:
         try:
-            # Ensure indicators are pre-computed (backtest engine calls this,
-            # but live plan generation must also call it)
+            # Precompute indicators for exit checks
             if hasattr(strat, 'precompute') and not getattr(strat, '_precomputed', False):
                 strat.precompute(data)
-            signals = strat.generate_signals(data, effective_equity, existing_positions)
-            for sig in signals:
-                all_signals.append(sig)
-                decision_journal.record_signal(sig, "proposed", config_version=config["version"], market_id=market_id)
             exits = strat.check_exits(data, existing_positions)
             exit_recommendations.extend(exits)
         except Exception as e:
-            logger.error("Strategy %s error: %s", strat.name, e)
-    # Phase 7: Enrich signals with breadth, RS, and earnings blackout
-    logger.info("Enriching %d raw signals with Phase 7 features...", len(all_signals))
-    all_signals = enrich_signals(all_signals, data, config, trade_date)
-    logger.info("%d signals after enrichment", len(all_signals))
-    # Enrich signals with sector from sector map
-    if _sector_map:
-        for sig in all_signals:
-            sector = _sector_map.get(sig.ticker, "Unknown")
-            sig.sector = sector
-            sig.features["sector"] = sector
-    all_signals.sort(key=lambda s: s.confidence, reverse=True)
-    plan = plan_gen.generate_plan(all_signals, exit_recommendations, prices, trade_date)
+            logger.error("Strategy %s exit check error: %s", strat.name, e)
+
+    # Regime-aware plan generation — handles signal generation, enrichment, and plan building.
+    # When regime_enabled=True: activates multi-universe trading based on regime classification.
+    # When regime_enabled=False: falls back to SP500-only mode (equivalent to old direct path).
+    plan = plan_gen.generate_regime_plan(
+        strategies=strategies,
+        prices=prices,
+        trade_date=trade_date,
+        equity=effective_equity,
+        existing_positions=existing_positions,
+        exit_recommendations=exit_recommendations,
+        sp500_data=data,
+    )
 
     # Record rejected entries to decision journal for signal quality analysis
     for rej in plan.get("rejected_entries", []):

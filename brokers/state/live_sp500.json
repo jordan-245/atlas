@@ -17,16 +17,7 @@
       "entry_date": "2026-04-07",
       "entry_price": 130.51,
       "shares": 2,
-      "stop_price": 119.31,
-      "order_id": ""
-    },
-    {
-      "ticker": "D",
-      "strategy": "mean_reversion",
-      "entry_date": "2026-04-07",
-      "entry_price": 59.38,
-      "shares": 13,
-      "stop_price": 59.965,
+      "stop_price": 126.44,
       "order_id": ""
     },
     {
@@ -39,12 +30,12 @@
       "order_id": ""
     },
     {
-      "ticker": "MSI",
-      "strategy": "connors_rsi2",
+      "ticker": "MRVL",
+      "strategy": "momentum_breakout",
       "entry_date": "2026-04-07",
-      "entry_price": 426.78,
-      "shares": 1,
-      "stop_price": 421.55,
+      "entry_price": 108.63,
+      "shares": 4,
+      "stop_price": 101.6,
       "order_id": ""
     },
     {
@@ -62,7 +53,7 @@
       "entry_date": "2026-04-07",
       "entry_price": 62.96,
       "shares": 3,
-      "stop_price": 58.23,
+      "stop_price": 60.795,
       "order_id": ""
     }
   ],

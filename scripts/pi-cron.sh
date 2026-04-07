@@ -84,10 +84,16 @@ notify() {
     timeout 60 python3 "$NOTIFY" "$@" 2>>"$LOG_DIR/telegram.log" || true
 }
 
+# --- Helper: record heartbeat to SQLite (best-effort, never blocks cron) ---
+hb() {
+    python3 "$PROJECT/scripts/health_heartbeat.py" "$@" 2>/dev/null || true
+}
+
 AGENT_ID="${3:-atlas-research}"
 
 case "$MODE" in
     premarket)
+        hb "premarket" "started" '{"market":"'"$MARKET"'"}'
         # ── Pre-flight: config validation ──────────────────────────────────
         # Validate config schema before doing anything. Warn on errors but don't block.
         CONFIG_ERRORS=""
@@ -113,6 +119,7 @@ ${CONFIG_ERRORS}"
             echo "$(date -Iseconds) Config validation: OK" >> "$LOG_DIR/pi-cron.log"
             CONFIG_CONTEXT="✅ Config validation: OK"
         fi
+        hb "premarket" "running" '{"stage":"config_validation","result":"'"${CONFIG_ERRORS:+warn}${CONFIG_ERRORS:-ok}"'"}'
 
         # ── Pre-flight: volatility gate check ──────────────────────────────
         # Check macro indicators before generating the plan.
@@ -136,6 +143,7 @@ ${CONFIG_ERRORS}"
             VOL_GATE_FLAGS=$(python3 -c "import json,sys; d=json.load(open('$VOL_GATE_LOG')); print(','.join(d.get('flags',[])))" 2>/dev/null || echo "")
         fi
         echo "$(date -Iseconds) Volatility gate: action=$VOL_GATE_ACTION flags=$VOL_GATE_FLAGS" >> "$LOG_DIR/pi-cron.log"
+        hb "premarket" "running" '{"stage":"volatility_gate","action":"'"$VOL_GATE_ACTION"'"}'
 
         # If gate BLOCKS, send alert immediately and skip the planning agent
         if [ "$VOL_GATE_EXIT" -eq 2 ] || [ "$VOL_GATE_ACTION" = "block" ]; then
@@ -170,6 +178,7 @@ ${CONFIG_ERRORS}"
         else
             echo "$(date -Iseconds) Overlay run complete" >> "$LOG_DIR/pi-cron.log"
         fi
+        hb "premarket" "running" '{"stage":"overlay","exit_code":'"$OVERLAY_EXIT"'}'
 
         # Canonical prompt: .pi/prompts/premarket.md
         # This inline version adds dynamic context (VOL_CONTEXT, CONFIG_CONTEXT)
@@ -187,6 +196,7 @@ NOTE: A Telegram summary is sent automatically after this workflow completes —
         SKILL_FLAGS=$(build_skill_flags "$SKILL_DIR" "$SKILL_STATE" "$SKILL_INCIDENT" "$SKILL_LESSONS")
         ;;
     postclose)
+        hb "postclose" "started" '{"market":"'"$MARKET"'"}'
         # Canonical prompt: .pi/prompts/postclose.md
         # This inline version adds dynamic context (MARKET, TIMESTAMP)
         # that can't be passed via slash commands in non-interactive mode.
@@ -228,6 +238,7 @@ NOTE: A Telegram summary is sent automatically after this workflow completes —
         fi
         ;;
     research)
+        hb "research" "started"
         LOGFILE="$LOG_DIR/research_${TIMESTAMP}.log"
         SKILL_DIR="$RESEARCH_SKILL_DIR"
 
@@ -355,16 +366,38 @@ LOCKEOF
         exit $?
         ;;
     health-check)
+        hb "health-check" "started" '{"market":"'"$MARKET"'"}'
         echo "$(date -Iseconds) Running strategy health check for $MARKET" >> "$LOG_DIR/pi-cron.log"
+        _IN_SET_PLUS_E=1
+        set +e
         python3 "$PROJECT/scripts/strategy_health_cron.py" --market "$MARKET" \
             >> "$LOG_DIR/pi-cron.log" 2>&1
-        exit $?
+        HC_EXIT=$?
+        set -e
+        _IN_SET_PLUS_E=0
+        if [ $HC_EXIT -eq 0 ]; then
+            hb "health-check" "completed" '{"market":"'"$MARKET"'"}'
+        else
+            hb "health-check" "failed" '{"market":"'"$MARKET"'","exit_code":'"$HC_EXIT"'}'
+        fi
+        exit $HC_EXIT
         ;;
     reconcile)
+        hb "reconcile" "started" '{"market":"'"$MARKET"'"}'
         echo "$(date -Iseconds) Running reconciliation for $MARKET" >> "$LOG_DIR/pi-cron.log"
+        _IN_SET_PLUS_E=1
+        set +e
         python3 "$PROJECT/scripts/reconcile.py" --market "$MARKET" --auto-fix \
             >> "$LOG_DIR/pi-cron.log" 2>&1
-        exit $?
+        RECONCILE_EXIT=$?
+        set -e
+        _IN_SET_PLUS_E=0
+        if [ $RECONCILE_EXIT -eq 0 ]; then
+            hb "reconcile" "completed" '{"market":"'"$MARKET"'"}'
+        else
+            hb "reconcile" "failed" '{"market":"'"$MARKET"'","exit_code":'"$RECONCILE_EXIT"'}'
+        fi
+        exit $RECONCILE_EXIT
         ;;
     calibrate)
         echo "$(date -Iseconds) Running confidence calibration for $MARKET" >> "$LOG_DIR/pi-cron.log"
@@ -466,6 +499,13 @@ if [ $EXIT_CODE -ne 0 ]; then
         >> "$LOG_DIR/auto_recover.log" 2>&1 &
     RECOVER_PID=$!
     echo "$(date -Iseconds) Recovery PID=$RECOVER_PID" >> "$LOG_DIR/pi-cron.log"
+fi
+
+# --- Record pipeline completion heartbeat ---
+if [ $EXIT_CODE -eq 0 ]; then
+    hb "$MODE" "completed"
+else
+    hb "$MODE" "failed" '{"exit_code":'"$EXIT_CODE"'}'
 fi
 
 exit $EXIT_CODE

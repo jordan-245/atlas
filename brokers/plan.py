@@ -61,6 +61,28 @@ class TradePlanGenerator:
         # Build allocation pool (no-op when allocation.enabled=false)
         allocation_pool = build_allocation_pool(self.config)
 
+        # Lifecycle manager — reduce pool caps for degraded strategies
+        lifecycle_mgr = None
+        try:
+            from monitor.lifecycle import StrategyLifecycleManager
+            lifecycle_mgr = StrategyLifecycleManager(self.config)
+        except Exception:
+            pass
+
+        if lifecycle_mgr and allocation_pool.is_enabled():
+            for strat_name in list(allocation_pool.pools.keys()):
+                if strat_name == '_other':
+                    continue
+                override = lifecycle_mgr.get_effective_pool_cap(strat_name)
+                if override is not None:
+                    original = allocation_pool.pools[strat_name]
+                    allocation_pool.pools[strat_name] = override
+                    if override != original:
+                        logger.info(
+                            "Lifecycle override: %s pool cap %d → %d",
+                            strat_name, original, override,
+                        )
+
         # Risk check each signal
         proposed_entries = []
         rejected_entries = []
@@ -172,6 +194,49 @@ class TradePlanGenerator:
             except Exception as e:
                 logger.warning("Entry refinement failed, using market orders: %s", e)
 
+        # ── Volatility scaling (portfolio-level position size adjustment) ──
+        vol_scale_applied = 1.0
+        try:
+            from backtest.vol_scaling import VolatilityScaler
+            vol_scaler = VolatilityScaler(self.config)
+            if vol_scaler.enabled:
+                from db import atlas_db
+                market_id = self.config.get("market", "sp500")
+                eq_curve = atlas_db.get_equity_curve(market_id)
+                if eq_curve:
+                    equities = [row["equity"] for row in eq_curve if row.get("equity")]
+                    for i in range(1, len(equities)):
+                        prev_eq = equities[i - 1]
+                        if prev_eq > 0:
+                            vol_scaler.update((equities[i] - prev_eq) / prev_eq)
+                    scale = vol_scaler.scale_factor()
+                    logger.info("Vol scaling: scale=%.4f, returns=%d, lookback=%d, conditional=%s",
+                                scale, len(vol_scaler._returns), vol_scaler.lookback, vol_scaler.conditional)
+                    if scale < 1.0:
+                        vol_scale_applied = scale
+                        logger.info(
+                            "Vol scaling: reducing position sizes by factor %.3f "
+                            "(%d equity curve points)",
+                            scale, len(equities),
+                        )
+                        for entry in proposed_entries:
+                            original_size = entry["position_size"]
+                            entry["position_size"] = max(1, int(original_size * scale))
+                            entry["position_value"] = round(
+                                entry["entry_price"] * entry["position_size"], 2
+                            )
+                            entry["risk_amount"] = round(
+                                abs(entry["entry_price"] - entry["stop_price"])
+                                * entry["position_size"],
+                                2,
+                            )
+                            entry["vol_scale_applied"] = round(scale, 4)
+                            entry["vol_scale_original_size"] = original_size
+                else:
+                    logger.debug("Vol scaling: no equity curve data yet — skipping")
+        except Exception as exc:
+            logger.warning("Vol scaling failed (non-fatal, sizes unchanged): %s", exc)
+
         # Portfolio state after proposed trades
         proposed_cost = sum(e["entry_price"] * e["position_size"] for e in proposed_entries)
         proposed_risk = sum(e["risk_amount"] for e in proposed_entries)
@@ -217,6 +282,7 @@ class TradePlanGenerator:
             "allocation_summary": allocation_pool.counts_summary(
                 [{"strategy": p.strategy} for p in self.portfolio.positions]
             ) if allocation_pool.is_enabled() else {},
+            "vol_scale_applied": vol_scale_applied,
         }
 
         # Save plan
@@ -342,10 +408,12 @@ class TradePlanGenerator:
                     existing_positions, exit_recommendations,
                 )
             except Exception as exc:
+                import traceback
                 logger.warning(
                     "Regime-aware plan generation failed (%s) — "
-                    "falling back to SP500-only mode",
+                    "falling back to SP500-only mode.\n%s",
                     exc,
+                    traceback.format_exc(),
                 )
                 plan = self._run_sp500_plan(
                     strategies, sp500_data, prices, trade_date, equity,
@@ -395,10 +463,48 @@ class TradePlanGenerator:
         all_signals: list = []
         for strat in strategies:
             try:
+                # Precompute indicators if strategy supports it
+                if hasattr(strat, 'precompute') and not getattr(strat, '_precomputed', False):
+                    strat.precompute(sp500_data)
                 sigs = strat.generate_signals(sp500_data, equity, existing_positions)
                 all_signals.extend(sigs)
             except Exception as exc:
                 logger.error("Strategy %s error: %s", strat.name, exc)
+
+        # Signal enrichment (breadth, RS, earnings blackout)
+        try:
+            from utils.signal_enrichment import enrich_signals
+            logger.info("Enriching %d raw SP500 signals...", len(all_signals))
+            all_signals = enrich_signals(all_signals, sp500_data, self.config, trade_date)
+            logger.info("%d signals after enrichment", len(all_signals))
+        except Exception as exc:
+            logger.warning("Signal enrichment failed (non-fatal): %s", exc)
+
+        # Sector map enrichment
+        try:
+            import json as _json
+            _sector_map = {}
+            market_id = self.config.get("market", "sp500")
+            for _sm_path in [
+                PROJECT_ROOT / "data" / "processed" / f"sector_map_{market_id}.json",
+                PROJECT_ROOT / "data" / "processed" / "sector_map.json",
+            ]:
+                if _sm_path.exists():
+                    with open(_sm_path) as _f:
+                        _sector_map = _json.load(_f)
+                    break
+            if _sector_map:
+                for sig in all_signals:
+                    sector = _sector_map.get(sig.ticker, "Unknown")
+                    sig.sector = sector
+                    if hasattr(sig, 'features'):
+                        sig.features["sector"] = sector
+        except Exception as exc:
+            logger.debug("Sector map enrichment skipped: %s", exc)
+
+        # Sort by confidence descending before plan construction
+        all_signals.sort(key=lambda s: s.confidence, reverse=True)
+
         return self.generate_plan(all_signals, exit_recommendations, prices, trade_date)
 
     def _run_regime_aware_plan(
@@ -451,6 +557,9 @@ class TradePlanGenerator:
         for universe_name, universe_data in multi_data.items():
             for strat in active_strategies:
                 try:
+                    # Precompute indicators per universe dataset
+                    if hasattr(strat, 'precompute'):
+                        strat.precompute(universe_data)
                     sigs = strat.generate_signals(universe_data, equity, existing_positions)
                     for sig in sigs:
                         sig.universe = universe_name  # f. tag with originating universe
@@ -465,6 +574,21 @@ class TradePlanGenerator:
             "Regime-aware signal generation: %d raw signals across %d universes",
             len(all_signals), len(multi_data),
         )
+
+        # Signal enrichment (breadth, RS, earnings blackout)
+        combined_data = {}
+        for universe_data in multi_data.values():
+            combined_data.update(universe_data)
+        try:
+            from utils.signal_enrichment import enrich_signals
+            logger.info("Enriching %d raw regime signals...", len(all_signals))
+            all_signals = enrich_signals(all_signals, combined_data, self.config, trade_date)
+            logger.info("%d signals after enrichment", len(all_signals))
+        except Exception as exc:
+            logger.warning("Signal enrichment failed (non-fatal): %s", exc)
+
+        # Sort by confidence descending
+        all_signals.sort(key=lambda s: s.confidence, reverse=True)
 
         # g. Route all signals through PortfolioConstructor.
         portfolio_positions = (

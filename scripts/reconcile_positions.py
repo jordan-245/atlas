@@ -45,6 +45,17 @@ from utils.logging_config import setup_logging  # noqa: E402
 
 logger = logging.getLogger("atlas.reconcile_positions")
 
+
+def _health_log(level, message, detail=None):
+    """Write to system_log table. Non-fatal."""
+    try:
+        from monitor.health_writer import log_error, log_warning, log_info
+        fn = {"error": log_error, "warning": log_warning}.get(level, log_info)
+        fn("reconcile_positions", message, detail)
+    except Exception:
+        pass
+
+
 # Markets supported
 _MARKETS = ("asx", "sp500")
 _DEFAULT_BROKER = {
@@ -259,9 +270,16 @@ def reconcile_positions(
         elif fix and dry_run:
             logger.info("DRY RUN: would fix %d discrepancies", len(result["discrepancies"]))
 
+        _health_log("info", "Reconciliation completed", {
+            "market": market_id,
+            "discrepancies": len(result.get("discrepancies", [])),
+            "fixed": result.get("fixed", False),
+        })
+
     except Exception as e:
         result["error"] = str(e)
         logger.error("Reconciliation error: %s", e, exc_info=True)
+        _health_log("error", f"Reconciliation error: {e}", {"market": market_id})
 
     finally:
         if broker:
@@ -485,6 +503,7 @@ if __name__ == "__main__":
         sys.exit(main())
     except Exception as exc:
         # Top-level crash guard — alert via Telegram so cron failures aren't silent
+        _health_log("critical", f"reconcile_positions CRASHED: {exc}")
         try:
             from utils.telegram import send_message
             send_message(

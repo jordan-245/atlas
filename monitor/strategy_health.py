@@ -653,6 +653,26 @@ class StrategyHealthMonitor:
         for a in assessments:
             summary[a.status] = summary.get(a.status, 0) + 1
 
+        # Write alerts to system_log for persistence
+        if alerts:
+            try:
+                from monitor.health_writer import log_warning as _hw_warning
+                from monitor.health_writer import log_error as _hw_error
+                for alert in alerts:
+                    if alert.status == DEGRADED:
+                        _hw_error("strategy_health", alert.message, {
+                            "strategy": alert.strategy,
+                            "consecutive_weeks": alert.consecutive_degraded_weeks,
+                            "market_id": market_id,
+                        })
+                    else:
+                        _hw_warning("strategy_health", alert.message, {
+                            "strategy": alert.strategy,
+                            "market_id": market_id,
+                        })
+            except Exception as exc:
+                logger.debug("Failed to write health alerts to system_log: %s", exc)
+
         return HealthReport(
             market_id=market_id,
             generated_at=now_str,

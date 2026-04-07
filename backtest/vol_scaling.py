@@ -127,6 +127,29 @@ class VolatilityScaler:
         )
         return scale
 
+    def diagnostics(self) -> dict:
+        """Return current scaler state for monitoring."""
+        if not self.enabled or len(self._returns) < self.lookback:
+            return {"enabled": self.enabled, "data_points": len(self._returns),
+                    "lookback": self.lookback, "ready": False, "scale": 1.0}
+        import numpy as np
+        recent = self._returns[-self.lookback:]
+        realized_vol = self._ewm_std(recent) * (252 ** 0.5)
+        ann_abs = np.abs(np.array(self._returns)) * (252 ** 0.5)
+        threshold_vol = float(np.percentile(ann_abs, self.percentile_threshold))
+        raw_scale = min(1.0, self.target_vol / realized_vol) if realized_vol > 0 else 1.0
+        return {
+            "enabled": True, "ready": True,
+            "data_points": len(self._returns), "lookback": self.lookback,
+            "realized_vol_ann": round(float(realized_vol), 4),
+            "target_vol": self.target_vol,
+            "threshold_vol": round(float(threshold_vol), 4),
+            "conditional": self.conditional,
+            "above_threshold": bool(realized_vol > threshold_vol) if self.conditional else True,
+            "raw_scale": round(float(raw_scale), 4),
+            "effective_scale": round(float(self.scale_factor()), 4),
+        }
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------

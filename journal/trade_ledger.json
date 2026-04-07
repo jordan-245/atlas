@@ -653,5 +653,50 @@
     "timestamp": "2026-04-06 14:05:34.988000",
     "reconciled": true,
     "recorded_at": "2026-04-07T00:15:04.049228"
+  },
+  {
+    "type": "entry",
+    "ticker": "MRVL",
+    "strategy": "momentum_breakout",
+    "shares": 4,
+    "fill_price": 108.63,
+    "planned_price": 109.505,
+    "stop_price": 101.5977,
+    "slippage_bps": -79.9,
+    "order_id": "c67d1368-ca6c-4954-93ec-e112ab8c5d0c",
+    "timestamp": "2026-04-07 13:30:00",
+    "direction": "long",
+    "reconciled": true,
+    "recorded_at": "2026-04-07T23:45:03.471598"
+  },
+  {
+    "type": "exit",
+    "ticker": "MSI",
+    "strategy": "connors_rsi2",
+    "shares": 1,
+    "fill_price": 440.98,
+    "entry_price": 426.78,
+    "pnl": 14.2,
+    "pnl_pct": 3.33,
+    "exit_reason": "signal_exit",
+    "order_id": "edc2a7c6-ef53-4581-bf3d-6b6a23421841",
+    "timestamp": "2026-04-07 13:30:00.956000",
+    "reconciled": true,
+    "recorded_at": "2026-04-07T23:45:03.732291"
+  },
+  {
+    "type": "exit",
+    "ticker": "D",
+    "strategy": "mean_reversion",
+    "shares": 13,
+    "fill_price": 62.17,
+    "entry_price": 59.38,
+    "pnl": 36.27,
+    "pnl_pct": 4.7,
+    "exit_reason": "signal_exit",
+    "order_id": "7088fd40-93a6-4a21-a0c2-4a6ad2d57cf1",
+    "timestamp": "2026-04-07 13:30:00.929000",
+    "reconciled": true,
+    "recorded_at": "2026-04-07T23:45:03.744252"
   }
 ]

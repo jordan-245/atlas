@@ -40,6 +40,16 @@ logger = logging.getLogger("atlas.live_executor")
 
 PROJECT_ROOT = Path(__file__).parent.parent
 EXECUTION_LOG = PROJECT_ROOT / "logs" / "live_executions.jsonl"
+
+
+def _health_log(level: str, message: str, detail: dict = None) -> None:
+    """Write to system_log table. Non-fatal."""
+    try:
+        from monitor.health_writer import log_error, log_warning, log_critical, log_info
+        fn = {"error": log_error, "warning": log_warning, "critical": log_critical}.get(level, log_info)
+        fn("live_executor", message, detail)
+    except Exception:
+        pass
 HALT_FILE = PROJECT_ROOT / ".live_halt"
 
 
@@ -279,6 +289,11 @@ class LiveExecutor:
 
         # Trip the breaker
         self._circuit_breaker_tripped = True
+        _health_log("error", "Circuit breaker tripped", {
+            "start_equity": self._daily_start_equity,
+            "current_equity": current_equity,
+            "loss_pct": round(loss_pct * 100, 4),
+        })
         msg = (
             f"CIRCUIT BREAKER TRIPPED: daily loss ${loss:.2f} "
             f"({loss_pct*100:.2f}%) exceeds limit "
@@ -358,6 +373,7 @@ class LiveExecutor:
             broker_name = self._broker.name
             _journal_entry("connect_failed", {"broker": broker_name})
             logger.error("LiveExecutor failed to connect via %s", broker_name)
+            _health_log("error", f"Broker connect failed: {broker_name}")
 
         return success
 
@@ -554,6 +570,15 @@ class LiveExecutor:
             "entries": report["total_entries"],
             "exits": report["total_exits"],
             "stops_placed": len(stop_orders),
+            "dry_run": self.is_dry_run,
+        })
+
+        _health_log("info", "Execution completed", {
+            "trade_date": trade_date,
+            "entries": report["successful_entries"],
+            "exits": report["successful_exits"],
+            "total_entries": report["total_entries"],
+            "total_exits": report["total_exits"],
             "dry_run": self.is_dry_run,
         })
 
@@ -1431,6 +1456,7 @@ class LiveExecutor:
         self._halted = True
         self._halt_reason = reason
         logger.critical("EMERGENCY HALT: %s", reason)
+        _health_log("critical", f"EMERGENCY HALT: {reason}")
         _journal_entry("emergency_halt", {"reason": reason})
 
         # Write halt file (persists across restarts)
@@ -2105,6 +2131,7 @@ class LiveExecutor:
 
     def _error_report(self, message: str, trade_date: str) -> dict:
         logger.error("Execution blocked: %s", message)
+        _health_log("error", f"Execution blocked: {message}")
         _journal_entry("execution_blocked", {
             "trade_date": trade_date, "reason": message,
         })

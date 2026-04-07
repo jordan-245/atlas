@@ -34,6 +34,16 @@ from utils.logging_config import setup_logging
 log = setup_logging("eod_settlement", extra_log_file="eod_settlement")
 
 
+def _health_log(level, message, detail=None):
+    """Write to system_log table. Non-fatal."""
+    try:
+        from monitor.health_writer import log_error, log_warning, log_info
+        fn = {"error": log_error, "warning": log_warning}.get(level, log_info)
+        fn("eod_settlement", message, detail)
+    except Exception:
+        pass
+
+
 def load_config(market_id="asx"):
     config_path = PROJECT / "config" / "active" / f"{market_id}.json"
     with open(config_path) as f:
@@ -364,6 +374,7 @@ def main():
     portfolio = LivePortfolio(config, market_id=market_id)
     if not portfolio.connect():
         log.error("Could not connect to broker. Aborting EOD settlement.")
+        _health_log("error", "Broker connection failed", {"market": market_id})
         print("ERROR: Broker connection failed. Settlement aborted.")
         return
 
@@ -375,6 +386,7 @@ def main():
             "Broker returned zeroed data (likely offline). "
             "Aborting settlement to prevent state corruption."
         )
+        _health_log("error", "Broker returned zeroed data — settlement aborted", {"market": market_id})
         print("ERROR: Broker returned zeroed data (likely offline). "
               "Settlement aborted to protect state.")
         return
@@ -395,6 +407,7 @@ def main():
 
     if not prices:
         log.error("Could not fetch any closing prices. Aborting settlement.")
+        _health_log("error", "No closing prices fetched — settlement aborted", {"market": market_id})
         print("ERROR: Could not fetch closing prices. Settlement aborted.")
         return
 
@@ -568,6 +581,16 @@ def main():
         )
     except Exception as _e:
         log.warning(f"SQLite equity dual-write failed: {_e}")
+
+    _health_log("info", "EOD settlement completed", {
+        "market": market_id,
+        "trade_date": trade_date,
+        "equity": eq,
+        "daily_pnl": daily_pnl,
+        "positions": len(portfolio.positions),
+        "stop_exits": len(stop_exits),
+        "tp_exits": len(tp_exits),
+    })
 
     # Disconnect broker to free clientId for position monitor
     portfolio.disconnect()
