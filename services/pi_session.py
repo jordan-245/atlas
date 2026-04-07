@@ -139,17 +139,45 @@ class PiSessionManager:
                 env=env,
             )
 
-            async for line in self.process.stdout:  # type: ignore[union-attr]
-                decoded = line.decode("utf-8", errors="replace").strip()
-                if not decoded:
-                    continue
+            # Drain stderr in background to prevent pipe-buffer deadlock.
+            # Pi writes warnings/debug to stderr; if the 64 KB pipe buffer
+            # fills, the subprocess blocks on the next stderr write and stdout
+            # stops producing data — making the WebSocket appear "stuck".
+            async def _drain_stderr() -> None:
                 try:
-                    raw = json.loads(decoded)
-                except json.JSONDecodeError:
-                    continue
-                for evt in self._parse_jsonl_event(raw):
-                    await self._broadcast(evt)
-                    yield evt
+                    async for _line in self.process.stderr:  # type: ignore[union-attr]
+                        pass  # discard — prevent buffer fill
+                except Exception:
+                    pass
+
+            stderr_task = asyncio.create_task(_drain_stderr())
+
+            try:
+                async with asyncio.timeout(120):  # 2-minute hard cap per message
+                    async for line in self.process.stdout:  # type: ignore[union-attr]
+                        decoded = line.decode("utf-8", errors="replace").strip()
+                        if not decoded:
+                            continue
+                        try:
+                            raw = json.loads(decoded)
+                        except json.JSONDecodeError:
+                            continue
+                        for evt in self._parse_jsonl_event(raw):
+                            await self._broadcast(evt)
+                            yield evt
+            except asyncio.TimeoutError:
+                logger.warning("Pi subprocess timed out after 120 s")
+                timeout_err = PiEvent("error", {"message": "Response timed out after 2 minutes"})
+                await self._broadcast(timeout_err)
+                yield timeout_err
+                if self.process:
+                    self.process.terminate()
+            finally:
+                stderr_task.cancel()
+                try:
+                    await stderr_task
+                except (asyncio.CancelledError, Exception):
+                    pass
 
         except OSError as exc:
             err = PiEvent("error", {"message": f"Failed to start Pi: {exc}"})
@@ -157,7 +185,17 @@ class PiSessionManager:
             yield err
 
         finally:
+            # Ensure the subprocess is fully terminated before we return
             if self.process:
+                if self.process.returncode is None:
+                    try:
+                        self.process.terminate()
+                        await asyncio.wait_for(self.process.wait(), timeout=5)
+                    except (asyncio.TimeoutError, ProcessLookupError):
+                        try:
+                            self.process.kill()
+                        except ProcessLookupError:
+                            pass
                 try:
                     await self.process.wait()
                 except Exception:
@@ -218,26 +256,20 @@ class PiSessionManager:
             PI_BIN,
             "--mode", "json",
             "-p",  # non-interactive / single-prompt mode
+            "--model", self.model,
+            "--session", str(self.pi_session_path),
+            # Skip heavy startup discovery — keeps first-token latency low.
+            # Skills are loaded via the multi-team extension when needed.
+            "--no-skills",
+            "--no-prompt-templates",
+            "--no-themes",
         ]
 
-        # Only add extension if it exists on disk
+        # Explicitly load multi-team extension (provides agent teams + spawn_worker).
+        # Do NOT pass --no-extensions: swarm, subagent, and atlas tools must
+        # still be auto-discovered from the user's extensions directory.
         if MULTI_TEAM_EXT.exists():
             cmd += ["-e", str(MULTI_TEAM_EXT)]
-
-        cmd += [
-            "--session", str(self.pi_session_path),
-            "--model", self.model,
-            # Do NOT pass --no-extensions — let pi discover all extensions
-            # This enables swarm, subagent, atlas tools, etc.
-        ]
-
-        # Tell Pi this user is on the dashboard web chat
-        cmd += [
-            "--append-system-prompt",
-            "The user is communicating via the Atlas Dashboard web chat interface "
-            "(agent.html). They may attach images. Address them knowing they are "
-            "on the dashboard, not the terminal.",
-        ]
 
         # Resume existing session so the conversation history is preserved
         if self.pi_session_path.exists():
