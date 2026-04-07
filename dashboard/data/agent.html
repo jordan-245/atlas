@@ -1151,6 +1151,84 @@
       line-height: 1.5; white-space: pre-wrap; padding: 8px 0;
       max-height: 300px; overflow-y: auto;
     }
+
+    /* ─────────────────────────────────────────────────────────────────────
+       AGENT TEAMS PANEL
+    ───────────────────────────────────────────────────────────────────── */
+    @keyframes section-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes spin        { from { transform: rotate(0deg); }               to { transform: rotate(360deg); } }
+
+    .teams-section {
+      border-bottom: 1px solid var(--border);
+      animation: section-in 0.2s var(--ease);
+      flex-shrink: 0;
+    }
+    .teams-header {
+      padding: 8px 14px;
+      font-family: var(--mono); font-size: 10px; font-weight: 600;
+      color: var(--text-3); letter-spacing: 0.8px; text-transform: uppercase;
+      display: flex; justify-content: space-between; align-items: center;
+      cursor: pointer; user-select: none;
+    }
+    .teams-header:hover { color: var(--text-2); }
+    .teams-collapse-btn {
+      background: none; border: none; color: inherit;
+      font-size: 12px; cursor: pointer; padding: 0 2px;
+      transition: transform 0.15s;
+    }
+    .teams-collapse-btn.collapsed { transform: rotate(-90deg); }
+    .teams-tree {
+      padding: 0 14px 10px;
+      font-family: var(--mono); font-size: 11.5px;
+      line-height: 1.8;
+    }
+    .teams-tree.collapsed { display: none; }
+    .team-node {
+      display: flex; align-items: center; gap: 6px;
+      color: var(--text-2);
+    }
+    .team-node.active { color: var(--text); }
+    .team-node .node-icon { flex-shrink: 0; }
+    .team-node .node-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+    .node-status { font-size: 10px; margin-left: auto; flex-shrink: 0; }
+    .node-status.working { color: var(--amber); display: inline-block; animation: spin 1.5s linear infinite; }
+    .node-status.done    { color: var(--green); }
+    .node-cost           { color: var(--text-3); font-size: 10px; margin-left: 4px; flex-shrink: 0; }
+    .team-indent {
+      padding-left: 16px;
+      border-left: 1px solid var(--border);
+      margin-left: 8px;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────
+       SWARM PROGRESS PANEL
+    ───────────────────────────────────────────────────────────────────── */
+    .swarm-section {
+      border-bottom: 1px solid var(--border);
+      padding: 10px 14px;
+      animation: section-in 0.2s var(--ease);
+      flex-shrink: 0;
+    }
+    .swarm-header {
+      font-family: var(--mono); font-size: 10px; font-weight: 600;
+      color: var(--amber); letter-spacing: 0.8px; text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .swarm-objective {
+      font-size: 11.5px; color: var(--text-2); margin-bottom: 8px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      font-family: var(--mono);
+    }
+    .swarm-agents { display: flex; flex-wrap: wrap; gap: 4px; }
+    .swarm-agent-badge {
+      font-family: var(--mono); font-size: 10px;
+      padding: 3px 8px; border-radius: 10px;
+      background: var(--surface-2); color: var(--text-3);
+      border: 1px solid var(--border);
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .swarm-agent-badge.active { color: var(--amber); border-color: var(--amber); }
+    .swarm-agent-badge.done   { color: var(--green); border-color: var(--green); }
   </style>
 </head>
 <body>
@@ -1220,6 +1298,20 @@
     <div class="activity-pane-header">
       <span>Activity</span>
       <button class="activity-clear-btn" id="activity-clear" type="button" title="Clear feed">&#10005;</button>
+    </div>
+    <!-- Agent Teams panel (shown when delegation is active) -->
+    <div class="teams-section" id="teams-section" style="display:none">
+      <div class="teams-header" id="teams-header">
+        <span>Agent Teams</span>
+        <button class="teams-collapse-btn" id="teams-collapse-btn" type="button">&#9662;</button>
+      </div>
+      <div class="teams-tree" id="teams-tree"></div>
+    </div>
+    <!-- Swarm progress panel (shown when swarm is active) -->
+    <div class="swarm-section" id="swarm-section" style="display:none">
+      <div class="swarm-header">&#128260; Swarm</div>
+      <div class="swarm-objective" id="swarm-objective"></div>
+      <div class="swarm-agents" id="swarm-agents"></div>
     </div>
     <div id="activity-feed"></div>
     <div class="activity-cost-bar">
@@ -1307,6 +1399,8 @@
   var elapsedStart      = 0;      // timestamp when generation started
   var lastUserMessage   = '';     // last sent message (for retry / Up-arrow recall)
   var thinkingTextBuffer = '';    // accumulates thinking text for collapsible block
+  var teamState  = null;   // active agent team tree (delegation hierarchy)
+  var swarmState = null;   // active swarm run state
 
   // Map toolCallId -> activity card element so tool_end can mark it done
   var toolCards = {};
@@ -1581,10 +1675,14 @@
       /* ── Delegation ── */
       case 'delegation_start':
         addDelegationActivity(msg);
+        updateTeamTree(msg);
+        updateSwarmSection(msg);
         break;
 
       case 'delegation_end':
         finishDelegationActivity(msg);
+        updateTeamTree(msg);
+        updateSwarmSection(msg);
         break;
 
       /* ── Turn complete ── */
@@ -2038,6 +2136,124 @@
     block.appendChild(body);
     bubble.appendChild(block);
     scrollToBottom();
+  }
+
+  /* ── Agent Teams panel ────────────────────────────────────────────────── */
+  function initTeamState() {
+    teamState = { name: 'Orchestrator', icon: '\u25C8', active: true, cost: 0, children: {} };
+  }
+
+  function updateTeamTree(msg) {
+    var section = document.getElementById('teams-section');
+    if (!section) return;
+    if (!teamState) initTeamState();
+    section.style.display = '';
+
+    var id, target, tool, icon, tl, node, agents, anyActive, capturedSec;
+
+    if (msg.type === 'delegation_start') {
+      target = msg.target || 'Agent';
+      tool   = msg.tool   || 'delegate';
+      id     = msg.tool_call_id || String(Date.now());
+      tl     = target.toLowerCase();
+      icon   = '\u25B2'; // ▲ default
+      if      (tl.indexOf('planning')  !== -1 || tl.indexOf('research') !== -1) { icon = '\u25C6'; } // ◆
+      else if (tl.indexOf('valid')     !== -1 || tl.indexOf('review')   !== -1) { icon = '\u25CF'; } // ●
+      else if (tool === 'spawn_worker') { icon = '\u26A1'; }    // ⚡
+      else if (tool === 'swarm')        { icon = '\uD83D\uDD04'; } // 🔄
+      teamState.active = true;
+      teamState.children[id] = { name: target, icon: icon, active: true, cost: 0, children: {} };
+    }
+
+    if (msg.type === 'delegation_end') {
+      id   = msg.tool_call_id || '';
+      node = id ? teamState.children[id] : null;
+      if (node) {
+        node.active = false;
+        agents = msg.agents || [];
+        node.cost = agents.reduce(function (s, a) { return s + (a.cost || 0); }, 0);
+        agents.forEach(function (a) {
+          if (a.name && a.name !== node.name) {
+            node.children[a.name] = { name: a.name, icon: '\u2022', active: false, cost: a.cost || 0, children: {} };
+          }
+        });
+      }
+      anyActive = Object.keys(teamState.children).some(function (k) {
+        return teamState.children[k].active;
+      });
+      teamState.active = anyActive;
+      if (!anyActive) {
+        capturedSec = section;
+        setTimeout(function () {
+          var still = teamState && Object.keys(teamState.children).some(function (k) {
+            return teamState.children[k].active;
+          });
+          if (!still) { capturedSec.style.display = 'none'; teamState = null; }
+        }, 4000);
+      }
+    }
+
+    renderTeamTree();
+  }
+
+  function renderTeamTree() {
+    var el = document.getElementById('teams-tree');
+    if (!el || !teamState) return;
+    el.innerHTML = renderTeamNode(teamState);
+  }
+
+  function renderTeamNode(node) {
+    var statusHtml = '';
+    if (node.active) {
+      statusHtml = '<span class="node-status working">\u27F3</span>';
+    } else if (node.cost > 0 || Object.keys(node.children).length > 0) {
+      statusHtml = '<span class="node-status done">\u2713</span>';
+    }
+    var costHtml = (node.cost > 0) ? '<span class="node-cost">$' + node.cost.toFixed(4) + '</span>' : '';
+    var cls = 'team-node' + (node.active ? ' active' : '');
+    var html = '<div class="' + cls + '">' +
+      '<span class="node-icon">' + escHtml(node.icon) + '</span>' +
+      '<span class="node-name">' + escHtml(node.name) + '</span>' +
+      statusHtml + costHtml + '</div>';
+    var kids = Object.keys(node.children);
+    if (kids.length > 0) {
+      html += '<div class="team-indent">';
+      kids.forEach(function (k) { html += renderTeamNode(node.children[k]); });
+      html += '</div>';
+    }
+    return html;
+  }
+
+  /* ── Swarm progress panel ─────────────────────────────────────────────── */
+  function updateSwarmSection(msg) {
+    var section  = document.getElementById('swarm-section');
+    var objEl    = document.getElementById('swarm-objective');
+    var agentsEl = document.getElementById('swarm-agents');
+    if (!section || !objEl || !agentsEl) return;
+
+    if (msg.type === 'delegation_start' && msg.tool === 'swarm') {
+      section.style.display = '';
+      swarmState = { id: msg.tool_call_id, objective: msg.task_preview || '', agents: [] };
+      objEl.textContent = (msg.task_preview || '').slice(0, 80);
+      var phases = ['scout', 'build', 'review', 'merge'];
+      agentsEl.innerHTML = phases.map(function (p) {
+        return '<span class="swarm-agent-badge" data-phase="' + p + '">' + p + '</span>';
+      }).join('');
+    }
+
+    if (msg.type === 'delegation_end' && swarmState && msg.tool_call_id === swarmState.id) {
+      var agents = msg.agents || [];
+      if (agents.length > 0) {
+        agentsEl.innerHTML = agents.map(function (a) {
+          return '<span class="swarm-agent-badge done">' + escHtml(a.name || 'agent') + '</span>';
+        }).join('');
+      } else {
+        var badges = agentsEl.querySelectorAll('.swarm-agent-badge');
+        for (var i = 0; i < badges.length; i++) { badges[i].classList.add('done'); }
+      }
+      var capturedSec = section;
+      setTimeout(function () { capturedSec.style.display = 'none'; swarmState = null; }, 5000);
+    }
   }
 
   function addTurnEndActivity(cost, tokens) {
@@ -2580,6 +2796,10 @@
     activityEl.innerHTML = '';
     toolCards = {};
     thinkingCard = null;
+    teamState  = null;
+    swarmState = null;
+    var tsEl = document.getElementById('teams-section'); if (tsEl) tsEl.style.display = 'none';
+    var ssEl = document.getElementById('swarm-section'); if (ssEl) ssEl.style.display = 'none';
   });
 
   // Scroll-to-bottom button
@@ -2616,6 +2836,18 @@
     modelSelectEl.addEventListener('change', function () {
       currentModel = modelSelectEl.value || currentModel;
       updateModelLabel();
+    });
+  }
+
+  // Agent teams collapse toggle
+  var teamsHeaderEl = document.getElementById('teams-header');
+  if (teamsHeaderEl) {
+    teamsHeaderEl.addEventListener('click', function () {
+      var tree = document.getElementById('teams-tree');
+      var btn  = document.getElementById('teams-collapse-btn');
+      if (!tree) return;
+      var isCollapsed = tree.classList.toggle('collapsed');
+      if (btn) btn.classList.toggle('collapsed', isCollapsed);
     });
   }
 
