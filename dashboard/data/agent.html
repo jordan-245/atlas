@@ -1276,7 +1276,7 @@
     <button id="scroll-bottom-btn" class="scroll-bottom-btn" title="Scroll to bottom">&#8595;</button>
     <div id="agent-messages">
       <!-- Empty state — removed once first message arrives -->
-      <div class="agent-empty" id="agent-empty-state">
+      <div class="agent-empty" id="agent-empty-state" style="display:none">
         <div class="agent-empty-icon">&#9672;</div>
         <div class="agent-empty-title">Atlas Agent</div>
         <div class="agent-empty-sub">
@@ -1716,7 +1716,7 @@
           currentSessionId = msg.session.id;
           currentModel = msg.session.model || currentModel;
           clearMessages();
-          clearEmpty();
+          showEmpty();  // new session = no messages = show chips
           toolCards = {};
           loadSessions(msg.session.id);
           updateModelLabel();
@@ -1756,14 +1756,24 @@
   /* ── DOM: Messages ────────────────────────────────────────────────────── */
 
   function clearEmpty() {
-    if (emptyState && emptyState.parentNode) {
+    if (emptyState) {
       emptyState.style.transition = 'opacity 0.3s ease-out';
       emptyState.style.opacity = '0';
-      var _el = emptyState;
+      emptyState.style.pointerEvents = 'none';
       setTimeout(function () {
-        if (_el && _el.parentNode) { _el.parentNode.removeChild(_el); }
+        if (emptyState) emptyState.style.display = 'none';
       }, 300);
-      emptyState = null;
+    }
+  }
+
+  function showEmpty() {
+    if (emptyState) {
+      emptyState.style.display = '';
+      emptyState.style.pointerEvents = '';
+      // Force reflow then animate in
+      void emptyState.offsetHeight;
+      emptyState.style.transition = 'opacity 0.3s ease-in';
+      emptyState.style.opacity = '1';
     }
   }
 
@@ -1995,7 +2005,13 @@
   }
 
   function clearMessages() {
-    messagesEl.innerHTML = '';
+    // Remove all children EXCEPT the empty state
+    var children = Array.prototype.slice.call(messagesEl.children);
+    children.forEach(function (child) {
+      if (child !== emptyState) {
+        messagesEl.removeChild(child);
+      }
+    });
     currentMsgEl = null;
   }
 
@@ -2024,7 +2040,11 @@
         messagesEl.appendChild(div);
       }
     });
-    if (messages.length > 0) clearEmpty();
+    if (messages.length > 0) {
+      clearEmpty();
+    } else {
+      showEmpty();
+    }
     scrollToBottom();
   }
 
@@ -2387,6 +2407,8 @@
           // Auto-load latest session on first connect
           if (!currentSessionId && sessions.length > 0) {
             switchSession(sessions[0].id);
+          } else if (sessions.length === 0) {
+            showEmpty();  // no sessions at all — show welcome + chips
           }
         } catch (e) { /* ignore */ }
       }
@@ -2419,6 +2441,18 @@
 
   function createNewSession() {
     if (!ws || ws.readyState !== 1) return;
+    // If generating, cancel first — the WS receive loop is blocked during streaming
+    // so we must cancel to unblock it before sending new_session.
+    if (isGenerating) {
+      ws.send(JSON.stringify({ type: 'cancel', session_id: currentSessionId }));
+      // Wait briefly for cancel to process, then create new session
+      setTimeout(function () {
+        isGenerating = false;
+        setGeneratingUI(false);
+        ws.send(JSON.stringify({ type: 'new_session', model: currentModel }));
+      }, 500);
+      return;
+    }
     ws.send(JSON.stringify({ type: 'new_session', model: currentModel }));
   }
 
