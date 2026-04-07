@@ -307,7 +307,7 @@
       position: relative;
       background: var(--surface);
       border: 1px solid var(--border);
-      border-left: 2px solid rgba(99,102,241,0.2);
+      border-left: 3px solid rgba(245,158,11,0.35);
       border-radius: 4px 18px 18px 18px;
       padding: 14px 18px;
       max-width: calc(100% - 46px);
@@ -315,6 +315,27 @@
       line-height: 1.65;
       word-break: break-word;
       min-width: 0;
+    }
+
+    /* ── Sector 7-G terminal feel: subtle nuclear glow on active bubbles ── */
+    .agent-msg-assistant .msg-bubble.streaming {
+      box-shadow: 0 0 20px rgba(245,158,11,0.04), inset 0 0 40px rgba(245,158,11,0.02);
+    }
+
+    /* ── Typing cursor (blinking amber caret while streaming) ── */
+    .typing-cursor {
+      display: inline-block;
+      width: 2px;
+      height: 1em;
+      background: var(--amber);
+      margin-left: 1px;
+      vertical-align: text-bottom;
+      animation: cursor-blink 0.8s steps(2) infinite;
+      border-radius: 1px;
+    }
+    @keyframes cursor-blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
     }
 
     /* System / error message */
@@ -938,7 +959,7 @@
     }
 
     #agent-status .sep    { opacity: 0.4; }
-    #agent-status .s-model { color: var(--accent); }
+    #agent-status .s-model { color: var(--amber); }
     #agent-status .s-cost  { color: var(--text-2); }
     #agent-status .s-conn  { color: var(--text-3); }
     #agent-status .s-conn.connected   { color: var(--green); }
@@ -1359,6 +1380,8 @@
     <span class="s-conn" id="agent-conn-text">connecting</span>
     <span id="agent-elapsed-sep" class="sep" style="display:none">&middot;</span>
     <span id="agent-elapsed-val" style="display:none; color:var(--amber); font-family:var(--mono); font-size:11px;"></span>
+    <span class="sep">&middot;</span>
+    <span style="color:var(--text-3);font-size:10px;opacity:0.6">&#9762; Sector 7-G</span>
   </div>
 </div>
 
@@ -1870,13 +1893,15 @@
     '<circle cx="54" cy="9" r="2.5" fill="#f59e0b"/>' +     // antenna tip
     '</svg>';
 
-  // Typewriter streaming: characters animate in smoothly between API chunks
+  // ── Smooth typewriter: constant 2 chars/frame (~120 chars/sec at 60fps) ──
+  // Opus delivers ~158 chars/sec, Sonnet ~272 chars/sec.
+  // At 2 chars/frame the queue slowly builds then drains — no stop-start.
   var _typeQueue = '';        // pending characters to animate
-  var _typeRafId = null;      // rAF for character animation
+  var _typeRafId = null;      // rAF handle
   var _mdTimer = null;        // markdown render timer
-  var _lastMdLen = 0;         // last markdown render position
-  var _typeRate = 2;          // chars per frame (~120 chars/sec at 60fps)
+  var _lastMdLen = 0;         // last markdown render length
   var _rawText = '';           // full accumulated raw text
+  var CHARS_PER_FRAME = 2;    // constant rate — smooth and steady
 
   function startAssistantMessage() {
     var div = document.createElement('div');
@@ -1888,7 +1913,7 @@
     div.appendChild(avatar);
     // Bubble
     var bubble = document.createElement('div');
-    bubble.className = 'msg-bubble';
+    bubble.className = 'msg-bubble streaming';
     div.appendChild(bubble);
     messagesEl.appendChild(div);
     currentMsgEl = div;
@@ -1900,56 +1925,60 @@
 
   function appendDelta(delta) {
     if (!currentMsgEl) startAssistantMessage();
-    // Queue characters for typewriter animation
     _typeQueue += delta;
     _rawText += delta;
-    // Store full raw text for markdown rendering
     var bubble = currentMsgEl.querySelector('.msg-bubble');
     if (bubble) bubble.setAttribute('data-raw', _rawText);
-    // Dynamically adjust typing speed to drain queue before next chunk (~400ms)
-    // Target: drain queue in ~250ms to leave headroom
-    var qLen = _typeQueue.length;
-    if (qLen > 20) {
-      _typeRate = Math.max(2, Math.ceil(qLen / 15)); // drain in ~15 frames (~250ms)
-    }
-    // Start typewriter loop if not running
+    // Start constant-rate typewriter if not already running
     if (!_typeRafId) _typewriterTick();
-    // Schedule markdown render (less frequent, for formatting)
+    // Markdown render every 800ms (just for formatting catch-up)
     if (!_mdTimer) {
       _mdTimer = setTimeout(function () {
         _mdTimer = null;
         var b = currentMsgEl ? currentMsgEl.querySelector('.msg-bubble') : null;
         if (!b) return;
         var r = b.getAttribute('data-raw') || '';
-        if (r.length - _lastMdLen > 30) {
-          b.innerHTML = renderMarkdown(r);
+        if (r.length - _lastMdLen > 40) {
+          b.innerHTML = renderMarkdown(r) + '<span class="typing-cursor"></span>';
           addCopyButtons(b);
           _lastMdLen = r.length;
           messagesEl.scrollTop = messagesEl.scrollHeight;
         }
-      }, 500);
+      }, 800);
     }
   }
 
   function _typewriterTick() {
     _typeRafId = requestAnimationFrame(function () {
       _typeRafId = null;
-      if (!_typeQueue || !currentMsgEl) return;
+      if (!currentMsgEl) return;
       var bubble = currentMsgEl.querySelector('.msg-bubble');
       if (!bubble) return;
-      // Take N chars from queue
-      var n = Math.min(_typeRate, _typeQueue.length);
+      if (_typeQueue.length === 0) {
+        // Nothing to type — just keep the cursor blinking, check again next frame
+        // Don't schedule another tick; appendDelta will restart it
+        return;
+      }
+      // Constant rate: exactly CHARS_PER_FRAME chars
+      var n = Math.min(CHARS_PER_FRAME, _typeQueue.length);
       var chars = _typeQueue.slice(0, n);
       _typeQueue = _typeQueue.slice(n);
-      // Append to visible text
+      // Remove cursor before appending
+      var cursor = bubble.querySelector('.typing-cursor');
+      if (cursor) cursor.remove();
+      // Append to last text node
       var node = bubble.lastChild;
       if (node && node.nodeType === 3) {
         node.textContent += chars;
       } else {
         bubble.appendChild(document.createTextNode(chars));
       }
+      // Re-add cursor
+      var cur = document.createElement('span');
+      cur.className = 'typing-cursor';
+      bubble.appendChild(cur);
       messagesEl.scrollTop = messagesEl.scrollHeight;
-      // Keep ticking if queue has more
+      // Always schedule next tick while queue has data
       if (_typeQueue.length > 0) {
         _typewriterTick();
       }
@@ -1977,7 +2006,8 @@
       var text = fullText || bubble.getAttribute('data-raw') || bubble.textContent || '';
       bubble.removeAttribute('data-raw');
 
-      // Final render — already live-rendered, just do a clean final pass
+      // Final render — remove streaming state, do clean pass
+      bubble.classList.remove('streaming');
       bubble.innerHTML = renderMarkdown(text);
       addCopyButtons(bubble);
       addMsgCopyButton(msgEl, text);
