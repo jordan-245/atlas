@@ -79,7 +79,7 @@ REGIME_CONFIGS: dict[RegimeState, RegimeConfig] = {
         "active_universes": ["sp500", "sector_etfs", "commodity_etfs"],
         "strategy_types": ["all"],
         "sizing_multiplier": 1.0,
-        "max_positions": 5,
+        "max_positions": 10,
     },
     RegimeState.BULL_RISK_OFF: {
         # Trend intact but risk appetite softening.  Rotate toward defensive.
@@ -87,17 +87,18 @@ REGIME_CONFIGS: dict[RegimeState, RegimeConfig] = {
         "active_universes": ["sp500", "sector_etfs", "treasury_etfs"],
         "strategy_types": ["mean_reversion", "trend_following"],
         "sizing_multiplier": 0.7,
-        "max_positions": 4,
+        "max_positions": 8,
     },
     RegimeState.TRANSITION_UNCERTAIN: {
         # Signals conflicting — de-risk materially.
         # SP500 stays active (manage existing positions + mean-rev opportunities)
         # plus lower-beta defensive universes for diversification.
         # All strategies active — sizing_multiplier handles risk reduction.
+        # max_positions high enough to accommodate legacy SP500 + new ETF positions.
         "active_universes": ["sp500", "sector_etfs", "treasury_etfs", "gold_etfs"],
         "strategy_types": ["all"],
         "sizing_multiplier": 0.5,
-        "max_positions": 5,
+        "max_positions": 10,
     },
     RegimeState.BEAR_RISK_OFF: {
         # Trend broken, volatility elevated.  Capital preservation mode.
@@ -105,7 +106,7 @@ REGIME_CONFIGS: dict[RegimeState, RegimeConfig] = {
         "active_universes": ["sp500", "treasury_etfs", "gold_etfs", "defensive_etfs"],
         "strategy_types": ["all"],
         "sizing_multiplier": 0.5,
-        "max_positions": 4,
+        "max_positions": 8,
     },
     RegimeState.BEAR_CAPITULATION: {
         # Panic regime — VIX > 35, credit blowout.
@@ -114,7 +115,7 @@ REGIME_CONFIGS: dict[RegimeState, RegimeConfig] = {
         "active_universes": ["sp500", "treasury_etfs", "gold_etfs"],
         "strategy_types": ["mean_reversion", "short_term_mr"],
         "sizing_multiplier": 0.3,
-        "max_positions": 3,
+        "max_positions": 6,
     },
     RegimeState.RECOVERY_EARLY: {
         # Early signs of recovery: SPY reclaiming 200-DMA, VIX declining.
@@ -122,7 +123,7 @@ REGIME_CONFIGS: dict[RegimeState, RegimeConfig] = {
         "active_universes": ["sp500", "sector_etfs", "commodity_etfs"],
         "strategy_types": ["momentum_breakout", "trend_following"],
         "sizing_multiplier": 0.7,
-        "max_positions": 4,
+        "max_positions": 8,
     },
 }
 

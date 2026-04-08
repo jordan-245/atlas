@@ -162,6 +162,32 @@ ${CONFIG_ERRORS}"
             VOL_CONTEXT="✅ Volatility gate: OK — no macro flags."
         fi
 
+        # ── ETF universe data refresh ───────────────────────────────────────
+        # Refresh all ETF universe data so regime-aware plan generation has
+        # current prices for sector/treasury/gold/commodity/defensive ETFs.
+        echo "$(date -Iseconds) Refreshing ETF universe data..." >> "$LOG_DIR/pi-cron.log"
+        _IN_SET_PLUS_E=1
+        set +e
+        python3 -c "
+import sys; sys.path.insert(0, '$PROJECT')
+from data.ingest import ingest_universe
+for u in ['sector_etfs', 'treasury_etfs', 'gold_etfs', 'commodity_etfs', 'defensive_etfs']:
+    try:
+        r = ingest_universe(u)
+        print(f'{u}: {len(r.get("tickers_fetched",[]))} tickers refreshed')
+    except Exception as e:
+        print(f'{u}: FAILED — {e}')
+" >> "$LOG_DIR/pi-cron.log" 2>&1
+        ETF_EXIT=$?
+        set -e
+        _IN_SET_PLUS_E=0
+        if [ "$ETF_EXIT" -ne 0 ]; then
+            echo "$(date -Iseconds) WARNING: ETF data refresh exited $ETF_EXIT — continuing" >> "$LOG_DIR/pi-cron.log"
+        else
+            echo "$(date -Iseconds) ETF data refresh complete" >> "$LOG_DIR/pi-cron.log"
+        fi
+        hb "premarket" "running" '{"stage":"etf_refresh","exit_code":'"$ETF_EXIT"'}'
+
         # ── AI overlay (log-only mode) ─────────────────────────────────────
         # Runs BEFORE the planning agent so the decision is in SQLite when
         # generate_regime_plan() annotates the plan with overlay_context.

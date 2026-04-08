@@ -258,9 +258,11 @@ def generate_eod_report(portfolio, prices, trade_date, stop_exits, tp_exits):
     today_closed = [t for t in portfolio.closed_trades if t.get("exit_date") == trade_date]
     if today_closed:
         lines.append(f"TRADES CLOSED TODAY ({len(today_closed)})")
-        total_realized = sum(t["pnl"] for t in today_closed)
+        total_realized = sum(t.get("pnl", 0) or 0 for t in today_closed)
         for t in today_closed:
-            lines.append(f"   {t['ticker']} {t['strategy']}: ${t['pnl']:+.2f} ({t['pnl_pct']:+.1f}%) [{t['exit_reason']}]")
+            _pnl = t.get('pnl', 0) or 0
+            _pnl_pct = t.get('pnl_pct', 0) or 0
+            lines.append(f"   {t.get('ticker','?')} {t.get('strategy','?')}: ${_pnl:+.2f} ({_pnl_pct:+.1f}%) [{t.get('exit_reason','?')}]")
         lines.append(f"   Total realized: ${total_realized:+.2f}")
         lines.append("")
 
