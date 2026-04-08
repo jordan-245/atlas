@@ -39,6 +39,18 @@ from brokers.base import (
 logger = logging.getLogger("atlas.live_executor")
 
 PROJECT_ROOT = Path(__file__).parent.parent
+
+# ── RegimeModel lazy singleton ─────────────────────────────────
+_regime_model = None
+
+
+def _get_regime_model():
+    """Return a cached RegimeModel instance (avoids re-init on every call)."""
+    global _regime_model
+    if _regime_model is None:
+        from regime.model import RegimeModel
+        _regime_model = RegimeModel()
+    return _regime_model
 EXECUTION_LOG = PROJECT_ROOT / "logs" / "live_executions.jsonl"
 
 
@@ -48,7 +60,7 @@ def _health_log(level: str, message: str, detail: dict = None) -> None:
         from monitor.health_writer import log_error, log_warning, log_critical, log_info
         fn = {"error": log_error, "warning": log_warning, "critical": log_critical}.get(level, log_info)
         fn("live_executor", message, detail)
-    except Exception:
+    except (RuntimeError, ValueError, OSError, KeyError, AttributeError):
         pass
 HALT_FILE = PROJECT_ROOT / ".live_halt"
 
@@ -595,9 +607,8 @@ class LiveExecutor:
 
         # Get current regime for trade record enrichment
         try:
-            from regime.model import RegimeModel
-            _regime_state = RegimeModel().classify_current().state.value
-        except Exception:
+            _regime_state = _get_regime_model().classify_current().state.value
+        except (RuntimeError, ValueError, OSError, KeyError, AttributeError):
             _regime_state = None
 
         direction = "long"
@@ -792,9 +803,8 @@ class LiveExecutor:
 
         # Get current regime for exit record
         try:
-            from regime.model import RegimeModel
-            _regime_state = RegimeModel().classify_current().state.value
-        except Exception:
+            _regime_state = _get_regime_model().classify_current().state.value
+        except (RuntimeError, ValueError, OSError, KeyError, AttributeError):
             _regime_state = None
 
         # Direction: long = SELL to close, short = BUY to cover
@@ -1852,9 +1862,8 @@ class LiveExecutor:
 
         # Get current regime for enrichment
         try:
-            from regime.model import RegimeModel
-            _recon_regime = RegimeModel().classify_current().state.value
-        except Exception:
+            _recon_regime = _get_regime_model().classify_current().state.value
+        except (RuntimeError, ValueError, OSError, KeyError, AttributeError):
             _recon_regime = None
 
         # Load existing ledger order IDs to skip duplicates
@@ -2015,9 +2024,8 @@ class LiveExecutor:
 
         # Get current regime for exit record enrichment
         try:
-            from regime.model import RegimeModel
-            _recon_exit_regime = RegimeModel().classify_current().state.value
-        except Exception:
+            _recon_exit_regime = _get_regime_model().classify_current().state.value
+        except (RuntimeError, ValueError, OSError, KeyError, AttributeError):
             _recon_exit_regime = None
 
         reconciled = []

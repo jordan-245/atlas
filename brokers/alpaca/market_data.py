@@ -18,6 +18,7 @@ All tickers use Atlas format (bare US symbols: AAPL, MSFT, etc.).
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from datetime import date as _date_type
 from typing import Dict, List, Optional
@@ -506,6 +507,8 @@ def _parse_snapshot(snap) -> dict:
 
 _singleton: Optional[AlpacaMarketData] = None
 _trade_singleton = None  # Optional[TradingClient] — lazy import
+_singleton_lock = threading.Lock()
+_trade_singleton_lock = threading.Lock()
 
 
 def get_alpaca_data_client() -> Optional[AlpacaMarketData]:
@@ -517,16 +520,21 @@ def get_alpaca_data_client() -> Optional[AlpacaMarketData]:
     global _singleton
     if _singleton is not None:
         return _singleton if _singleton.is_available else None
-    try:
-        from brokers.secrets import get_secret
-        key = get_secret("ALPACA_API_KEY")
-        secret = get_secret("ALPACA_SECRET_KEY")
-        if not key or not secret:
+
+    with _singleton_lock:
+        # Double-check after acquiring lock
+        if _singleton is not None:
+            return _singleton if _singleton.is_available else None
+        try:
+            from brokers.secrets import get_secret
+            key = get_secret("ALPACA_API_KEY")
+            secret = get_secret("ALPACA_SECRET_KEY")
+            if not key or not secret:
+                return None
+            _singleton = AlpacaMarketData(api_key=key, api_secret=secret)
+            return _singleton if _singleton.is_available else None
+        except Exception:
             return None
-        _singleton = AlpacaMarketData(api_key=key, api_secret=secret)
-        return _singleton if _singleton.is_available else None
-    except Exception:
-        return None
 
 
 def _get_trade_client():
@@ -539,22 +547,26 @@ def _get_trade_client():
         return _trade_singleton
     if not ALPACA_AVAILABLE:
         return None
-    try:
-        from alpaca.trading.client import TradingClient
-        from brokers.secrets import get_secret
-        key = get_secret("ALPACA_API_KEY")
-        secret = get_secret("ALPACA_SECRET_KEY")
-        if not key or not secret:
+
+    with _trade_singleton_lock:
+        # Double-check after acquiring lock
+        if _trade_singleton is not None:
+            return _trade_singleton
+        try:
+            from alpaca.trading.client import TradingClient
+            from brokers.secrets import get_secret
+            key = get_secret("ALPACA_API_KEY")
+            secret = get_secret("ALPACA_SECRET_KEY")
+            if not key or not secret:
+                return None
+            _trade_singleton = TradingClient(
+                api_key=key,
+                secret_key=secret,
+                paper=False,
+            )
+            return _trade_singleton
+        except Exception:
             return None
-        # paper=False: corporate announcements live on the non-paper endpoint
-        _trade_singleton = TradingClient(
-            api_key=key,
-            secret_key=secret,
-            paper=False,
-        )
-        return _trade_singleton
-    except Exception:
-        return None
 
 
 def get_historical_bars(
