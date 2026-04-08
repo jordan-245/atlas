@@ -35,7 +35,6 @@ import signal
 import sys
 import threading
 import time
-import traceback
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -65,6 +64,7 @@ from fastapi.responses import (  # noqa: E402
 )
 from fastapi.security import HTTPBasic, HTTPBasicCredentials  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
+from starlette.middleware.base import BaseHTTPMiddleware  # noqa: E402
 
 # ── Chat imports ──────────────────────────────────────────────────────────────
 try:
@@ -528,6 +528,36 @@ app = FastAPI(
 )
 
 
+# ── Security middleware ──────────────────────────────────────────────────────
+
+class MaxBodySizeMiddleware(BaseHTTPMiddleware):
+    """Reject requests with Content-Length exceeding 1 MB (Finding F-01)."""
+
+    MAX_BODY = 1_048_576  # 1 MB
+
+    async def dispatch(self, request: Request, call_next):
+        content_length = request.headers.get("content-length")
+        if content_length and int(content_length) > self.MAX_BODY:
+            return JSONResponse(
+                status_code=413,
+                content={"error": "Request too large"},
+            )
+        return await call_next(request)
+
+
+app.add_middleware(MaxBodySizeMiddleware)
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Add security headers to every response (Finding F-04)."""
+    response = await call_next(request)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # GET routes  (defined in the same priority order as dashboard_server.py do_GET)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -785,7 +815,7 @@ def dashboard_data(_auth: HTTPBasicCredentials = Depends(check_auth)):
         body = json.dumps(data, default=str)
         return Response(content=body, media_type="application/json")
     except Exception as e:
-        traceback.print_exc()
+        logger.exception("Failed to build dashboard data")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -820,7 +850,7 @@ def approve_plan(
             try:
                 result = _approve_and_execute(trade_date, market_id)
             except Exception as exc:
-                traceback.print_exc()
+                logger.exception("Plan approval/execution failed")
                 result = {"ok": False, "error": str(exc)}
 
         t = threading.Thread(target=_run, daemon=True)
@@ -838,7 +868,7 @@ def approve_plan(
     except HTTPException:
         raise
     except Exception as e:
-        traceback.print_exc()
+        logger.exception("Approve endpoint failed")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -864,7 +894,7 @@ def reject_plan(
     except HTTPException:
         raise
     except Exception as e:
-        traceback.print_exc()
+        logger.exception("Reject endpoint failed")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -925,6 +955,7 @@ _pi_sessions: dict[str, "PiSessionManager"] = {}
 # Short-lived WebSocket auth tokens: token_str -> (expires_epoch, username)
 _ws_tokens: dict[str, tuple[float, str]] = {}
 _WS_TOKEN_TTL = 300  # seconds (5 minutes)
+_MAX_WS_TOKENS = 1000
 
 
 def _require_chat() -> None:
@@ -946,13 +977,20 @@ def chat_get_token(
     WebSocket upgrade then passes it as ``?token=<value>``.
     """
     _require_chat()
-    token = secrets.token_urlsafe(32)
-    expires = time.time() + _WS_TOKEN_TTL
-    _ws_tokens[token] = (expires, _auth.username)
-    # Purge old tokens
-    stale = [k for k, (exp, _) in _ws_tokens.items() if exp < time.time()]
+    # Purge expired tokens first (Finding F-07)
+    now = time.time()
+    stale = [k for k, (exp, _) in _ws_tokens.items() if exp < now]
     for k in stale:
         _ws_tokens.pop(k, None)
+    # Reject if still over capacity
+    if len(_ws_tokens) >= _MAX_WS_TOKENS:
+        return JSONResponse(
+            status_code=429,
+            content={"error": "Too many active tokens"},
+        )
+    token = secrets.token_urlsafe(32)
+    expires = now + _WS_TOKEN_TTL
+    _ws_tokens[token] = (expires, _auth.username)
     return JSONResponse({"token": token, "expires_in": _WS_TOKEN_TTL})
 
 

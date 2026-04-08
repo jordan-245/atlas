@@ -21,7 +21,6 @@ import json
 import logging
 import os
 import sys
-import traceback
 from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
@@ -673,7 +672,7 @@ async def handle_approval_callback(update: Update, ctx: ContextTypes.DEFAULT_TYP
             )
         except Exception as e:
             logger.error("Approval failed: %s", e, exc_info=True)
-            result_text = f"❌ <b>Approval failed</b>\n\n<pre>{_esc(traceback.format_exc()[-500:])}</pre>"
+            result_text = "❌ <b>Approval failed</b> — check server logs for details."
 
         await query.message.reply_text(result_text, parse_mode="HTML")
 
@@ -748,7 +747,7 @@ async def handle_research_promotion_callback(update: Update, ctx: ContextTypes.D
             )
         except Exception as e:
             logger.error("Research rejection failed: %s", e, exc_info=True)
-            result_text = f"❌ <b>Rejection failed</b>\n\n<pre>{_esc(traceback.format_exc()[-500:])}</pre>"
+            result_text = "❌ <b>Rejection failed</b> — check server logs for details."
 
         await query.edit_message_text(
             query.message.text_html.replace("⏳ <b>Rejecting…</b>", result_text),
@@ -769,7 +768,7 @@ async def handle_research_promotion_callback(update: Update, ctx: ContextTypes.D
             )
         except Exception as e:
             logger.error("Research promotion failed: %s", e, exc_info=True)
-            result_text = f"❌ <b>Promotion failed</b>\n\n<pre>{_esc(traceback.format_exc()[-500:])}</pre>"
+            result_text = "❌ <b>Promotion failed</b> — check server logs for details."
 
         await query.message.reply_text(result_text, parse_mode="HTML")
 
@@ -830,10 +829,7 @@ async def handle_rollback_callback(update: Update, ctx: ContextTypes.DEFAULT_TYP
         )
     except Exception as e:
         logger.error("Rollback failed: %s", e, exc_info=True)
-        result_text = (
-            f"❌ <b>Rollback failed</b>\n\n"
-            f"<pre>{_esc(traceback.format_exc()[-500:])}</pre>"
-        )
+        result_text = "❌ <b>Rollback failed</b> — check server logs for details."
 
     await query.edit_message_text(
         query.message.text_html.replace("⏳ <b>Rolling back…</b>", result_text),
