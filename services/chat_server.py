@@ -825,22 +825,81 @@ def dashboard_data(_auth: HTTPBasicCredentials = Depends(check_auth)):
 
 
 
+_finance_cache: dict = {"data": None, "ts": 0.0}
+_FINANCE_CACHE_TTL = 60  # seconds
+
+
 @app.get("/api/finance")
 def finance_data(_auth: HTTPBasicCredentials = Depends(check_auth)):
-    """GET /api/finance — personal finance data from Up bank integration.
+    """GET /api/finance — personal finance data from Up Bank SQLite + Atlas DB.
 
-    Serves the pre-generated finance-data.json which contains:
-    net_worth, accounts, spending, budget, projections, and balance history.
+    Queries /root/up-bank/up_bank.db directly (same pattern as trading tab
+    querying Atlas SQLite). Caches result for 60 seconds. Falls back to
+    static finance-data.json if the DB query fails.
     """
-    finance_path = SERVE_DIR / "finance-data.json"
-    if not finance_path.exists():
-        raise HTTPException(status_code=404, detail="Finance data not found")
+    import time as _time
+    now = _time.time()
+    if _finance_cache["data"] and (now - _finance_cache["ts"]) < _FINANCE_CACHE_TTL:
+        return JSONResponse(content=_finance_cache["data"])
+
     try:
-        with open(finance_path) as f:
-            data = json.load(f)
-        return JSONResponse(content=data)
+        import sys
+        import sqlite3 as _sqlite3
+        if "/root/up-bank" not in sys.path:
+            sys.path.insert(0, "/root/up-bank")
+        from up_sync import build_finance_payload
+
+        # Open Up Bank DB read-only
+        up_conn = _sqlite3.connect("file:///root/up-bank/up_bank.db?mode=ro", uri=True)
+        up_conn.row_factory = _sqlite3.Row
+
+        # Get Atlas equity from Atlas SQLite (equity_curve table)
+        atlas_eq = 0.0
+        atlas_pnl = 0.0
+        portfolio_history: list = []
+        try:
+            from db.atlas_db import get_db
+            with get_db() as atlas_conn:
+                rows = atlas_conn.execute(
+                    "SELECT * FROM equity_curve WHERE market_id='sp500' "
+                    "ORDER BY date DESC LIMIT 60"
+                ).fetchall()
+                if rows:
+                    atlas_eq = float(rows[0]["equity"] or 0)
+                    atlas_pnl = float(rows[0]["day_pnl"] or 0)
+                    portfolio_history = [dict(r) for r in reversed(rows)]
+        except Exception as e:
+            logger.warning("Atlas equity lookup failed: %s", e)
+
+        # Moomoo data (manual JSON, if available)
+        moomoo_data: dict = {}
+        moomoo_path = Path("/root/atlas/dashboard/cache/moomoo_manual.json")
+        if moomoo_path.exists():
+            try:
+                with open(moomoo_path) as f:
+                    moomoo_data = json.load(f)
+            except Exception:
+                pass
+
+        payload = build_finance_payload(
+            up_conn, atlas_eq, atlas_pnl, portfolio_history, moomoo_data
+        )
+        up_conn.close()
+
+        _finance_cache["data"] = payload
+        _finance_cache["ts"] = now
+        return JSONResponse(content=payload)
+
     except Exception as e:
-        logger.exception("Failed to load finance data")
+        logger.exception("Finance API SQLite query failed, falling back to JSON")
+        # Fallback to static JSON file
+        finance_path = SERVE_DIR / "finance-data.json"
+        if finance_path.exists():
+            try:
+                with open(finance_path) as f:
+                    return JSONResponse(content=json.load(f))
+            except Exception:
+                pass
         raise HTTPException(status_code=500, detail=str(e))
 
 
