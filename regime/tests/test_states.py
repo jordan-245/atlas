@@ -174,7 +174,7 @@ class TestRegimeConfigs:
 
     def test_capitulation_has_fewest_universes(self):
         cap_universes = REGIME_CONFIGS[RegimeState.BEAR_CAPITULATION]["active_universes"]
-        assert len(cap_universes) == 2
+        assert len(cap_universes) == 3
 
     def test_capitulation_has_fewest_positions(self):
         cap_mp = REGIME_CONFIGS[RegimeState.BEAR_CAPITULATION]["max_positions"]
@@ -189,20 +189,20 @@ class TestRegimeConfigs:
         assert "commodity_etfs" in cfg["active_universes"]
         assert "all" in cfg["strategy_types"]
         assert cfg["sizing_multiplier"] == 1.0
-        assert cfg["max_positions"] == 5
+        assert cfg["max_positions"] == 10
 
     def test_specific_config_values_bear_capitulation(self):
         cfg = REGIME_CONFIGS[RegimeState.BEAR_CAPITULATION]
         assert "treasury_etfs" in cfg["active_universes"]
         assert "gold_etfs" in cfg["active_universes"]
         assert cfg["sizing_multiplier"] == 0.3
-        assert cfg["max_positions"] == 2
+        assert cfg["max_positions"] == 6
 
     def test_specific_config_values_transition_uncertain(self):
         cfg = REGIME_CONFIGS[RegimeState.TRANSITION_UNCERTAIN]
         assert cfg["sizing_multiplier"] == 0.5
-        assert cfg["max_positions"] == 3
-        assert "mean_reversion" in cfg["strategy_types"]
+        assert cfg["max_positions"] == 10
+        assert "all" in cfg["strategy_types"]
 
     def test_specific_config_values_bear_risk_off(self):
         cfg = REGIME_CONFIGS[RegimeState.BEAR_RISK_OFF]
@@ -210,21 +210,21 @@ class TestRegimeConfigs:
         assert "gold_etfs" in cfg["active_universes"]
         assert "defensive_etfs" in cfg["active_universes"]
         assert cfg["sizing_multiplier"] == 0.5
-        assert cfg["max_positions"] == 3
+        assert cfg["max_positions"] == 8
 
     def test_specific_config_values_bull_risk_off(self):
         cfg = REGIME_CONFIGS[RegimeState.BULL_RISK_OFF]
         assert "sp500" in cfg["active_universes"]
         assert "treasury_etfs" in cfg["active_universes"]
         assert cfg["sizing_multiplier"] == 0.7
-        assert cfg["max_positions"] == 4
+        assert cfg["max_positions"] == 8
 
     def test_specific_config_values_recovery_early(self):
         cfg = REGIME_CONFIGS[RegimeState.RECOVERY_EARLY]
         assert "sp500" in cfg["active_universes"]
         assert "momentum_breakout" in cfg["strategy_types"]
         assert cfg["sizing_multiplier"] == 0.7
-        assert cfg["max_positions"] == 4
+        assert cfg["max_positions"] == 8
 
 
 # ──────────────────────────────────────────────────────────────────────────────

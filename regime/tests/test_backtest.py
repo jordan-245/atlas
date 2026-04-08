@@ -259,10 +259,10 @@ class TestUniverseSelection:
         cfg = REGIME_CONFIGS[RegimeState.BULL_RISK_ON]
         assert "sp500" in cfg["active_universes"]
 
-    def test_bear_capitulation_excludes_sp500(self):
-        """BEAR_CAPITULATION should NOT include sp500 (capital preservation)."""
+    def test_bear_capitulation_includes_sp500(self):
+        """BEAR_CAPITULATION includes sp500 (with reduced sizing for capital preservation)."""
         cfg = REGIME_CONFIGS[RegimeState.BEAR_CAPITULATION]
-        assert "sp500" not in cfg["active_universes"]
+        assert "sp500" in cfg["active_universes"]
         assert "treasury_etfs" in cfg["active_universes"]
         assert "gold_etfs" in cfg["active_universes"]
 
