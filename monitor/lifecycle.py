@@ -110,7 +110,7 @@ class StrategyLifecycleManager:
                 logger.debug("Initialized new strategy '%s' as ACTIVE", name)
 
     def _save_state(self) -> None:
-        """Persist lifecycle state to JSON file (atomic-ish via write)."""
+        """Persist lifecycle state to JSON file + SQLite system_log (dual-write)."""
         self.LIFECYCLE_FILE.parent.mkdir(parents=True, exist_ok=True)
         data: Dict[str, dict] = {}
         for name, rec in self.records.items():
@@ -120,6 +120,18 @@ class StrategyLifecycleManager:
             data[name] = serialized
         self.LIFECYCLE_FILE.write_text(json.dumps(data, indent=2, default=str))
         logger.debug("Lifecycle state saved (%d strategies)", len(data))
+
+        # Dual-write: persist snapshot to SQLite (will cut JSON in future phase)
+        try:
+            from db.atlas_db import record_system_log
+            record_system_log(
+                level="info",
+                service="lifecycle_state",
+                message=f"Lifecycle snapshot: {len(data)} strategies",
+                detail=data,
+            )
+        except Exception as exc:
+            logger.warning("Failed to dual-write lifecycle state to SQLite: %s", exc)
 
     # ── Public API ────────────────────────────────────────────────────────────
 

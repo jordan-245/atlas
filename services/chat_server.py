@@ -582,48 +582,15 @@ def prices(
     tickers: str = "",
     _auth: HTTPBasicCredentials = Depends(check_auth),
 ):
-    """GET /api/prices — pre-computed P&L for open positions.
+    """GET /api/prices — live price data.
 
-    ?tickers=AAPL,REH.AX — legacy: return raw quotes for specific tickers.
-    No ?tickers param  — new mode: return pre-computed P&L for all positions.
-
-    live_prices module retired in Phase 5.  Returns 503 until replaced.
+    live_prices module retired in Phase 5. Returns 503.
+    Use /api/dashboard-data for position P&L instead.
     """
-    try:
-        if tickers:
-            # Legacy mode: specific tickers requested → return raw quotes
-            try:
-                from dashboard.live_prices import fetch_prices, get_cache_stats
-            except ImportError:
-                raise HTTPException(
-                    status_code=503,
-                    detail="live prices unavailable (live_prices retired)",
-                )
-            ticker_list = [t.strip() for t in tickers.split(",") if t.strip()]
-            quotes = fetch_prices(ticker_list)
-            return JSONResponse({
-                "ok": True,
-                "timestamp": datetime.now().isoformat(),
-                "quotes": quotes,
-                "cache": get_cache_stats(),
-                "ticker_count": len(quotes),
-            })
-        else:
-            # New mode: pre-computed P&L for all positions
-            try:
-                from dashboard.live_prices import get_live_prices_with_pnl
-            except ImportError:
-                raise HTTPException(
-                    status_code=503,
-                    detail="live prices unavailable (live_prices retired)",
-                )
-            simple_path = str(SERVE_DIR / "simple-dashboard-data.json")
-            return JSONResponse(get_live_prices_with_pnl(simple_path))
-    except HTTPException:
-        raise
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+    raise HTTPException(
+        status_code=503,
+        detail="live prices unavailable (live_prices retired) — use /api/dashboard-data",
+    )
 
 
 # ── GET /api/snapshot ─────────────────────────────────────────────────────────

@@ -3,6 +3,8 @@
 Tracks per-strategy live metrics (Sharpe, win rate, R-multiple, drawdown)
 against backtest benchmarks stored in research/best/{strategy}.json.
 
+Trade data is sourced from the SQLite ``trades`` table (db/atlas_db.py).
+
 Status levels:
   INSUFFICIENT_DATA  — fewer than MIN_TRADES_FOR_METRICS (10) completed trades
   HEALTHY            — live 60-day Sharpe > 50% of backtest Sharpe
@@ -131,166 +133,101 @@ class StrategyHealthMonitor:
     # ── Data loading ───────────────────────────────────────────────────────────
 
     def _load_live_trades(self) -> List[dict]:
-        """Load all live execution events from disk.
+        """Load all trade records from SQLite.
 
-        Sources:
-          1. logs/live_executions.jsonl — broker execution events (fill_price > 0, success=True)
-          2. journal/trade_ledger.json  — trade ledger (fill_price > 0)
-
-        Returns deduplicated list of event dicts.
+        Replaces legacy JSON file reads (live_executions.jsonl, trade_ledger.json).
+        Returns list of trade event dicts for compatibility with downstream code.
         """
         if self._live_trades_cache is not None:
             return self._live_trades_cache
 
+        from db.atlas_db import get_db
+
         trades: List[dict] = []
-        seen_order_ids: set = set()
+        with get_db() as db:
+            rows = db.execute(
+                "SELECT * FROM trades ORDER BY entry_date"
+            ).fetchall()
+            for row in rows:
+                r = dict(row)
+                event = {
+                    "ticker": r.get("ticker", ""),
+                    "strategy": r.get("strategy", ""),
+                    "timestamp": r.get("exit_date") or r.get("entry_date", ""),
+                    "fill_price": r.get("entry_price", 0),
+                    "shares": r.get("shares", 0),
+                    "stop_price": r.get("stop_price", 0),
+                    "order_id": f"trade_{r.get('id', '')}",
+                    "success": True,
+                    "type": "exit" if r.get("status") == "closed" else "entry",
+                }
+                if r.get("status") == "closed" and r.get("pnl") is not None:
+                    event["pnl"] = r["pnl"]
+                    event["pnl_pct"] = r.get("pnl_pct", 0)
+                    event["holding_days"] = r.get("hold_days", 1)
+                    event["entry_price"] = r.get("entry_price", 0)
+                    event["exit_price"] = r.get("exit_price", 0)
+                    entry_px = r.get("entry_price", 0)
+                    stop_px = r.get("stop_price", 0)
+                    shares = r.get("shares", 1) or 1
+                    if stop_px and entry_px and stop_px < entry_px:
+                        risk = (entry_px - stop_px) * shares
+                        if risk > 0:
+                            event["r_multiple"] = r["pnl"] / risk
+                trades.append(event)
 
-        # Source 1: live_executions.jsonl
-        executions_path = PROJECT / "logs" / "live_executions.jsonl"
-        if executions_path.exists():
-            try:
-                with open(executions_path) as fh:
-                    for line in fh:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            event = json.loads(line)
-                            if event.get("fill_price", 0) > 0 and event.get("success", False):
-                                oid = event.get("order_id", "")
-                                if oid and oid in seen_order_ids:
-                                    continue
-                                if oid:
-                                    seen_order_ids.add(oid)
-                                trades.append(event)
-                        except json.JSONDecodeError:
-                            continue
-            except Exception as exc:
-                logger.warning("Failed to read live_executions.jsonl: %s", exc)
-
-        # Source 2: journal/trade_ledger.json
-        ledger_path = PROJECT / "journal" / "trade_ledger.json"
-        if ledger_path.exists():
-            try:
-                with open(ledger_path) as fh:
-                    ledger = json.load(fh)
-                if isinstance(ledger, list):
-                    for entry in ledger:
-                        if not isinstance(entry, dict):
-                            continue
-                        if entry.get("fill_price", 0) <= 0:
-                            continue
-                        oid = entry.get("order_id", "")
-                        if oid and oid in seen_order_ids:
-                            continue  # already loaded from jsonl
-                        if oid:
-                            seen_order_ids.add(oid)
-                        trades.append(entry)
-            except Exception as exc:
-                logger.warning("Failed to read trade_ledger.json: %s", exc)
-
-        logger.info("Loaded %d live trade events (market=%s)", len(trades), self.market_id)
+        logger.info("Loaded %d trade records from SQLite (market=%s)", len(trades), self.market_id)
         self._live_trades_cache = trades
         return trades
 
     def _get_completed_trades(
         self, strategy: str, window_days: int = 60
     ) -> List[dict]:
-        """Extract completed (entry+exit paired) trades for a strategy within the window.
+        """Get completed trades for a strategy from SQLite within the rolling window.
 
-        A trade is "completed" when:
-          - It has a 'pnl' field (already computed by the executor), OR
-          - It is an 'exit' event that can be paired with a preceding 'entry'
-
-        Returns list of dicts with keys: pnl, pnl_pct, holding_days, r_multiple, timestamp.
+        Replaces legacy entry/exit pairing logic — SQLite trades table already
+        has fully computed P&L, hold_days, and MAE/MFE.
         """
-        all_events = self._load_live_trades()
-        cutoff = datetime.now() - timedelta(days=window_days)
+        from db.atlas_db import get_db
+        from datetime import datetime, timedelta
 
-        # Filter to this strategy
-        strat_events = [
-            e for e in all_events
-            if e.get("strategy") == strategy
-        ]
-
-        # Sort by timestamp
-        def _ts(e: dict) -> datetime:
-            try:
-                return datetime.fromisoformat(e.get("timestamp", "1970-01-01T00:00:00"))
-            except Exception:
-                return datetime.min
-
-        strat_events.sort(key=_ts)
+        cutoff = (datetime.now() - timedelta(days=window_days)).isoformat()
 
         completed: List[dict] = []
+        with get_db() as db:
+            rows = db.execute(
+                """SELECT * FROM trades
+                   WHERE strategy = ? AND status = 'closed' AND exit_date >= ?
+                   ORDER BY exit_date""",
+                (strategy, cutoff),
+            ).fetchall()
 
-        # Pass 1: events that already carry a P&L
-        remaining: List[dict] = []
-        for event in strat_events:
-            if event.get("pnl") is not None:
-                event_dt = _ts(event)
-                if event_dt >= cutoff:
-                    completed.append({
-                        "ticker": event.get("ticker", ""),
-                        "strategy": strategy,
-                        "pnl": float(event["pnl"]),
-                        "pnl_pct": float(event.get("pnl_pct", 0)),
-                        "holding_days": int(event.get("holding_days", 1)),
-                        "r_multiple": event.get("r_multiple"),
-                        "entry_price": event.get("entry_price"),
-                        "exit_price": event.get("exit_price"),
-                        "timestamp": event.get("timestamp", ""),
-                    })
-            else:
-                remaining.append(event)
+            for row in rows:
+                r = dict(row)
+                entry_price = r.get("entry_price", 0) or 0
+                exit_price = r.get("exit_price", 0) or 0
+                stop_price = r.get("stop_price", 0) or 0
+                shares = r.get("shares", 1) or 1
+                pnl = r.get("pnl", 0) or 0
 
-        # Pass 2: pair entry/exit events by ticker (FIFO queue per ticker)
-        entry_queue: Dict[str, List[dict]] = {}  # ticker → [entry, ...]
-        for event in remaining:
-            event_type = (event.get("type") or event.get("event_type") or "").lower()
-            ticker = event.get("ticker", "")
+                r_multiple = None
+                if stop_price > 0 and entry_price > stop_price:
+                    risk = (entry_price - stop_price) * shares
+                    if risk > 0:
+                        r_multiple = pnl / risk
 
-            if event_type in ("entry", "buy", "open"):
-                entry_queue.setdefault(ticker, []).append(event)
-
-            elif event_type in ("exit", "sell", "close"):
-                if ticker in entry_queue and entry_queue[ticker]:
-                    entry = entry_queue[ticker].pop(0)
-                    entry_price = float(entry.get("fill_price", 0))
-                    exit_price = float(event.get("fill_price", 0))
-                    shares = float(entry.get("shares", event.get("shares", 1)) or 1)
-                    stop_price = float(entry.get("stop_price", 0))
-
-                    if entry_price > 0 and exit_price > 0:
-                        pnl = (exit_price - entry_price) * shares
-                        pnl_pct = (exit_price - entry_price) / entry_price
-
-                        try:
-                            entry_dt = datetime.fromisoformat(entry.get("timestamp", ""))
-                            exit_dt = datetime.fromisoformat(event.get("timestamp", ""))
-                            holding_days = max(1, (exit_dt - entry_dt).days)
-                        except Exception:
-                            holding_days = 1
-
-                        r_multiple = None
-                        if stop_price > 0 and entry_price > stop_price:
-                            risk = (entry_price - stop_price) * shares
-                            if risk > 0:
-                                r_multiple = pnl / risk
-
-                        exit_dt_check = _ts(event)
-                        if exit_dt_check >= cutoff:
-                            completed.append({
-                                "ticker": ticker,
-                                "strategy": strategy,
-                                "pnl": pnl,
-                                "pnl_pct": pnl_pct,
-                                "holding_days": holding_days,
-                                "r_multiple": r_multiple,
-                                "entry_price": entry_price,
-                                "exit_price": exit_price,
-                                "timestamp": event.get("timestamp", ""),
-                            })
+                completed.append({
+                    "ticker": r.get("ticker", ""),
+                    "strategy": strategy,
+                    "pnl": pnl,
+                    "pnl_pct": r.get("pnl_pct", 0) or 0,
+                    "holding_days": r.get("hold_days", 1) or 1,
+                    "r_multiple": r_multiple,
+                    "entry_price": entry_price,
+                    "exit_price": exit_price,
+                    "timestamp": r.get("exit_date", ""),
+                    "shares": shares,
+                })
 
         return completed
 
