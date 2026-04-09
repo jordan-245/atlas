@@ -271,6 +271,7 @@ def get_news_summary() -> str:
         ## Market News (last 24h)       — Brave Search headlines
         ## Geopolitical Risk            — ceasefire_factors.json
         ## Macro Snapshot               — latest macro_indicators row
+        ## Alt Data Intelligence        — insider trades + Finviz snapshots (news_intel)
 
     Never raises.  If all sources fail, returns a minimal fallback string.
     """
@@ -294,7 +295,51 @@ def get_news_summary() -> str:
     if macro_section:
         sections.append("## Macro Snapshot\n" + macro_section)
 
+    # ── Alt Data Intelligence ────────────────────────────────────────────────
+    alt_section = _fetch_alt_data_intel()
+    if alt_section:
+        sections.append("## Alt Data Intelligence\n" + alt_section)
+
     if not sections:
         return "## Market Intelligence\nAll data sources unavailable."
 
     return "\n\n".join(sections)
+
+
+# ── Section 4: Alt Data Intelligence ────────────────────────────────────────
+
+def _fetch_alt_data_intel() -> Optional[str]:
+    """
+    Pull recent alt data records from news_intel table (insider trades, Finviz data).
+    Returns formatted section or None if no recent data.
+    """
+    try:
+        from db.atlas_db import get_news
+        records = get_news(days=7)
+        if not records:
+            return None
+
+        lines = []
+        insider_trades = [r for r in records if r.get("source") == "openinsider"]
+        finviz_snapshots = [r for r in records if r.get("source") == "finviz"]
+        finviz_news = [r for r in records if r.get("source") == "finviz_news"]
+
+        if insider_trades:
+            lines.append("### Insider Activity")
+            for trade in insider_trades[:10]:  # cap at 10
+                lines.append(f"- {trade.get('headline', 'Unknown trade')}")
+
+        if finviz_snapshots:
+            lines.append("### Fundamental Snapshots")
+            for snap in finviz_snapshots[:10]:
+                lines.append(f"- {snap.get('headline', 'Unknown')}")
+
+        if finviz_news:
+            lines.append("### Recent Headlines")
+            for news_item in finviz_news[:10]:
+                lines.append(f"- {news_item.get('headline', 'Unknown')}")
+
+        return "\n".join(lines) if lines else None
+    except Exception as exc:
+        logger.warning("news: failed to fetch alt data intel — %s", exc)
+        return None
