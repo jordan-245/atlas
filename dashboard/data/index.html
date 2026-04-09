@@ -11,392 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="atlas.css?v=7">
-<style>
-/* ── Header regime indicator ── */
-.header-left { display: flex; align-items: center; gap: 16px; }
-
-.regime-indicator {
-  display: flex; align-items: center; gap: 8px;
-  font-family: var(--mono); font-size: 11px;
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 20px; padding: 4px 14px;
-}
-.regime-dot { width: 8px; height: 8px; border-radius: 50%; }
-.regime-label { font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
-.regime-sizing { color: var(--text-3); font-size: 10px; }
-
-/* Regime dot colours */
-.regime-dot.bull-risk-on   { background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.4); }
-.regime-dot.bull-risk-off  { background: #eab308; }
-.regime-dot.transition-uncertain { background: #71717a; }
-.regime-dot.bear-risk-off  { background: #f43f5e; box-shadow: 0 0 6px rgba(244,63,94,0.4); }
-.regime-dot.bear-capitulation { background: #991b1b; box-shadow: 0 0 6px rgba(153,27,27,0.5); }
-.regime-dot.recovery-early { background: #06b6d4; }
-
-/* ── Regime state badge (sidebar card clone, kept for renderRegimeInline compat.) ── */
-.regime-state {
-  font-family: var(--mono); font-size: 14px; font-weight: 600;
-  padding: 6px 14px; border-radius: 8px; display: inline-block; margin-bottom: 12px;
-}
-.regime-state.bull-risk-on   { background: rgba(34,197,94,0.12);  color: #22c55e; }
-.regime-state.bull-risk-off  { background: rgba(234,179,8,0.12);  color: #eab308; }
-.regime-state.transition-uncertain { background: rgba(113,113,122,0.12); color: #a1a1aa; }
-.regime-state.bear-risk-off  { background: rgba(244,63,94,0.12);  color: #f43f5e; }
-.regime-state.bear-capitulation { background: rgba(153,27,27,0.15); color: #fca5a5; }
-.regime-state.recovery-early { background: rgba(6,182,212,0.12);  color: #06b6d4; }
-
-/* Timeline section */
-.timeline-section {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 16px 20px;
-  margin-bottom: 14px;
-}
-#regime-timeline-canvas { width: 100%; height: 32px; display: block; border-radius: 4px; }
-.timeline-legend {
-  display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px;
-  font-family: var(--mono); font-size: 10px; color: var(--text-3);
-}
-.tl-item { display: flex; align-items: center; gap: 4px; }
-.tl-dot  { width: 8px; height: 8px; border-radius: 2px; }
-
-/* Stat primary sizing override */
-.stat-primary .stat-value { font-size: 1.85rem; }
-.stat-primary .stat-label { font-size: 11px; }
-
-.agent-link {
-  display: flex; align-items: center; gap: 6px;
-  font-family: var(--mono); font-size: 12px; font-weight: 600;
-  color: var(--accent); text-decoration: none;
-  padding: 6px 14px; border-radius: 20px;
-  border: 1px solid var(--accent);
-  transition: all 0.2s var(--ease);
-}
-.agent-link:hover { background: var(--accent); color: white; }
-.agent-link-icon { font-size: 14px; }
-
-@media (max-width: 900px) {
-  .regime-indicator { display: none; }
-}
-
-/* ── Performance Section (inline overrides) ── */
-.perf-overview-grid {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 10px;
-  margin-bottom: 16px;
-}
-
-.perf-overview-grid .perf-stat {
-  padding: 12px 14px;
-  min-height: 0;
-}
-
-.perf-overview-grid .perf-value {
-  font-size: 18px;
-}
-
-.perf-sub {
-  font-size: 12px;
-  opacity: 0.55;
-  font-weight: 400;
-}
-
-/* Strategy breakdown table */
-.strat-breakdown {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-  margin-bottom: 12px;
-}
-
-.strat-breakdown table {
-  width: 100%;
-  border-collapse: collapse;
-  font-family: var(--mono);
-  font-size: 12px;
-}
-
-.strat-breakdown thead th {
-  text-align: left;
-  padding: 10px 14px 8px;
-  color: var(--text-3);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-bottom: 1px solid var(--border);
-  font-weight: 500;
-}
-
-.strat-breakdown thead th:not(:first-child) {
-  text-align: right;
-}
-
-.strat-breakdown tbody td {
-  padding: 9px 14px;
-  color: var(--text-2);
-  border-bottom: 1px solid var(--border);
-}
-
-.strat-breakdown tbody td:not(:first-child) {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.strat-breakdown tbody tr:last-child td {
-  border-bottom: none;
-}
-
-.strat-breakdown tbody tr:hover td {
-  background: var(--surface-2);
-}
-
-.strat-name-cell {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--text) !important;
-  font-weight: 500;
-}
-
-.strat-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-/* Strategy allocation row */
-.alloc-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-
-.alloc-chip {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 5px 12px;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--text-2);
-  transition: border-color 0.2s var(--ease);
-}
-
-.alloc-chip:hover { border-color: var(--border-hover); }
-
-.alloc-chip .alloc-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.alloc-chip .alloc-val {
-  color: var(--text);
-  font-weight: 600;
-}
-
-.alloc-chip .alloc-pct {
-  color: var(--text-3);
-  font-size: 10px;
-}
-
-.alloc-bar-track {
-  width: 100%;
-  height: 6px;
-  background: var(--surface-2);
-  border-radius: 3px;
-  overflow: hidden;
-  display: flex;
-  margin-top: 4px;
-  margin-bottom: 12px;
-}
-
-.alloc-bar-seg {
-  height: 100%;
-  transition: width 0.4s var(--ease);
-}
-
-.perf-subsection-label {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-3);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 8px;
-  margin-top: 4px;
-}
-
-@media (max-width: 900px) {
-  .perf-overview-grid { grid-template-columns: repeat(3, 1fr); }
-}
-
-@media (max-width: 480px) {
-  .perf-overview-grid { grid-template-columns: repeat(2, 1fr); }
-}
-
-/* ── Tab Navigation ── */
-.tab-nav {
-  display: flex; gap: 0; margin-bottom: 16px;
-  border-bottom: 1px solid var(--border);
-}
-.tab-btn {
-  font-family: var(--mono); font-size: 13px; font-weight: 600;
-  background: none; border: none; color: var(--text-3);
-  padding: 10px 20px; cursor: pointer;
-  border-bottom: 2px solid transparent;
-  transition: all 0.2s var(--ease);
-}
-.tab-btn:hover { color: var(--text-2); }
-.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
-.tab-content { display: none; }
-.tab-content.active { display: block; }
-
-/* ── Finance Tab ── */
-.fin-summary-strip {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px;
-}
-.fin-stat {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 14px 16px;
-}
-.fin-stat-label { font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.5px; font-family: var(--mono); }
-.fin-stat-value { font-size: 1.5rem; font-weight: 700; font-family: var(--mono); margin-top: 4px; }
-.fin-stat-sub { font-size: 11px; color: var(--text-3); font-family: var(--mono); margin-top: 2px; }
-
-/* Invest/Cash bar */
-.invest-bar-track {
-  width: 100%; height: 8px; background: var(--surface-2);
-  border-radius: 4px; overflow: hidden; display: flex; margin-top: 6px;
-}
-.invest-bar-seg { height: 100%; transition: width 0.4s var(--ease); }
-
-/* Accounts grid */
-.fin-accounts-grid {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px;
-}
-.fin-account-card {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 14px 16px;
-}
-.fin-account-name { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
-.fin-account-balance { font-family: var(--mono); font-size: 18px; font-weight: 700; }
-.fin-account-limit { font-size: 11px; color: var(--text-3); font-family: var(--mono); margin-top: 2px; }
-.fin-limit-bar {
-  width: 100%; height: 4px; background: var(--surface-2);
-  border-radius: 2px; overflow: hidden; margin-top: 8px;
-}
-.fin-limit-fill { height: 100%; border-radius: 2px; transition: width 0.4s var(--ease); }
-
-/* Spending section */
-.fin-section {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 16px 20px; margin-bottom: 14px;
-}
-.fin-section-title {
-  font-size: 11px; font-weight: 500; color: var(--text-3);
-  text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px;
-}
-
-/* Spending bar rows */
-.spend-row { display: flex; align-items: center; gap: 12px; padding: 6px 0; }
-.spend-label { width: 160px; font-size: 12px; color: var(--text-2); flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.spend-bar-track { flex: 1; height: 20px; background: var(--surface-2); border-radius: 4px; overflow: hidden; position: relative; }
-.spend-bar-fill { height: 100%; border-radius: 4px; transition: width 0.4s var(--ease); min-width: 2px; }
-.spend-bar-fill.accent { background: var(--accent); }
-.spend-amount { width: 80px; text-align: right; font-family: var(--mono); font-size: 12px; color: var(--text); font-weight: 600; }
-
-/* Budget cards */
-.fin-budget-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 16px; }
-.fin-budget-card {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 14px 16px;
-}
-.budget-label { font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.5px; font-family: var(--mono); }
-.budget-value { font-size: 1.3rem; font-weight: 700; font-family: var(--mono); margin-top: 4px; }
-.budget-sub { font-size: 11px; color: var(--text-3); font-family: var(--mono); margin-top: 2px; }
-.budget-bar { width: 100%; height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; margin-top: 8px; }
-.budget-bar-fill { height: 100%; border-radius: 3px; transition: width 0.4s var(--ease); }
-
-/* Monthly comparison table */
-.fin-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
-.fin-table thead th {
-  text-align: left; padding: 8px 14px; color: var(--text-3);
-  font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
-  border-bottom: 1px solid var(--border); font-weight: 500;
-}
-.fin-table thead th:not(:first-child) { text-align: right; }
-.fin-table tbody td { padding: 8px 14px; color: var(--text-2); border-bottom: 1px solid var(--border); }
-.fin-table tbody td:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
-.fin-table tbody tr:last-child td { border-bottom: none; }
-.fin-table tbody tr:hover td { background: var(--surface-2); }
-
-/* Transactions */
-.txn-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); }
-.txn-row:last-child { border-bottom: none; }
-.txn-left { display: flex; flex-direction: column; gap: 2px; }
-.txn-desc { font-size: 13px; color: var(--text); }
-.txn-meta { font-size: 11px; color: var(--text-3); font-family: var(--mono); }
-.txn-amount { font-family: var(--mono); font-size: 13px; font-weight: 600; }
-
-/* Pace chart canvas */
-#pace-canvas { width: 100%; height: 160px; display: block; border-radius: 4px; }
-
-@media (max-width: 900px) {
-  .fin-summary-strip { grid-template-columns: repeat(2, 1fr); }
-  .fin-accounts-grid { grid-template-columns: repeat(2, 1fr); }
-  .fin-budget-grid { grid-template-columns: 1fr; }
-  .spend-label { width: 120px; }
-}
-@media (max-width: 480px) {
-  .fin-summary-strip { grid-template-columns: 1fr; }
-  .fin-accounts-grid { grid-template-columns: 1fr; }
-  .spend-label { width: 90px; }
-}
-
-/* ── Overlay Decisions ── */
-.overlay-section { margin-top: 24px; }
-.overlay-list { display: flex; flex-direction: column; gap: 8px; }
-.overlay-card {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
-  padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;
-}
-.overlay-card .ov-left { display: flex; flex-direction: column; gap: 2px; }
-.overlay-card .ov-ticker { font-family: var(--mono); font-weight: 600; font-size: 14px; }
-.overlay-card .ov-action { font-size: 11px; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; }
-.overlay-card .ov-action.approve { color: var(--green); }
-.overlay-card .ov-action.reject  { color: var(--red); }
-.overlay-card .ov-action.resize  { color: var(--yellow, #eab308); }
-.overlay-card .ov-date { font-size: 11px; color: var(--text-3); }
-.overlay-card .ov-right { text-align: right; }
-.overlay-card .ov-confidence { font-family: var(--mono); font-size: 13px; font-weight: 500; }
-.overlay-card .ov-reason { font-size: 11px; color: var(--text-3); max-width: 240px; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.badge-muted { font-size: 11px; color: var(--text-3); font-weight: 400; }
-
-/* ── System Health ── */
-.health-section { margin-top: 24px; }
-.health-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px;
-}
-.health-card {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
-  padding: 14px 16px;
-}
-.health-card .hc-title { font-size: 11px; text-transform: uppercase; color: var(--text-3); letter-spacing: 0.5px; margin-bottom: 8px; font-weight: 600; }
-.health-card .hc-row { display: flex; justify-content: space-between; align-items: center; padding: 3px 0; font-size: 13px; }
-.health-card .hc-label { color: var(--text-2); }
-.health-card .hc-value { font-family: var(--mono); font-weight: 500; }
-.hc-status-active { color: var(--green); }
-.hc-status-inactive { color: var(--red); }
-.hc-status-unknown { color: var(--text-3); }
-</style>
+<link rel="stylesheet" href="atlas.css?v=9">
 </head>
 <body>
 <div id="app">
@@ -413,7 +28,7 @@
     </div>
     <div class="header-right">
       <div class="market-clock-strip" id="market-clock-strip"></div>
-      <a href="/homerbot" class="agent-link" title="Open Homerbot AI Agent"><span class="agent-link-icon">◈</span> Homerbot</a>
+      <a href="/homerbot" class="agent-link" title="Open Homerbot AI Agent"><span class="agent-link-icon">◈</span> <span class="agent-link-text">Homerbot</span></a>
       <button class="theme-btn" id="theme-btn" title="Toggle theme (L)">◑</button>
     </div>
   </header>
@@ -479,10 +94,19 @@
       <div class="section-header" id="positions-label">Open Positions</div>
       <div class="positions-grid" id="positions-grid"></div>
 
+      <!-- ── Position Risk Decomposition ── -->
+      <div class="risk-section" id="risk-section">
+        <div class="section-header">Position Risk</div>
+        <div class="risk-summary-strip" id="risk-summary-strip"></div>
+        <div class="risk-positions-grid" id="risk-positions-grid">
+          <div class="empty-state">Loading risk data…</div>
+        </div>
+      </div>
+
       <!-- Recent Orders (collapsed) -->
-      <details class="orders-collapse" id="orders-section">
+      <details class="dash-collapse" id="orders-section">
         <summary>Recent Orders</summary>
-        <div class="orders-scroll">
+        <div class="orders-scroll table-scroll">
           <table class="orders-table">
             <thead>
               <tr>
@@ -508,6 +132,22 @@
     <canvas id="regime-timeline-canvas"></canvas>
     <div class="timeline-legend" id="timeline-legend"></div>
   </div>
+
+  <!-- ── Macro Indicator Gauges ── -->
+  <details class="dash-collapse macro-gauges-section" id="macro-gauges-section">
+    <summary>Macro Indicator Gauges <span class="badge badge-muted" id="macro-composite-badge"></span></summary>
+    <div class="macro-gauges-grid" id="macro-gauges-grid">
+      <div class="empty-state">Loading macro indicators…</div>
+    </div>
+  </details>
+
+  <!-- ── Regime Transition Matrix ── -->
+  <details class="dash-collapse regime-matrix-section" id="regime-matrix-section">
+    <summary>Regime Transition Probabilities</summary>
+    <div id="regime-matrix-content">
+      <div class="empty-state">Loading transition data…</div>
+    </div>
+  </details>
 
   <!-- ── AI Overlay Decisions ── -->
   <div class="overlay-section" id="overlay-section">
@@ -555,17 +195,17 @@
     <!-- Monthly Comparison -->
     <div class="fin-section" id="fin-monthly-section">
       <div class="fin-section-title">Monthly Comparison</div>
-      <div id="fin-monthly-table"></div>
+      <div class="table-scroll" id="fin-monthly-table"></div>
     </div>
 
     <!-- Recurring Subscriptions -->
     <div class="fin-section" id="fin-recurring-section">
       <div class="fin-section-title">Recurring Expenses (90-day)</div>
-      <div id="fin-recurring-table"></div>
+      <div class="table-scroll" id="fin-recurring-table"></div>
     </div>
 
     <!-- Recent Transactions -->
-    <details class="orders-collapse" id="fin-transactions-section">
+    <details class="dash-collapse" id="fin-transactions-section">
       <summary>Recent Transactions</summary>
       <div id="fin-transactions-list" style="padding: 12px 0;"></div>
     </details>
@@ -1250,12 +890,12 @@ function renderPerformance(data) {
 
       stratEl.innerHTML =
         '<div class="perf-subsection-label">Strategy Breakdown</div>' +
-        '<div class="strat-breakdown"><table>' +
+        '<div class="table-scroll"><div class="strat-breakdown"><table>' +
           '<thead><tr>' +
             '<th>Strategy</th><th>Trades</th><th>P&L</th><th>Win Rate</th>' +
           '</tr></thead>' +
           '<tbody>' + trows + '</tbody>' +
-        '</table></div>';
+        '</table></div></div>';
     }
   }
 
@@ -1499,6 +1139,211 @@ function drawRegimeTimelineBottom(history) {
   }
 }
 
+// ── Macro Indicator Gauges ────────────────────────────────────────────────
+function renderMacroGauges(data) {
+  var grid = document.getElementById('macro-gauges-grid');
+  var badge = document.getElementById('macro-composite-badge');
+  if (!grid) return;
+
+  if (!data || !data.dimensions || !data.dimensions.length) {
+    grid.innerHTML = '<div class="empty-state">No macro indicator data available</div>';
+    return;
+  }
+
+  if (badge) {
+    var comp = data.composite || 0;
+    var compColor = comp > 0.2 ? 'var(--green)' : comp < -0.2 ? 'var(--red)' : 'var(--amber)';
+    badge.innerHTML = 'Composite: <span style="color:' + compColor + ';font-weight:600">' +
+      (comp >= 0 ? '+' : '') + comp.toFixed(3) + '</span>' +
+      (data.date ? ' \u00b7 ' + fmtDateShort(data.date) : '');
+  }
+
+  grid.innerHTML = data.dimensions.map(function(dim) {
+    var score = dim.score || 0;
+    var pct = ((score + 1) / 2) * 100; // Map -1..+1 to 0..100%
+    var barColor = score > 0.2 ? 'var(--green)' : score < -0.2 ? 'var(--red)' : 'var(--amber)';
+    var scoreColor = score > 0.2 ? 'green' : score < -0.2 ? 'red' : 'amber';
+    var weightPct = ((dim.weight || 0) * 100).toFixed(0);
+
+    var sparkHtml = '';
+    if (dim.sparkline && dim.sparkline.length >= 2) {
+      sparkHtml = '<div class="gauge-sparkline">' + renderSparkline(dim.sparkline, score >= 0 ? 1 : -1) + '</div>';
+    }
+
+    return '<div class="gauge-card">' +
+      '<div class="gauge-header">' +
+        '<span class="gauge-label">' + dim.label + ' <span class="gauge-weight">' + weightPct + '%</span></span>' +
+        '<span class="gauge-raw">' + dim.raw_label + ': <strong>' + dim.raw_value + '</strong></span>' +
+      '</div>' +
+      '<div class="gauge-bar-track">' +
+        '<div class="gauge-bar-fill" style="width:' + pct.toFixed(1) + '%;background:' + barColor + '"></div>' +
+        '<div class="gauge-bar-center"></div>' +
+      '</div>' +
+      '<div class="gauge-footer">' +
+        '<span class="gauge-score ' + scoreColor + '">' + (score >= 0 ? '+' : '') + score.toFixed(3) + '</span>' +
+        (dim.raw_detail ? '<span class="gauge-detail">' + dim.raw_detail + '</span>' : '') +
+      '</div>' +
+      sparkHtml +
+    '</div>';
+  }).join('');
+}
+
+// ── Position Risk Decomposition ───────────────────────────────────────────
+function renderPositionRisk(data) {
+  var summaryEl = document.getElementById('risk-summary-strip');
+  var gridEl = document.getElementById('risk-positions-grid');
+  if (!summaryEl || !gridEl) return;
+
+  if (!data || !data.positions) {
+    gridEl.innerHTML = '<div class="empty-state">No risk data available</div>';
+    summaryEl.innerHTML = '';
+    return;
+  }
+
+  var s = data.summary || {};
+  var riskColor = s.total_risk_pct > 10 ? 'red' : s.total_risk_pct > 5 ? 'amber' : 'green';
+
+  summaryEl.innerHTML =
+    '<div class="risk-stat">' +
+      '<div class="risk-stat-label">Capital at Risk</div>' +
+      '<div class="risk-stat-value ' + riskColor + '">' + fmtCcy(s.total_risk_dollars) + '</div>' +
+      '<div class="risk-stat-sub">' + (s.total_risk_pct || 0).toFixed(1) + '% of equity</div>' +
+    '</div>' +
+    '<div class="risk-stat">' +
+      '<div class="risk-stat-label">Equity</div>' +
+      '<div class="risk-stat-value">' + fmtCcy(s.equity) + '</div>' +
+      '<div class="risk-stat-sub">' + (s.num_positions || 0) + ' positions</div>' +
+    '</div>' +
+    '<div class="risk-stat">' +
+      '<div class="risk-stat-label">Avg Distance to Stop</div>' +
+      '<div class="risk-stat-value">' + (s.avg_distance_to_stop != null ? s.avg_distance_to_stop.toFixed(1) + '%' : '\u2014') + '</div>' +
+      '<div class="risk-stat-sub">Max risk/trade: ' + (s.max_risk_per_trade_pct || 0) + '%</div>' +
+    '</div>' +
+    (s.positions_without_stops > 0 ?
+      '<div class="risk-stat risk-stat-alert">' +
+        '<div class="risk-stat-label">\u26a0 No Stop</div>' +
+        '<div class="risk-stat-value red">' + s.positions_without_stops + '</div>' +
+        '<div class="risk-stat-sub">Unlimited risk</div>' +
+      '</div>' : '');
+
+  if (!data.positions.length) {
+    gridEl.innerHTML = '<div class="empty-state">No open positions</div>';
+    return;
+  }
+
+  gridEl.innerHTML =
+    '<div class="table-scroll"><div class="risk-breakdown"><table>' +
+      '<thead><tr>' +
+        '<th>Ticker</th><th>Strategy</th><th>Stop Dist</th><th>Max Loss</th><th>Risk % Eq</th><th>Status</th>' +
+      '</tr></thead>' +
+      '<tbody>' +
+      data.positions.map(function(p) {
+        var stratColor = STRATEGY_COLORS[p.strategy] || '#71717a';
+        var statusCls = p.risk_status === 'critical' ? 'red' : p.risk_status === 'high' ? 'red' : p.risk_status === 'warning' ? 'amber' : 'green';
+        var statusLabel = p.risk_status === 'critical' ? 'NO STOP' : p.risk_status === 'high' ? 'HIGH' : p.risk_status === 'warning' ? 'WARN' : 'OK';
+        var distStr = p.has_stop ? p.distance_pct.toFixed(1) + '% (' + fmtCcy(p.distance_dollars) + ')' : '\u2014';
+
+        return '<tr>' +
+          '<td style="color:var(--text);font-weight:600">' + p.ticker + '</td>' +
+          '<td><span class="strat-name-cell"><span class="strat-dot" style="background:' + stratColor + '"></span>' +
+            (p.strategy || 'manual').replace(/_/g, ' ') + '</span></td>' +
+          '<td>' + distStr + '</td>' +
+          '<td class="' + (p.max_loss > 0 ? 'red' : '') + '">' + fmtCcy(p.max_loss) + '</td>' +
+          '<td class="' + statusCls + '">' + (p.risk_pct_equity || 0).toFixed(1) + '%</td>' +
+          '<td><span class="risk-status-badge ' + statusCls + '">' + statusLabel + '</span></td>' +
+        '</tr>';
+      }).join('') +
+      '</tbody>' +
+    '</table></div></div>';
+}
+
+// ── Regime Transition Matrix ──────────────────────────────────────────────
+var REGIME_LABELS = {
+  bull_risk_on: 'Bull On', bull_risk_off: 'Bull Off',
+  transition_uncertain: 'Uncertain', bear_risk_off: 'Bear Off',
+  bear_capitulation: 'Capitulat.', recovery_early: 'Recovery'
+};
+
+var REGIME_COLORS = {
+  bull_risk_on: '#22c55e', bull_risk_off: '#eab308',
+  transition_uncertain: '#71717a', bear_risk_off: '#f43f5e',
+  bear_capitulation: '#991b1b', recovery_early: '#06b6d4'
+};
+
+function renderRegimeMatrix(data) {
+  var container = document.getElementById('regime-matrix-content');
+  if (!container) return;
+
+  if (!data || !data.states || !data.matrix) {
+    container.innerHTML = '<div class="empty-state">No transition data available</div>';
+    return;
+  }
+
+  var states = data.states;
+  var matrix = data.matrix;
+  var durations = data.durations || {};
+  var current = data.current_state;
+
+  // Build matrix table
+  var html = '<div class="transition-matrix-wrap">';
+  html += '<table class="transition-matrix">';
+  html += '<thead><tr><th class="tm-corner">From \ To</th>';
+  states.forEach(function(s) {
+    html += '<th class="tm-col-header" style="color:' + (REGIME_COLORS[s] || '#71717a') + '">' + (REGIME_LABELS[s] || s) + '</th>';
+  });
+  html += '</tr></thead><tbody>';
+
+  states.forEach(function(fromS) {
+    var isCurrentRow = fromS === current;
+    html += '<tr class="' + (isCurrentRow ? 'tm-current-row' : '') + '">';
+    html += '<td class="tm-row-header" style="color:' + (REGIME_COLORS[fromS] || '#71717a') + '">' +
+      (isCurrentRow ? '\u2192 ' : '') + (REGIME_LABELS[fromS] || fromS) + '</td>';
+
+    states.forEach(function(toS) {
+      var val = (matrix[fromS] && matrix[fromS][toS] != null) ? matrix[fromS][toS] : 0;
+      var isDiag = fromS === toS;
+      var intensity = Math.min(val / 100, 1);
+      var bgColor = isDiag
+        ? 'rgba(99,102,241,' + (intensity * 0.4) + ')'
+        : 'rgba(255,255,255,' + (intensity * 0.12) + ')';
+      var textColor = val > 50 ? 'var(--text)' : val > 10 ? 'var(--text-2)' : 'var(--text-3)';
+
+      html += '<td class="tm-cell' + (isDiag ? ' tm-diag' : '') + '" ' +
+        'style="background:' + bgColor + ';color:' + textColor + '">' +
+        (val > 0 ? val.toFixed(1) + '%' : '\u2014') +
+      '</td>';
+    });
+    html += '</tr>';
+  });
+
+  html += '</tbody></table></div>';
+
+  // Duration summary
+  html += '<div class="tm-durations">';
+  html += '<div class="perf-subsection-label">Average State Duration</div>';
+  html += '<div class="tm-duration-grid">';
+  states.forEach(function(s) {
+    var d = durations[s] || {};
+    var isActive = s === current;
+    html += '<div class="tm-duration-card' + (isActive ? ' tm-active' : '') + '">' +
+      '<div class="tm-dur-name" style="color:' + (REGIME_COLORS[s] || '#71717a') + '">' +
+        '<span class="tl-dot" style="background:' + (REGIME_COLORS[s] || '#71717a') + ';display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px"></span>' +
+        (REGIME_LABELS[s] || s) +
+      '</div>' +
+      '<div class="tm-dur-value">' + (d.avg_days || 0).toFixed(0) + '<span class="tm-dur-unit">d avg</span></div>' +
+      '<div class="tm-dur-meta">Max ' + (d.max_days || 0) + 'd \u00b7 ' + (d.occurrences || 0) + ' periods \u00b7 ' + (d.total_days || 0) + ' total days</div>' +
+    '</div>';
+  });
+  html += '</div></div>';
+
+  html += '<div class="tm-footnote">' + (data.total_days || 0) + ' days analysed' +
+    (current ? ' \u00b7 Currently: <strong style="color:' + (REGIME_COLORS[current] || '#71717a') + '">' +
+      (REGIME_LABELS[current] || current) + '</strong>' : '') +
+  '</div>';
+
+  container.innerHTML = html;
+}
+
 // ── Main Init ─────────────────────────────────────────────────────────────
 async function init() {
   try {
@@ -1535,6 +1380,18 @@ async function init() {
     // Load system health
     fetch('/api/system/health').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; })
       .then(function(health) { if (health) renderSystemHealth(health); });
+
+    // Load macro gauges
+    fetch('/api/macro/gauges').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; })
+      .then(function(data) { if (data) renderMacroGauges(data); });
+
+    // Load position risk
+    fetch('/api/positions/risk').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; })
+      .then(function(data) { if (data) renderPositionRisk(data); });
+
+    // Load regime transitions
+    fetch('/api/regime/transitions').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; })
+      .then(function(data) { if (data) renderRegimeMatrix(data); });
 
   } catch (e) {
     console.error('Atlas dashboard load failed:', e);

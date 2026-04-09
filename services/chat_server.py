@@ -753,6 +753,327 @@ def system_health(_auth: HTTPBasicCredentials = Depends(check_auth)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ── GET /api/macro/gauges ────────────────────────────────────────────────────
+
+@app.get("/api/macro/gauges")
+def macro_gauges(_auth: HTTPBasicCredentials = Depends(check_auth)):
+    """GET /api/macro/gauges — macro indicator gauges with scores and sparklines."""
+    try:
+        import json as _json
+        from db.atlas_db import get_db
+        from regime.indicators import compute_all_scores
+
+        config_path = Path("config/active/regime.json")
+        with open(config_path) as f:
+            regime_config = _json.load(f)
+
+        with get_db() as db:
+            # Latest macro row
+            latest = db.execute(
+                "SELECT * FROM macro_indicators ORDER BY date DESC LIMIT 1"
+            ).fetchone()
+            if not latest:
+                return JSONResponse({"dimensions": [], "date": None})
+
+            latest_dict = dict(latest)
+            scores = compute_all_scores(latest_dict, regime_config)
+
+            # 90-day history for sparklines
+            history = db.execute(
+                "SELECT date, vix, credit_oas, yield_curve_10y2y, dxy, gold_copper_ratio, "
+                "spy_above_200dma, spy_200dma_slope "
+                "FROM macro_indicators ORDER BY date DESC LIMIT 90"
+            ).fetchall()
+            history = [dict(r) for r in reversed(history)]
+
+        # Build dimension data
+        dimensions = [
+            {
+                "name": "trend",
+                "label": "Trend",
+                "score": round(scores.get("trend", 0), 3),
+                "raw_label": "SPY vs 200-DMA",
+                "raw_value": "Above" if latest_dict.get("spy_above_200dma") else "Below",
+                "raw_detail": f"Slope: {(latest_dict.get('spy_200dma_slope') or 0):.4f}",
+                "sparkline": [h.get("spy_200dma_slope") for h in history if h.get("spy_200dma_slope") is not None],
+                "weight": regime_config["weights"]["trend"],
+            },
+            {
+                "name": "risk",
+                "label": "Risk (VIX)",
+                "score": round(scores.get("risk", 0), 3),
+                "raw_label": "VIX",
+                "raw_value": f"{latest_dict.get('vix', 0):.1f}",
+                "raw_detail": f"Term ratio: {(latest_dict.get('vix_term_ratio') or 0):.3f}",
+                "sparkline": [h.get("vix") for h in history if h.get("vix") is not None],
+                "weight": regime_config["weights"]["risk"],
+            },
+            {
+                "name": "credit",
+                "label": "Credit",
+                "score": round(scores.get("credit", 0), 3),
+                "raw_label": "IG OAS",
+                "raw_value": f"{latest_dict.get('credit_oas', 0):.2f}" if latest_dict.get("credit_oas") else "N/A",
+                "raw_detail": "",
+                "sparkline": [h.get("credit_oas") for h in history if h.get("credit_oas") is not None],
+                "weight": regime_config["weights"]["credit"],
+            },
+            {
+                "name": "yield_curve",
+                "label": "Yield Curve",
+                "score": round(scores.get("yield_curve", 0), 3),
+                "raw_label": "10Y-2Y Spread",
+                "raw_value": f"{latest_dict.get('yield_curve_10y2y', 0):.3f}" if latest_dict.get("yield_curve_10y2y") is not None else "N/A",
+                "raw_detail": f"10Y-3M: {(latest_dict.get('yield_curve_10y3m') or 0):.3f}" if latest_dict.get("yield_curve_10y3m") is not None else "",
+                "sparkline": [h.get("yield_curve_10y2y") for h in history if h.get("yield_curve_10y2y") is not None],
+                "weight": regime_config["weights"]["yield_curve"],
+            },
+            {
+                "name": "dollar",
+                "label": "Dollar (DXY)",
+                "score": round(scores.get("dollar", 0), 3),
+                "raw_label": "DXY",
+                "raw_value": f"{latest_dict.get('dxy', 0):.1f}" if latest_dict.get("dxy") else "N/A",
+                "raw_detail": "",
+                "sparkline": [h.get("dxy") for h in history if h.get("dxy") is not None],
+                "weight": regime_config["weights"]["dollar"],
+            },
+            {
+                "name": "commodity",
+                "label": "Gold/Copper",
+                "score": round(scores.get("commodity", 0), 3),
+                "raw_label": "Gold/Copper Ratio",
+                "raw_value": f"{latest_dict.get('gold_copper_ratio', 0):.1f}" if latest_dict.get("gold_copper_ratio") else "N/A",
+                "raw_detail": "",
+                "sparkline": [h.get("gold_copper_ratio") for h in history if h.get("gold_copper_ratio") is not None],
+                "weight": regime_config["weights"]["commodity"],
+            },
+        ]
+
+        return JSONResponse({
+            "dimensions": dimensions,
+            "composite": round(scores.get("composite", 0), 3),
+            "available_weight": round(scores.get("available_weight", 0), 3),
+            "date": latest_dict.get("date"),
+        })
+    except Exception as e:
+        logger.exception("macro_gauges failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── GET /api/positions/risk ───────────────────────────────────────────────────
+
+@app.get("/api/positions/risk")
+def positions_risk(_auth: HTTPBasicCredentials = Depends(check_auth)):
+    """GET /api/positions/risk — position risk decomposition."""
+    try:
+        import json as _json
+        from db.atlas_db import get_db
+
+        config_path = Path("config/active/sp500.json")
+        with open(config_path) as f:
+            config = _json.load(f)
+
+        max_risk_pct = config.get("risk", {}).get("max_risk_per_trade_pct", 2.0)
+
+        # Get equity and current prices from broker (single connection)
+        equity = 0.0
+        current_prices = {}
+        try:
+            from brokers.registry import get_live_broker
+            import dataclasses
+            broker = get_live_broker(config)
+            if broker and broker.connect():
+                account_info = broker.get_account_info()
+                equity = float(account_info.equity or 0)
+                positions_info = broker.get_positions()
+                for p in positions_info:
+                    pd = dataclasses.asdict(p)
+                    current_prices[pd.get("ticker", "")] = float(pd.get("current_price", 0) or 0)
+        except Exception as e:
+            logger.warning("positions_risk: broker fetch failed: %s", e)
+
+        # Get open trades from SQLite
+        with get_db() as db:
+            trades = db.execute(
+                "SELECT ticker, strategy, entry_price, stop_price, shares "
+                "FROM trades WHERE exit_date IS NULL"
+            ).fetchall()
+
+        position_risks = []
+        total_risk_dollars = 0.0
+        stops_missing = 0
+
+        for t in trades:
+            td = dict(t)
+            ticker = td["ticker"]
+            entry = float(td["entry_price"] or 0)
+            stop = float(td["stop_price"] or 0) if td["stop_price"] else None
+            shares = int(td["shares"] or 0)
+            current = current_prices.get(ticker, entry)
+            strategy = td.get("strategy", "unknown")
+
+            position_value = current * shares
+
+            if stop and stop > 0:
+                distance_pct = round(((current - stop) / current) * 100, 2) if current > 0 else 0
+                distance_dollars = round((current - stop) * shares, 2)
+                max_loss = round((entry - stop) * shares, 2) if entry > stop else 0
+                risk_pct_equity = round((max_loss / equity) * 100, 2) if equity > 0 else 0
+                has_stop = True
+            else:
+                distance_pct = None
+                distance_dollars = None
+                max_loss = position_value  # entire position at risk
+                risk_pct_equity = round((position_value / equity) * 100, 2) if equity > 0 else 0
+                has_stop = False
+                stops_missing += 1
+
+            total_risk_dollars += max_loss
+
+            # Risk status: green/yellow/red
+            if not has_stop:
+                risk_status = "critical"
+            elif risk_pct_equity > max_risk_pct:
+                risk_status = "high"
+            elif risk_pct_equity > max_risk_pct * 0.7:
+                risk_status = "warning"
+            else:
+                risk_status = "normal"
+
+            position_risks.append({
+                "ticker": ticker,
+                "strategy": strategy,
+                "shares": shares,
+                "entry_price": entry,
+                "current_price": current,
+                "stop_price": stop,
+                "has_stop": has_stop,
+                "distance_pct": distance_pct,
+                "distance_dollars": distance_dollars,
+                "max_loss": round(max_loss, 2),
+                "risk_pct_equity": risk_pct_equity,
+                "position_value": round(position_value, 2),
+                "risk_status": risk_status,
+            })
+
+        # Sort by risk (highest first)
+        position_risks.sort(key=lambda x: x["max_loss"], reverse=True)
+
+        # Portfolio summary
+        num_positions = len(position_risks)
+        avg_distance = None
+        distances = [p["distance_pct"] for p in position_risks if p["distance_pct"] is not None]
+        if distances:
+            avg_distance = round(sum(distances) / len(distances), 2)
+
+        return JSONResponse({
+            "positions": position_risks,
+            "summary": {
+                "total_risk_dollars": round(total_risk_dollars, 2),
+                "total_risk_pct": round((total_risk_dollars / equity) * 100, 2) if equity > 0 else 0,
+                "equity": round(equity, 2),
+                "num_positions": num_positions,
+                "avg_distance_to_stop": avg_distance,
+                "positions_without_stops": stops_missing,
+                "max_risk_per_trade_pct": max_risk_pct,
+            },
+        })
+    except Exception as e:
+        logger.exception("positions_risk failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── GET /api/regime/transitions ───────────────────────────────────────────────
+
+@app.get("/api/regime/transitions")
+def regime_transitions(_auth: HTTPBasicCredentials = Depends(check_auth)):
+    """GET /api/regime/transitions — regime transition probability matrix."""
+    try:
+        from db.atlas_db import get_db
+
+        STATES = [
+            "bull_risk_on", "bull_risk_off", "transition_uncertain",
+            "bear_risk_off", "bear_capitulation", "recovery_early"
+        ]
+
+        with get_db() as db:
+            rows = db.execute(
+                "SELECT date, regime_state FROM regime_history ORDER BY date ASC"
+            ).fetchall()
+
+        if not rows:
+            return JSONResponse({"matrix": {}, "durations": {}, "total_days": 0, "states": STATES})
+
+        history = [dict(r) for r in rows]
+
+        # Count transitions between consecutive days
+        transition_counts: dict = {s: {t: 0 for t in STATES} for s in STATES}
+        from_counts: dict = {s: 0 for s in STATES}
+
+        for i in range(len(history) - 1):
+            from_state = history[i]["regime_state"]
+            to_state = history[i + 1]["regime_state"]
+            if from_state in transition_counts and to_state in transition_counts[from_state]:
+                transition_counts[from_state][to_state] += 1
+                from_counts[from_state] += 1
+
+        # Convert to probabilities
+        matrix: dict = {}
+        for from_s in STATES:
+            matrix[from_s] = {}
+            total = from_counts[from_s]
+            for to_s in STATES:
+                if total > 0:
+                    matrix[from_s][to_s] = round(transition_counts[from_s][to_s] / total * 100, 1)
+                else:
+                    matrix[from_s][to_s] = 0.0
+
+        # Calculate average duration in each state (consecutive day runs)
+        durations: dict = {s: [] for s in STATES}
+        if history:
+            current_state = history[0]["regime_state"]
+            run_length = 1
+            for i in range(1, len(history)):
+                if history[i]["regime_state"] == current_state:
+                    run_length += 1
+                else:
+                    if current_state in durations:
+                        durations[current_state].append(run_length)
+                    current_state = history[i]["regime_state"]
+                    run_length = 1
+            # Don't forget the last run
+            if current_state in durations:
+                durations[current_state].append(run_length)
+
+        avg_durations = {}
+        for s in STATES:
+            runs = durations[s]
+            if runs:
+                avg_durations[s] = {
+                    "avg_days": round(sum(runs) / len(runs), 1),
+                    "max_days": max(runs),
+                    "occurrences": len(runs),
+                    "total_days": sum(runs),
+                }
+            else:
+                avg_durations[s] = {"avg_days": 0, "max_days": 0, "occurrences": 0, "total_days": 0}
+
+        # Current state
+        current = history[-1]["regime_state"] if history else None
+
+        return JSONResponse({
+            "matrix": matrix,
+            "durations": avg_durations,
+            "states": STATES,
+            "current_state": current,
+            "total_days": len(history),
+        })
+    except Exception as e:
+        logger.exception("regime_transitions failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ── GET /api/dashboard-data ───────────────────────────────────────────────────
 
 @app.get("/api/dashboard-data")
