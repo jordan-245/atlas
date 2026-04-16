@@ -76,7 +76,7 @@ def _gather_context(strategies: list[str] | None = None) -> str:
     return "\n\n".join(sections)
 
 
-def _build_prompt(minutes: int, strategies: list[str] | None = None) -> str:
+def _build_prompt(minutes: int, strategies: list[str] | None = None, universe: str = "sp500") -> str:
     """Construct the full prompt for Claude."""
     # Load program.md
     program = ""
@@ -122,7 +122,7 @@ cd /root/atlas && python3 -c "
 import sys; sys.path.insert(0, '/root/atlas')
 from research.loop import ResearchSession
 
-s = ResearchSession('mean_reversion', 'sp500')
+s = ResearchSession('mean_reversion', '{universe}')
 baseline = s.baseline()
 print('Baseline:', baseline)
 
@@ -161,13 +161,14 @@ def run_llm_loop(
     minutes: int = 25,
     strategies: list[str] | None = None,
     log_path: Path | None = None,
+    universe: str = "sp500",
 ) -> dict:
-    """Invoke Claude CLI to drive the research loop.
+    """Invoke Pi CLI to drive the research loop.
 
     Args:
         minutes:    Time budget in minutes.
         strategies: Optional list of strategies to focus on.
-        log_path:   Path to write Claude's output log.
+        log_path:   Path to write Pi's output log.
 
     Returns:
         dict with status, experiments_mentioned, runtime_s
@@ -177,34 +178,36 @@ def run_llm_loop(
     if log_path is None:
         log_path = LOGS_DIR / f"llm_loop_{date_str}.log"
 
-    # Pre-check Claude auth
+    # Pre-check Pi auth
     try:
-        from scripts.claude_auth_check import check_claude_auth
-        auth = check_claude_auth()
+        from scripts.claude_auth_check import check_pi_auth
+        auth = check_pi_auth()
         if not auth["logged_in"]:
-            logger.error("Claude CLI not authenticated (method=%s). Run 'claude setup-token' to fix.", auth["method"])
-            return {"status": "auth_error", "error": "Claude not authenticated. Run: claude setup-token", "runtime_s": 0}
+            logger.error("Pi CLI auth failed: %s", auth.get("error", "unknown"))
+            logger.error("The LLM loop requires working pi CLI. Fix auth before retrying.")
+            logger.error("Atlas uses Claude Max via pi CLI. If 'out of extra usage', the Max subscription hit its quota window.")
+            return {"status": "auth_error", "error": auth.get("error", "Pi CLI not available"), "runtime_s": 0}
     except ImportError:
         pass  # Auth check not available, proceed anyway
 
     logger.info("Building LLM loop prompt (strategies=%s, minutes=%d)", strategies, minutes)
-    prompt = _build_prompt(minutes, strategies)
+    prompt = _build_prompt(minutes, strategies, universe=universe)
 
     # Write prompt to temp file
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as tf:
         tf.write(prompt)
         prompt_path = tf.name
 
-    # Invoke Claude CLI
+    # Invoke Pi CLI
     cmd = [
-        "claude", "-p",
+        "pi", "-p",
         "--model", "claude-sonnet-4-6",
-        "--output-format", "json",
-        "--allowedTools", "Bash,Read",
+        "--mode", "json",
+        "--tools", "bash,read",
     ]
 
     timeout_s = (minutes + 5) * 60  # extra 5 min buffer for startup/cleanup
-    logger.info("Invoking Claude CLI (timeout=%ds, log=%s)", timeout_s, log_path)
+    logger.info("Invoking Pi CLI (timeout=%ds, log=%s)", timeout_s, log_path)
     start = time.time()
 
     try:
@@ -236,7 +239,7 @@ def run_llm_loop(
                 f.write(f"\n=== STDERR ===\n{stderr}\n")
 
         if result.returncode != 0:
-            logger.warning("Claude CLI exited with code %d", result.returncode)
+            logger.warning("Pi CLI exited with code %d", result.returncode)
             logger.warning("stderr: %s", stderr[:500] if stderr else "(empty)")
 
         # Try to parse JSON output for structured result
@@ -260,15 +263,15 @@ def run_llm_loop(
     except subprocess.TimeoutExpired:
         runtime_s = time.time() - start
         Path(prompt_path).unlink(missing_ok=True)
-        logger.error("Claude CLI timed out after %ds", timeout_s)
+        logger.error("Pi CLI timed out after %ds", timeout_s)
         with open(log_path, "w") as f:
             f.write(f"=== LLM Loop TIMEOUT {date_str} ===\nTimeout after {timeout_s}s\n")
         return {"status": "timeout", "runtime_s": round(runtime_s, 1), "log_path": str(log_path)}
 
     except FileNotFoundError:
         Path(prompt_path).unlink(missing_ok=True)
-        logger.error("Claude CLI not found. Install: npm install -g @anthropic-ai/claude-code")
-        return {"status": "error", "error": "claude not found", "runtime_s": 0}
+        logger.error("Pi CLI not found. Install pi and ensure it's on PATH.")
+        return {"status": "error", "error": "pi not found", "runtime_s": 0}
 
     except Exception as e:
         Path(prompt_path).unlink(missing_ok=True)
@@ -306,6 +309,8 @@ def main():
                         help="Comma-separated list of strategies to focus on")
     parser.add_argument("--notify", action="store_true",
                         help="Send Telegram notification on completion")
+    parser.add_argument("--universe", type=str, default="sp500",
+                        help="Universe ID (default: sp500)")
     args = parser.parse_args()
 
     strategies = None
@@ -314,7 +319,7 @@ def main():
     elif args.strategies:
         strategies = [s.strip() for s in args.strategies.split(",")]
 
-    summary = run_llm_loop(minutes=args.minutes, strategies=strategies)
+    summary = run_llm_loop(minutes=args.minutes, strategies=strategies, universe=args.universe)
 
     if args.notify:
         _send_telegram(summary)

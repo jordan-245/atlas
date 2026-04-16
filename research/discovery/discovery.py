@@ -54,24 +54,24 @@ class DailyReport:
     runtime_s: float = 0.0
 
 
-# ─── Core Claude CLI helper ───────────────────────────────────────────────────
+# ─── Core Pi CLI helper ──────────────────────────────────────────────────────
 
-def _run_claude(
+def _run_pi(
     prompt: str,
     mcp: bool = False,
     schema_path: Optional[str] = None,
     allowed_tools: str = "Bash,Read,Write",
 ) -> dict:
-    """Run claude CLI with the given prompt and return parsed JSON output.
+    """Run pi CLI with the given prompt and return parsed JSON output.
 
     Uses subprocess.run with a 30-minute timeout. Writes prompt to a temp file
     and passes it via stdin for safety with special characters.
 
     Args:
-        prompt: The prompt text to send to claude.
-        mcp: If True, attach --mcp-config pointing at the discovery config.
-        schema_path: Optional path to a JSON schema file for structured output.
-        allowed_tools: Comma-separated list of tools Claude may use.
+        prompt: The prompt text to send to pi.
+        mcp: If True, (ignored — pi CLI does not support --mcp-config).
+        schema_path: Optional path to a JSON schema file (ignored — pi CLI does not support --json-schema).
+        allowed_tools: Comma-separated list of tools pi may use.
 
     Returns:
         dict — parsed JSON result, or {"error": "<msg>", "raw": "<stdout>"} on failure.
@@ -79,27 +79,24 @@ def _run_claude(
     # Quick auth check
     try:
         auth_result = subprocess.run(
-            ["claude", "auth", "status"],
-            capture_output=True, text=True, timeout=10
+            ["pi", "-p", "--no-tools", "echo ok"],
+            capture_output=True, text=True, timeout=15
         )
-        import json as _json
-        auth_data = _json.loads(auth_result.stdout.strip() or auth_result.stderr.strip())
-        if not auth_data.get("loggedIn", False):
-            logger.warning("Claude not authenticated — skipping LLM call. Run 'claude setup-token'.")
-            return {"error": "not_authenticated", "raw": "Run 'claude setup-token' to authenticate"}
+        if auth_result.returncode != 0:
+            logger.warning("Pi CLI not working — skipping LLM call. Ensure pi is installed and configured.")
+            return {"error": "not_authenticated", "raw": "Pi CLI returned non-zero exit code"}
     except Exception:
         pass  # If auth check fails, try the actual call anyway
 
-    cmd = ["claude", "-p", "--model", "claude-sonnet-4-6", "--output-format", "json"]
+    cmd = ["pi", "-p", "--model", "claude-sonnet-4-6", "--mode", "json"]
 
-    if mcp:
-        cmd += ["--mcp-config", str(MCP_CONFIG.resolve())]
+    # Note: pi CLI does not support --mcp-config; MCP browsing tools not available
+    # The LLM will use bash/read tools for web access instead
 
-    if schema_path:
-        cmd += ["--json-schema", Path(schema_path).read_text()]
+    # Note: pi CLI does not support --json-schema; relying on prompt instructions for structure
 
     if allowed_tools:
-        cmd += ["--allowedTools", allowed_tools]
+        cmd += ["--tools", allowed_tools.lower()]
 
     # Write prompt to temp file and pass via stdin to avoid shell quoting issues
     try:
@@ -122,14 +119,14 @@ def _run_claude(
 
         if result.returncode != 0:
             err = result.stderr.strip() or result.stdout.strip()
-            logger.warning("claude CLI returned %d: %s", result.returncode, err[:200])
+            logger.warning("Pi CLI returned %d: %s", result.returncode, err[:200])
             return {"error": f"exit {result.returncode}: {err[:200]}", "raw": result.stdout}
 
         stdout = result.stdout.strip()
         if not stdout:
-            return {"error": "empty output from claude", "raw": ""}
+            return {"error": "empty output from pi", "raw": ""}
 
-        # Parse JSON — claude --output-format json returns structured JSON
+        # Parse JSON — pi --mode json returns structured JSON
         try:
             return json.loads(stdout)
         except json.JSONDecodeError:
@@ -144,26 +141,26 @@ def _run_claude(
             return {"error": "json parse failed", "raw": stdout[:500]}
 
     except FileNotFoundError:
-        logger.warning("claude CLI not found — skipping LLM step (graceful degradation)")
-        return {"error": "claude not found", "raw": ""}
+        logger.warning("pi CLI not found — skipping LLM step (graceful degradation)")
+        return {"error": "pi not found", "raw": ""}
     except subprocess.TimeoutExpired:
-        logger.error("claude CLI timed out after 1800s")
+        logger.error("Pi CLI timed out after 1800s")
         return {"error": "timeout", "raw": ""}
     except Exception as e:
-        logger.error("_run_claude error: %s", e)
+        logger.error("_run_pi error: %s", e)
         return {"error": str(e), "raw": ""}
 
 
 # ─── Browse helpers ──────────────────────────────────────────────────────────
 
-def _browse_with_claude(source: dict) -> list:
-    """Use claude with MCP (computer-use tools) to browse SSRN or a blog.
+def _browse_with_pi(source: dict) -> list:
+    """Use pi CLI with tools to browse SSRN or a blog.
 
     Reads the appropriate prompt template (browse_ssrn.md or browse_blog.md),
-    substitutes placeholders, and calls _run_claude with mcp=True.
+    substitutes placeholders, and calls _run_pi with tools enabled.
 
     Returns:
-        list of paper dicts (may be empty if claude CLI unavailable).
+        list of paper dicts (may be empty if pi CLI unavailable).
     """
     source_type = source.get("type", "")
     if source_type == "ssrn":
@@ -184,10 +181,10 @@ def _browse_with_claude(source: dict) -> list:
     prompt = prompt.replace("{source}", json.dumps(source, indent=2))
 
     allowed = "Bash,Read,Write,computer_use,browser"
-    result = _run_claude(prompt, mcp=True, allowed_tools=allowed)
+    result = _run_pi(prompt, mcp=True, allowed_tools=allowed)
 
     if "error" in result:
-        logger.warning("browse_with_claude error: %s", result["error"])
+        logger.warning("browse_with_pi error: %s", result["error"])
         return []
 
     # Expect result to be a list or contain a 'papers' key
@@ -221,7 +218,7 @@ def _filter_papers(papers: list) -> list:
     prompt = prompt.replace("{papers_dir}", str(PAPERS_DIR.resolve()))
     prompt = prompt.replace("{items_json}", json.dumps(papers, indent=2))
 
-    result = _run_claude(prompt, mcp=False, allowed_tools="Bash,Read")
+    result = _run_pi(prompt, mcp=False, allowed_tools="Bash,Read")
 
     if "error" in result:
         logger.warning("_filter_papers error: %s — passing all papers", result["error"])
@@ -267,7 +264,7 @@ def _extract_specs(papers: list) -> list:
     prompt = prompt.replace("{papers_dir}", str(PAPERS_DIR.resolve()))
     prompt = prompt.replace("{papers_json}", json.dumps(papers, indent=2))
 
-    result = _run_claude(prompt, mcp=False, allowed_tools="Bash,Read")
+    result = _run_pi(prompt, mcp=False, allowed_tools="Bash,Read")
 
     if "error" in result:
         logger.warning("_extract_specs error: %s", result["error"])
@@ -316,7 +313,7 @@ def _generate_strategies(specs: list) -> list:
         prompt = prompt.replace("{atlas_root}", str(ATLAS_ROOT.resolve()))
         prompt = prompt.replace("{strategies_dir}", str(ATLAS_ROOT / "research" / "strategies"))
 
-        gen_result = _run_claude(
+        gen_result = _run_pi(
             prompt,
             mcp=False,
             allowed_tools="Bash,Read,Write,Edit",
@@ -551,9 +548,12 @@ def discover_daily() -> DailyReport:
     if method == "api":
         try:
             from research.discovery.arxiv_api import fetch_new_papers
-            queries = source.get("queries", [])
+            from research.discovery.sources import get_queries_for_source
+            queries = get_queries_for_source(source)
+            if not queries:
+                logger.warning("No queries for source %s (categories=%s)", source_name, source.get("categories"))
             papers = fetch_new_papers(queries=queries)
-            logger.info("fetch_new_papers returned %d papers", len(papers))
+            logger.info("fetch_new_papers returned %d papers (from %d queries)", len(papers), len(queries))
         except ImportError:
             logger.warning("research.discovery.arxiv_api not available — no papers fetched")
         except Exception as e:
@@ -562,11 +562,11 @@ def discover_daily() -> DailyReport:
 
     elif method == "computer_use":
         try:
-            papers = _browse_with_claude(source)
-            logger.info("_browse_with_claude returned %d papers", len(papers))
+            papers = _browse_with_pi(source)
+            logger.info("_browse_with_pi returned %d papers", len(papers))
         except Exception as e:
-            errors.append(f"_browse_with_claude: {e}")
-            logger.error("_browse_with_claude failed: %s", e)
+            errors.append(f"_browse_with_pi: {e}")
+            logger.error("_browse_with_pi failed: %s", e)
 
     elif method == "review":
         try:
