@@ -102,9 +102,27 @@ def arbitrate(ticker: str, tiingo_price: float, alpaca_price: float) -> float:
             f"CRITICAL price halt: {ticker} Tiingo=${tiingo_price:.2f} "
             f"Alpaca=${alpaca_price:.2f} spread={spread_pct:.2f}% \u2014 BLOCKING NEW ENTRIES"
         )
-        logger.critical(msg)
-        if _should_send_alert(ticker):
-            _send_telegram_bg(msg)
+        # RTH gating — outside Regular Trading Hours, large divergence is
+        # almost always a session-boundary artifact (Alpaca post-market
+        # last trade vs Tiingo prev close), not a data-integrity issue.
+        # Still mark the ticker halted, still log loudly — but don't page
+        # the operator.
+        try:
+            from utils.market_hours import is_rth
+            within_rth = is_rth()
+        except Exception as e:
+            logger.warning("price_arbiter: is_rth() failed (%s) — defaulting to RTH", e)
+            within_rth = True
+
+        if within_rth:
+            logger.critical(msg)
+            if _should_send_alert(ticker):
+                _send_telegram_bg(msg)
+        else:
+            logger.warning(
+                "price divergence outside RTH — ticker=%s tiingo=$%.2f alpaca=$%.2f spread=%.2f%% (not alerting)",
+                ticker, tiingo_price, alpaca_price, spread_pct,
+            )
     elif spread_pct >= cfg["warn_pct"]:
         logger.info(
             "price_arbiter %s: Tiingo=$%.2f Alpaca=$%.2f spread=%.2f%% (using %s)",
