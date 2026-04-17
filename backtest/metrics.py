@@ -190,6 +190,89 @@ def calc_sharpe(returns: pd.Series, rf: float = DEFAULT_RF) -> float:
     return round(sharpe, 4)
 
 
+def calc_deflated_sharpe(
+    observed_sharpe: float,
+    num_experiments: int,
+    variance_of_sharpes: float,
+    returns: pd.Series,
+    *,
+    min_experiments: int = 5,
+) -> Dict[str, Any]:
+    """Deflated Sharpe Ratio (Bailey & López de Prado, 2014).
+
+    Corrects for multiple testing: with N experiments, the expected max Sharpe
+    under the null is higher than zero. Tests whether observed_sharpe is
+    statistically significant after accounting for the search.
+
+    Args:
+        observed_sharpe:     The Sharpe ratio to test.
+        num_experiments:     Total number of strategies/parameter combos tried.
+        variance_of_sharpes: Variance of Sharpe ratios across all experiments.
+        returns:             Returns series (for skewness/kurtosis/T).
+        min_experiments:     Skip correction if fewer experiments than this.
+
+    Returns:
+        {"dsr_p_value": float, "expected_max_sharpe": float,
+         "is_significant": bool, "num_experiments": int}
+    """
+    result = {
+        "dsr_p_value": None,
+        "expected_max_sharpe": None,
+        "is_significant": None,
+        "num_experiments": num_experiments,
+    }
+
+    # Not enough experiments to correct for — return uncorrected
+    if num_experiments < min_experiments or variance_of_sharpes <= 0:
+        result["dsr_p_value"] = 0.0  # assume significant
+        result["expected_max_sharpe"] = 0.0
+        result["is_significant"] = True
+        return result
+
+    T = len(returns)
+    if T < 10:
+        result["dsr_p_value"] = 0.0
+        result["expected_max_sharpe"] = 0.0
+        result["is_significant"] = True
+        return result
+
+    skewness = float(returns.skew()) if hasattr(returns, "skew") else 0.0
+    kurtosis = float(returns.kurtosis()) + 3.0  # pandas kurtosis is excess, DSR needs raw
+
+    # Expected maximum Sharpe under null (order statistics of N iid normals)
+    try:
+        e_max_sharpe = np.sqrt(variance_of_sharpes) * (
+            (1 - np.euler_gamma) * stats.norm.ppf(1 - 1 / num_experiments)
+            + np.euler_gamma * stats.norm.ppf(1 - 1 / (num_experiments * np.e))
+        )
+    except Exception:
+        e_max_sharpe = 0.0
+
+    # Standard error of Sharpe ratio (Lo, 2002, adjusted for non-normality)
+    se_sharpe_sq = (
+        1
+        - skewness * observed_sharpe
+        + (kurtosis - 1) / 4.0 * observed_sharpe ** 2
+    ) / T
+
+    if se_sharpe_sq <= 0:
+        se_sharpe_sq = 1.0 / T  # fallback to normal assumption
+
+    se_sharpe = np.sqrt(se_sharpe_sq)
+
+    # Test statistic: is observed Sharpe significantly above the expected max?
+    z = (observed_sharpe - e_max_sharpe) / se_sharpe
+
+    # One-sided p-value
+    p_value = float(1 - stats.norm.cdf(z))
+
+    result["dsr_p_value"] = round(p_value, 6)
+    result["expected_max_sharpe"] = round(float(e_max_sharpe), 4)
+    result["is_significant"] = p_value < 0.05
+
+    return result
+
+
 def calc_sortino(returns: pd.Series, rf: float = DEFAULT_RF) -> float:
     """Calculate annualized Sortino ratio.
 

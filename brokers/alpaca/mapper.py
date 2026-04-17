@@ -20,12 +20,16 @@ never see broker-specific formatting.
 # Suffixes that indicate non-US markets — not supported via Alpaca US equity
 _NON_US_SUFFIXES = (".AX", ".HK", ".L", ".T", ".PA", ".DE")
 
+# Quote-currency suffixes used by crypto pairs in yfinance/Atlas format (BTC-USD)
+_CRYPTO_QUOTE_SUFFIXES = ("-USD", "-USDT", "-BTC", "-ETH")
+
 
 def to_alpaca(atlas_ticker: str) -> str:
     """Convert Atlas/yfinance ticker to Alpaca symbol.
 
     Key mappings:
-        - BRK-B → BRK.B  (yfinance uses '-', Alpaca uses '.')
+        - BTC-USD → BTC/USD  (crypto: yfinance uses '-USD', Alpaca uses '/USD')
+        - BRK-B → BRK.B     (share class: yfinance uses '-', Alpaca uses '.')
         - .AX / .HK suffixes stripped (non-US, best-effort)
         - Uppercase normalisation
 
@@ -44,6 +48,10 @@ def to_alpaca(atlas_ticker: str) -> str:
     for suffix in _NON_US_SUFFIXES:
         if ticker.endswith(suffix):
             return ticker[: -len(suffix)]
+
+    # Crypto pairs: BTC-USD → BTC/USD (Alpaca uses slash for crypto)
+    if any(ticker.endswith(s) for s in _CRYPTO_QUOTE_SUFFIXES):
+        return ticker.replace("-", "/")
 
     # yfinance uses '-' for share class (BRK-B), Alpaca uses '.' (BRK.B)
     if "-" in ticker:
@@ -68,7 +76,8 @@ def to_atlas(alpaca_symbol: str) -> str:
     """
     symbol = alpaca_symbol.strip().upper()
 
-    # Alpaca uses '/' or '.' for class separators; yfinance uses '-'
+    # Alpaca uses '/' for crypto (BTC/USD → BTC-USD) and occasionally
+    # for share class (BRK/B → BRK-B); yfinance/Atlas always uses '-'
     if "/" in symbol:
         symbol = symbol.replace("/", "-")
 

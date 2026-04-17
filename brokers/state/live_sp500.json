@@ -3,26 +3,67 @@
   "mode": "live",
   "positions": [
     {
-      "ticker": "MRVL",
-      "strategy": "momentum_breakout",
-      "entry_date": "2026-04-11",
-      "entry_price": 108.63,
-      "shares": 4,
-      "stop_price": 101.5977,
-      "order_id": "",
-      "stop_order_id": "",
-      "tp_order_id": ""
+      "ticker": "FCX",
+      "strategy": "reconciled",
+      "entry_date": "2026-04-17",
+      "entry_price": 68.03,
+      "shares": 5,
+      "stop_price": 63.82,
+      "order_id": ""
+    },
+    {
+      "ticker": "GLD",
+      "strategy": "unknown",
+      "entry_date": "2026-04-17",
+      "entry_price": 442.8,
+      "shares": 2,
+      "stop_price": 420.65999999999997,
+      "order_id": ""
     },
     {
       "ticker": "NFLX",
       "strategy": "trend_following",
-      "entry_date": "2026-04-11",
+      "entry_date": "2026-04-17",
       "entry_price": 94.38,
       "shares": 3,
-      "stop_price": 97.6,
-      "order_id": "",
-      "stop_order_id": "b930587d-805f-4ec6-88d8-1cfccfbf9a35",
-      "tp_order_id": ""
+      "stop_price": 103.465,
+      "order_id": ""
+    },
+    {
+      "ticker": "SLV",
+      "strategy": "unknown",
+      "entry_date": "2026-04-17",
+      "entry_price": 71.92,
+      "shares": 6,
+      "stop_price": 68.324,
+      "order_id": ""
+    },
+    {
+      "ticker": "STZ",
+      "strategy": "momentum_breakout",
+      "entry_date": "2026-04-17",
+      "entry_price": 163.9457,
+      "shares": 5,
+      "stop_price": 159.51,
+      "order_id": ""
+    },
+    {
+      "ticker": "UNG",
+      "strategy": "unknown",
+      "entry_date": "2026-04-17",
+      "entry_price": 10.68,
+      "shares": 54,
+      "stop_price": 10.145999999999999,
+      "order_id": ""
+    },
+    {
+      "ticker": "XLY",
+      "strategy": "unknown",
+      "entry_date": "2026-04-17",
+      "entry_price": 116.44,
+      "shares": 10,
+      "stop_price": 110.618,
+      "order_id": ""
     }
   ],
   "closed_trades": [
@@ -436,7 +477,7 @@
     },
     {
       "date": "2026-03-24",
-      "equity": 5023.03,
+      "equity": 5194.64,
       "cash": 727.46,
       "positions_value": 4295.57,
       "num_positions": 5,
@@ -502,7 +543,7 @@
     },
     {
       "date": "2026-03-25",
-      "equity": 5050.05,
+      "equity": 5194.75,
       "cash": 552.81,
       "positions_value": 4497.24,
       "num_positions": 7,
@@ -590,7 +631,7 @@
     },
     {
       "date": "2026-03-26",
-      "equity": 5084.76,
+      "equity": 5518.22,
       "cash": 1878.75,
       "positions_value": 3206.01,
       "num_positions": 7,
@@ -678,7 +719,7 @@
     },
     {
       "date": "2026-03-27",
-      "equity": 5055.32,
+      "equity": 5492.77,
       "cash": 1935.87,
       "positions_value": 3119.45,
       "num_positions": 7,
@@ -766,7 +807,7 @@
     },
     {
       "date": "2026-03-30",
-      "equity": 5094.56,
+      "equity": 5532.01,
       "cash": 2294.85,
       "positions_value": 2799.71,
       "num_positions": 7,
@@ -854,7 +895,7 @@
     },
     {
       "date": "2026-03-31",
-      "equity": 5100.45,
+      "equity": 5535.01,
       "cash": 1710.58,
       "positions_value": 3389.87,
       "num_positions": 8,
@@ -953,7 +994,7 @@
     },
     {
       "date": "2026-04-02",
-      "equity": 5120.55,
+      "equity": 5279.49,
       "cash": 2361.49,
       "positions_value": 2759.06,
       "num_positions": 6,
@@ -1030,7 +1071,7 @@
     },
     {
       "date": "2026-04-03",
-      "equity": 5120.55,
+      "equity": 5279.49,
       "cash": 2361.49,
       "positions_value": 2759.06,
       "num_positions": 6,
@@ -1107,7 +1148,7 @@
     },
     {
       "date": "2026-04-06",
-      "equity": 5110.42,
+      "equity": 5269.36,
       "cash": 2338.66,
       "positions_value": 2771.76,
       "num_positions": 7,
@@ -1195,7 +1236,7 @@
     },
     {
       "date": "2026-04-07",
-      "equity": 5055.02,
+      "equity": 5245.41,
       "cash": 3153.29,
       "positions_value": 1901.73,
       "num_positions": 6,
@@ -1272,7 +1313,7 @@
     },
     {
       "date": "2026-04-08",
-      "equity": 5084.7,
+      "equity": 5275.09,
       "cash": 3794.92,
       "positions_value": 1289.78,
       "num_positions": 3,
@@ -1316,7 +1357,7 @@
     },
     {
       "date": "2026-04-09",
-      "equity": 5080.0,
+      "equity": 5310.34,
       "cash": 3794.92,
       "positions_value": 1285.08,
       "num_positions": 2,
@@ -1349,7 +1390,7 @@
     },
     {
       "date": "2026-04-10",
-      "equity": 5037.68,
+      "equity": 5331.14,
       "cash": 4517.09,
       "positions_value": 520.59,
       "num_positions": 1,
@@ -1368,10 +1409,296 @@
           "holding_days": -1
         }
       ]
+    },
+    {
+      "date": "2026-04-13",
+      "equity": 5350.85,
+      "cash": 2999.8,
+      "positions_value": 2351.05,
+      "num_positions": 4,
+      "total_realized_pnl": 293.46,
+      "total_closed_trades": 28,
+      "positions": [
+        {
+          "ticker": "CARR",
+          "strategy": "momentum_breakout",
+          "shares": 11,
+          "entry_price": 63.31,
+          "current_price": 64.32,
+          "unrealized_pnl": 11.11,
+          "mae": 0.0,
+          "mfe": 1.6,
+          "holding_days": -1
+        },
+        {
+          "ticker": "MRVL",
+          "strategy": "momentum_breakout",
+          "shares": 4,
+          "entry_price": 130.08,
+          "current_price": 131.3,
+          "unrealized_pnl": 4.88,
+          "mae": 0.0,
+          "mfe": 0.94,
+          "holding_days": -1
+        },
+        {
+          "ticker": "NFLX",
+          "strategy": "trend_following",
+          "shares": 3,
+          "entry_price": 94.38,
+          "current_price": 103.16,
+          "unrealized_pnl": 26.34,
+          "mae": 0.0,
+          "mfe": 9.3,
+          "holding_days": -1
+        },
+        {
+          "ticker": "STZ",
+          "strategy": "momentum_breakout",
+          "shares": 5,
+          "entry_price": 163.9457,
+          "current_price": 164.6,
+          "unrealized_pnl": 3.27,
+          "mae": 0.0,
+          "mfe": 0.4,
+          "holding_days": -1
+        }
+      ]
+    },
+    {
+      "date": "2026-04-14",
+      "equity": 5374.77,
+      "cash": 2082.93,
+      "positions_value": 3291.84,
+      "num_positions": 5,
+      "total_realized_pnl": 293.46,
+      "total_closed_trades": 28,
+      "positions": [
+        {
+          "ticker": "CARR",
+          "strategy": "momentum_breakout",
+          "shares": 11,
+          "entry_price": 63.31,
+          "current_price": 64.66,
+          "unrealized_pnl": 14.85,
+          "mae": 0.0,
+          "mfe": 2.13,
+          "holding_days": -1
+        },
+        {
+          "ticker": "FCX",
+          "strategy": "momentum_breakout",
+          "shares": 5,
+          "entry_price": 68.03,
+          "current_price": 68.27,
+          "unrealized_pnl": 1.2,
+          "mae": 0.0,
+          "mfe": 0.35,
+          "holding_days": -1
+        },
+        {
+          "ticker": "MRVL",
+          "strategy": "momentum_breakout",
+          "shares": 4,
+          "entry_price": 130.08,
+          "current_price": 133.83,
+          "unrealized_pnl": 15.0,
+          "mae": 0.0,
+          "mfe": 2.88,
+          "holding_days": -1
+        },
+        {
+          "ticker": "NFLX",
+          "strategy": "trend_following",
+          "shares": 3,
+          "entry_price": 94.38,
+          "current_price": 106.28,
+          "unrealized_pnl": 35.7,
+          "mae": 0.0,
+          "mfe": 12.61,
+          "holding_days": -1
+        },
+        {
+          "ticker": "STZ",
+          "strategy": "momentum_breakout",
+          "shares": 5,
+          "entry_price": 163.9457,
+          "current_price": 164.5,
+          "unrealized_pnl": 2.77,
+          "mae": 0.0,
+          "mfe": 0.34,
+          "holding_days": -1
+        }
+      ]
+    },
+    {
+      "date": "2026-04-14",
+      "equity": 5374.77,
+      "cash": 2082.93,
+      "positions_value": 3291.84,
+      "num_positions": 5,
+      "total_realized_pnl": 293.46,
+      "total_closed_trades": 28,
+      "positions": [
+        {
+          "ticker": "CARR",
+          "strategy": "momentum_breakout",
+          "shares": 11,
+          "entry_price": 63.31,
+          "current_price": 64.66,
+          "unrealized_pnl": 14.85,
+          "mae": 0.0,
+          "mfe": 2.13,
+          "holding_days": -1
+        },
+        {
+          "ticker": "FCX",
+          "strategy": "reconciled",
+          "shares": 5,
+          "entry_price": 68.03,
+          "current_price": 68.27,
+          "unrealized_pnl": 1.2,
+          "mae": 0.0,
+          "mfe": 0.35,
+          "holding_days": -1
+        },
+        {
+          "ticker": "MRVL",
+          "strategy": "momentum_breakout",
+          "shares": 4,
+          "entry_price": 130.08,
+          "current_price": 133.83,
+          "unrealized_pnl": 15.0,
+          "mae": 0.0,
+          "mfe": 2.88,
+          "holding_days": -1
+        },
+        {
+          "ticker": "NFLX",
+          "strategy": "trend_following",
+          "shares": 3,
+          "entry_price": 94.38,
+          "current_price": 106.28,
+          "unrealized_pnl": 35.7,
+          "mae": 0.0,
+          "mfe": 12.61,
+          "holding_days": -1
+        },
+        {
+          "ticker": "STZ",
+          "strategy": "momentum_breakout",
+          "shares": 5,
+          "entry_price": 163.9457,
+          "current_price": 164.5,
+          "unrealized_pnl": 2.77,
+          "mae": 0.0,
+          "mfe": 0.34,
+          "holding_days": -1
+        }
+      ]
+    },
+    {
+      "date": "2026-04-15",
+      "equity": 5366.69,
+      "cash": 282.89,
+      "positions_value": 5083.8,
+      "num_positions": 4,
+      "total_realized_pnl": 293.46,
+      "total_closed_trades": 28,
+      "positions": [
+        {
+          "ticker": "FCX",
+          "strategy": "reconciled",
+          "shares": 5,
+          "entry_price": 68.03,
+          "current_price": 68.7,
+          "unrealized_pnl": 3.35,
+          "mae": 0.0,
+          "mfe": 0.98,
+          "holding_days": -1
+        },
+        {
+          "ticker": "MRVL",
+          "strategy": "momentum_breakout",
+          "shares": 4,
+          "entry_price": 130.08,
+          "current_price": 134.6,
+          "unrealized_pnl": 18.08,
+          "mae": 0.0,
+          "mfe": 3.47,
+          "holding_days": -1
+        },
+        {
+          "ticker": "NFLX",
+          "strategy": "trend_following",
+          "shares": 3,
+          "entry_price": 94.38,
+          "current_price": 107.71,
+          "unrealized_pnl": 39.99,
+          "mae": 0.0,
+          "mfe": 14.12,
+          "holding_days": -1
+        },
+        {
+          "ticker": "STZ",
+          "strategy": "momentum_breakout",
+          "shares": 5,
+          "entry_price": 163.9457,
+          "current_price": 163.95,
+          "unrealized_pnl": 0.02,
+          "mae": 0.0,
+          "mfe": 0.0,
+          "holding_days": -1
+        }
+      ]
+    },
+    {
+      "date": "2026-04-16",
+      "equity": 5348.25,
+      "cash": 802.23,
+      "positions_value": 4546.02,
+      "num_positions": 3,
+      "total_realized_pnl": 293.46,
+      "total_closed_trades": 28,
+      "positions": [
+        {
+          "ticker": "FCX",
+          "strategy": "reconciled",
+          "shares": 5,
+          "entry_price": 68.03,
+          "current_price": 68.28,
+          "unrealized_pnl": 1.25,
+          "mae": 0.0,
+          "mfe": 0.37,
+          "holding_days": -1
+        },
+        {
+          "ticker": "NFLX",
+          "strategy": "trend_following",
+          "shares": 3,
+          "entry_price": 94.38,
+          "current_price": 107.79,
+          "unrealized_pnl": 40.23,
+          "mae": 0.0,
+          "mfe": 14.21,
+          "holding_days": -1
+        },
+        {
+          "ticker": "STZ",
+          "strategy": "momentum_breakout",
+          "shares": 5,
+          "entry_price": 163.9457,
+          "current_price": 164.25,
+          "unrealized_pnl": 1.52,
+          "mae": 0.0,
+          "mfe": 0.19,
+          "holding_days": -1
+        }
+      ]
     }
   ],
-  "daily_high_water": 5120.55,
+  "daily_high_water": 5374.77,
   "halted": false,
   "halt_reason": "",
-  "last_saved": "2026-04-11T09:00:09.842894"
+  "last_saved": "2026-04-17T09:00:10.607872"
 }

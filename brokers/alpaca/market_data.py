@@ -28,8 +28,9 @@ import pandas as pd
 logger = logging.getLogger("atlas.broker.alpaca.data")
 
 try:
-    from alpaca.data.historical import StockHistoricalDataClient
+    from alpaca.data.historical import StockHistoricalDataClient, CryptoHistoricalDataClient
     from alpaca.data.requests import (
+        CryptoBarsRequest,
         StockBarsRequest,
         StockLatestBarRequest,
         StockLatestQuoteRequest,
@@ -40,6 +41,12 @@ try:
 except ImportError:
     ALPACA_AVAILABLE = False
     logger.warning("alpaca-py not installed. Run: pip install alpaca-py")
+
+
+def _is_crypto(symbol: str) -> bool:
+    """Return True if symbol is a crypto pair (e.g. BTC/USD, BTC-USD, BTCUSD)."""
+    crypto_suffixes = ('/USD', '/USDT', '/BTC', '/ETH', '-USD', '-USDT', '-BTC', '-ETH')
+    return any(symbol.upper().endswith(s) for s in crypto_suffixes)
 
 
 class AlpacaMarketData:
@@ -329,8 +336,12 @@ class AlpacaMarketData:
         }
         tf = _tf_map.get(timeframe, TimeFrame.Day)
 
+        # Split crypto vs stock tickers
+        crypto_tickers = [t for t in tickers if _is_crypto(t)]
+        stock_tickers = [t for t in tickers if not _is_crypto(t)]
+
         BATCH_SIZE = 50
-        batches = [tickers[i:i + BATCH_SIZE] for i in range(0, len(tickers), BATCH_SIZE)]
+        batches = [stock_tickers[i:i + BATCH_SIZE] for i in range(0, len(stock_tickers), BATCH_SIZE)]
         result: Dict[str, pd.DataFrame] = {}
 
         for batch_idx, batch in enumerate(batches):
@@ -414,8 +425,58 @@ class AlpacaMarketData:
                 df = df[["open", "high", "low", "close", "volume", "ticker"]]
                 result[atlas_ticker] = df
 
+        if stock_tickers:
+            logger.info(
+                "download_universe_bars: completed %d/%d stock tickers",
+                len(result), len(stock_tickers),
+            )
+
+        # ── Crypto tickers ────────────────────────────────
+        if crypto_tickers:
+            crypto_client = CryptoHistoricalDataClient()
+            from brokers.alpaca.mapper import to_alpaca, to_atlas
+            for ticker in crypto_tickers:
+                alpaca_sym = to_alpaca(ticker)  # BTC-USD → BTC/USD
+                try:
+                    req = CryptoBarsRequest(
+                        symbol_or_symbols=[alpaca_sym],
+                        timeframe=tf,
+                        start=start_date,
+                        end=end_date,
+                    )
+                    barset = crypto_client.get_crypto_bars(req)
+                    barset_data = getattr(barset, 'data', None) or (barset if isinstance(barset, dict) else {})
+                    for symbol, bars in barset_data.items():
+                        atlas_ticker = to_atlas(symbol)
+                        if not bars:
+                            continue
+                        rows = []
+                        for bar in bars:
+                            ts = getattr(bar, "timestamp", None)
+                            if ts is None:
+                                continue
+                            rows.append({
+                                "date": pd.Timestamp(ts).normalize(),
+                                "open": float(getattr(bar, "open", 0) or 0),
+                                "high": float(getattr(bar, "high", 0) or 0),
+                                "low": float(getattr(bar, "low", 0) or 0),
+                                "close": float(getattr(bar, "close", 0) or 0),
+                                "volume": int(getattr(bar, "volume", 0) or 0),
+                                "ticker": atlas_ticker,
+                            })
+                        if rows:
+                            df = pd.DataFrame(rows).set_index("date")
+                            df.index.name = "date"
+                            if df.index.tz is not None:
+                                df.index = df.index.tz_localize(None)
+                            df = df[["open", "high", "low", "close", "volume", "ticker"]]
+                            result[atlas_ticker] = df
+                            logger.info("Crypto bars: %s → %d rows", atlas_ticker, len(df))
+                except Exception as e:
+                    logger.warning("Crypto bars fetch failed for %s: %s", ticker, e)
+
         logger.info(
-            "download_universe_bars: completed %d/%d tickers",
+            "download_universe_bars: completed %d/%d total tickers",
             len(result), len(tickers),
         )
         return result
@@ -601,7 +662,7 @@ def get_historical_bars(
     try:
         from alpaca.data.timeframe import TimeFrame
         from alpaca.data.enums import Adjustment
-        from brokers.alpaca.mapper import to_alpaca_list, to_atlas
+        from brokers.alpaca.mapper import to_alpaca, to_alpaca_list, to_atlas
 
         _tf_map = {
             "1Day":    TimeFrame.Day,
@@ -619,16 +680,45 @@ def get_historical_bars(
         }
         adj = _adj_map.get(str(adjustment).lower(), Adjustment.ALL)
 
-        alpaca_symbols = to_alpaca_list(symbols)
-        req = StockBarsRequest(
-            symbol_or_symbols=alpaca_symbols,
-            timeframe=tf,
-            start=start,
-            end=end,
-            adjustment=adj,
-            feed=client._feed,
-        )
-        barset = client._client.get_stock_bars(req)
+        # Split crypto vs stock
+        crypto_syms = [s for s in symbols if _is_crypto(s)]
+        stock_syms  = [s for s in symbols if not _is_crypto(s)]
+
+        barset_data: dict = {}
+
+        # Stock path
+        if stock_syms:
+            alpaca_symbols = to_alpaca_list(stock_syms)
+            req = StockBarsRequest(
+                symbol_or_symbols=alpaca_symbols,
+                timeframe=tf,
+                start=start,
+                end=end,
+                adjustment=adj,
+                feed=client._feed,
+            )
+            barset = client._client.get_stock_bars(req)
+            stock_data = getattr(barset, 'data', None) or (barset if isinstance(barset, dict) else {})
+            barset_data.update(stock_data)
+
+        # Crypto path (no API keys needed)
+        if crypto_syms and ALPACA_AVAILABLE:
+            crypto_client = CryptoHistoricalDataClient()
+            for sym in crypto_syms:
+                alpaca_sym = to_alpaca(sym)  # BTC-USD → BTC/USD
+                try:
+                    req = CryptoBarsRequest(
+                        symbol_or_symbols=[alpaca_sym],
+                        timeframe=tf,
+                        start=start,
+                        end=end,
+                    )
+                    cbarset = crypto_client.get_crypto_bars(req)
+                    cdata = getattr(cbarset, 'data', None) or (cbarset if isinstance(cbarset, dict) else {})
+                    barset_data.update(cdata)
+                except Exception as ce:
+                    logger.warning("get_historical_bars: crypto fetch failed for %s: %s", sym, ce)
+
     except Exception as e:
         logger.error("get_historical_bars failed: %s", e, exc_info=True)
         return {}
@@ -637,7 +727,6 @@ def get_historical_bars(
     try:
         from brokers.alpaca.mapper import to_atlas
         # BarSet is a pydantic model with .data dict, not a dict itself
-        barset_data = getattr(barset, 'data', None) or (barset if isinstance(barset, dict) else {})
         for symbol, bars in barset_data.items():
             atlas_ticker = to_atlas(symbol)
             if not bars:

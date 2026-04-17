@@ -219,13 +219,26 @@ class LivePortfolio:
         self._broker_equity = acct.equity
 
         # Convert broker PositionInfo → engine Position objects
+        # Filter to this market's ticker universe (each universe sees only its own positions)
+        try:
+            from markets import get_market
+            market_profile = get_market(self.market_id)
+            universe_tickers = set(market_profile.get_formatted_tickers())
+        except Exception:
+            universe_tickers = None
+
         self.positions = []
         for pi in raw_positions:
-            # Filter to this market's tickers
-            if self.market_id == "asx" and not pi.ticker.endswith(".AX"):
-                continue
-            if self.market_id == "sp500" and pi.ticker.endswith(".AX"):
-                continue
+            # Filter to this market's ticker universe
+            if universe_tickers is not None:
+                if pi.ticker not in universe_tickers:
+                    continue
+            else:
+                # Fallback: legacy suffix-based filters if market profile unavailable
+                if self.market_id == "asx" and not pi.ticker.endswith(".AX"):
+                    continue
+                if self.market_id == "sp500" and pi.ticker.endswith(".AX"):
+                    continue
 
             pos = Position(
                 ticker=pi.ticker,
@@ -258,13 +271,42 @@ class LivePortfolio:
 
     def _enrich_from_plans(self):
         """Fill in stop_price, strategy, entry_date from recent trade plans,
-        with fallback to the state file for authoritative strategy names.
+        SQLite trades, and the state file.
 
         The broker doesn't provide stop/TP levels or Atlas strategy names.
-        We recover them from: (1) plan files, (2) state file (which has
-        strategy names from Alpaca client_order_id parsing).
+        We recover them from: (0) SQLite trades table (most authoritative),
+        (1) plan files, (2) state file.
         """
         meta: dict[str, dict] = {}
+
+        # Source 0: SQLite trades table (most authoritative — strategy
+        # is recorded at entry time by execute_entry/record_open_trade)
+        try:
+            from db.atlas_db import get_db
+            with get_db() as db:
+                rows = db.execute(
+                    "SELECT ticker, strategy, entry_date, stop_price, "
+                    "take_profit, confidence "
+                    "FROM trades WHERE status = 'open' "
+                    "ORDER BY entry_date DESC"
+                ).fetchall()
+                for row in rows:
+                    ticker = row["ticker"]
+                    strategy = row["strategy"]
+                    entry_date = row["entry_date"]
+                    stop_price = row["stop_price"]
+                    take_profit = row["take_profit"]
+                    confidence = row["confidence"]
+                    if ticker and ticker not in meta:
+                        meta[ticker] = {
+                            "strategy": strategy or "",
+                            "entry_date": (entry_date or "").split("T")[0],
+                            "stop_price": stop_price or 0,
+                            "take_profit": take_profit,
+                            "confidence": confidence or 0,
+                        }
+        except Exception as e:
+            logger.warning("_enrich_from_plans: SQLite lookup failed: %s", e)
 
         # Source 1: plan files
         plans_dir = PROJECT_ROOT / "plans"
@@ -412,8 +454,10 @@ class LivePortfolio:
                 prev = existing.get(pos.ticker, {})
                 merged.append({
                     "ticker": pos.ticker,
-                    # Prefer existing strategy if broker returns unknown/empty
-                    "strategy": prev.get("strategy") if pos.strategy in ("unknown", "") and prev.get("strategy") else pos.strategy,
+                    # Use position's enriched strategy (now comes from SQLite
+                    # via _enrich_from_plans); only fall back to state file if
+                    # still unknown after all enrichment sources.
+                    "strategy": pos.strategy if pos.strategy not in ("unknown", "") else prev.get("strategy", pos.strategy),
                     "entry_date": prev.get("entry_date") or pos.entry_date,
                     "entry_price": pos.entry_price,
                     "shares": pos.shares,
@@ -576,19 +620,21 @@ class LivePortfolio:
         cash) — it is inflated when manual positions exist in the account.
 
         Instead we infer the Atlas cash slice as:
-            atlas_cash = starting_equity - sum(entry_value for atlas positions)
+            atlas_cash = starting_equity - sum(entry_costs) + total_realized_pnl
 
-        This mirrors the dashboard logic in generate_data.py and keeps Atlas
-        equity independent of whatever manual capital is also in the account.
+        This accounts for profits/losses from closed trades being returned
+        to the cash pool, keeping Atlas equity continuous across trade exits.
         """
         atlas_pos = self.atlas_positions
         atlas_pos_value = sum(
             p.current_value(prices.get(p.ticker, p.entry_price) if prices else p.entry_price)
             for p in atlas_pos
         )
-        # Infer cash: starting capital minus what is currently deployed in Atlas positions.
+        # Infer cash: starting capital minus what is currently deployed,
+        # plus realized P&L from closed trades.
         atlas_entry_cost = sum(p.entry_value for p in atlas_pos)
-        atlas_cash = self.starting_equity - atlas_entry_cost
+        total_realized_pnl = sum(t.get("pnl", 0) for t in self.closed_trades)
+        atlas_cash = self.starting_equity - atlas_entry_cost + total_realized_pnl
         return round(atlas_cash + atlas_pos_value, 2)
 
     def broker_equity(self) -> float:

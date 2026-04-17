@@ -630,6 +630,32 @@ class TradePlanGenerator:
         except Exception as exc:
             logger.warning("Signal enrichment failed (non-fatal): %s", exc)
 
+        # Sector map enrichment — load per-universe maps and combine
+        # Must run BEFORE PortfolioConstructor so sector concentration checks work.
+        try:
+            import json as _json
+            _combined_sector_map: dict = {}
+            # Load per-universe sector maps (e.g. sector_map_sp500.json, sector_map_commodity_etfs.json)
+            for _uname in list(multi_data.keys()):
+                _sm_path = PROJECT_ROOT / "data" / "processed" / f"sector_map_{_uname}.json"
+                if _sm_path.exists():
+                    with open(_sm_path) as _f:
+                        _combined_sector_map.update(_json.load(_f))
+            # Also try the primary market's map (covers the sp500 fallback)
+            _primary_map_path = PROJECT_ROOT / "data" / "processed" / f"sector_map_{self.config.get('market', 'sp500')}.json"
+            if _primary_map_path.exists():
+                with open(_primary_map_path) as _f:
+                    _combined_sector_map.update(_json.load(_f))
+            if _combined_sector_map:
+                logger.info("Regime sector map: %d tickers across %d universes", len(_combined_sector_map), len(multi_data))
+                for sig in all_signals:
+                    sector = _combined_sector_map.get(sig.ticker, "Unknown")
+                    sig.sector = sector
+                    if hasattr(sig, "features"):
+                        sig.features["sector"] = sector
+        except Exception as exc:
+            logger.debug("Regime sector map enrichment skipped: %s", exc)
+
         # Sort by confidence descending
         all_signals.sort(key=lambda s: s.confidence, reverse=True)
 
