@@ -212,7 +212,7 @@ PY
 
         # ── VIX parquet refresh (incremental 7-day) ───────────────────────────
         echo "$(date -Iseconds) Refreshing VIX parquet..." >> "$LOG_DIR/pi-cron.log"
-        python3 -m scripts.backfill_vix --days 7 >> "$LOG_DIR/pi-cron.log" 2>&1 || true
+        (cd "$PROJECT" && python3 -m scripts.backfill_vix --days 7) >> "$LOG_DIR/pi-cron.log" 2>&1 || true
 
         # ── AI overlay (log-only mode) ─────────────────────────────────────
         # Runs BEFORE the planning agent so the decision is in SQLite when
