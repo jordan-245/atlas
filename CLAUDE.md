@@ -112,7 +112,7 @@ This flag routes the call to the Claude Max subscription ($0 marginal cost). Wit
 
 ### Why this matters
 
-Anthropic identifies Claude Code callers by the exact system-prompt string. Max-subscription routing is free within the rolling 5-hour window. API-key / extra-usage calls can burn $10+/minute on a research loop.
+Pi CLI's default (no system prompt) routes to pay-per-token extra-usage billing. ANY `--system-prompt` value routes to the Claude Max subscription at $0 marginal cost. Any non-empty string works (verified April 2026); the Claude Code string is recommended as the most future-proof value. API-key / extra-usage calls can burn $10+/minute on a research loop.
 
 ### Working Python pattern
 
@@ -149,7 +149,7 @@ client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
 If `400 invalid_request_error: You're out of extra usage` appears:
 
-1. **FIRST** — grep every subprocess call for `pi` or `claude` and verify each includes `--system-prompt "You are Claude Code, Anthropic's official CLI for Claude."`. Missing this flag is the #1 cause.
+1. **FIRST** — grep every subprocess call for `pi` or `claude` and verify each includes `--system-prompt` with any non-empty value. Missing this flag entirely is the #1 cause.
 2. Only then consider: Max rolling window exhausted, `Anthropic()` client somewhere, or expired OAuth token (`pi login`).
 
 **Never** "fix" this by adding API credits — the fix is always on the auth path.
