@@ -231,7 +231,7 @@ def setup_logging(
         atexit.register(_collector.flush_to_telegram)
 
     # Suppress noisy third-party loggers
-    for noisy in ["urllib3", "peewee"]:
+    for noisy in ["urllib3", "peewee", "httpx", "httpcore"]:
         logging.getLogger(noisy).setLevel(logging.WARNING)
     # yfinance logs routine download failures (delisted tickers, 404s) at ERROR
     # level. Suppress to CRITICAL so they never appear in stderr or Telegram.
