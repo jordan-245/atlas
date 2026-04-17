@@ -15,59 +15,75 @@ export function FinanceTab() {
   const data = finance.data
   if (!data) return <Skeleton className="h-96" />
   return (
-    <div className="space-y-4 md:space-y-6">
-      <SectionBoundary title="Summary">
-        <FinSummaryStrip data={data} />
-      </SectionBoundary>
+    <div className="space-y-4 md:space-y-6 stagger">
+      <div className="animate-in">
+        <SectionBoundary title="Summary">
+          <FinSummaryStrip data={data} />
+        </SectionBoundary>
+      </div>
 
-      <SectionBoundary title="Spending Pace">
-        {data.insights?.pace_data && data.insights.pace_data.length > 0
-          ? <SpendingPaceChart
-              paceData={data.insights.pace_data}
-              paceStatus={data.insights.pace_status}
-              paceDiff={data.insights.pace_diff}
-            />
-          : null}
-      </SectionBoundary>
+      <div className="animate-in">
+        <SectionBoundary title="Spending Pace">
+          {data.insights?.pace_data && data.insights.pace_data.length > 0
+            ? <SpendingPaceChart
+                paceData={data.insights.pace_data}
+                paceStatus={data.insights.pace_status}
+                paceDiff={data.insights.pace_diff}
+              />
+            : null}
+        </SectionBoundary>
+      </div>
 
-      <SectionBoundary title="Accounts">
-        {data.accounts && data.accounts.length > 0
-          ? <BankAccountsGrid accounts={data.accounts} />
-          : null}
-      </SectionBoundary>
+      <div className="animate-in">
+        <SectionBoundary title="Accounts">
+          {data.accounts && data.accounts.length > 0
+            ? <BankAccountsGrid accounts={data.accounts} />
+            : null}
+        </SectionBoundary>
+      </div>
 
-      <SectionBoundary title="Categories">
-        {data.monthly_spending?.by_parent_category && data.monthly_spending.by_parent_category.length > 0
-          ? <SpendingBars
-              categories={data.monthly_spending.by_parent_category}
-              total={data.monthly_spending.total}
-            />
-          : null}
-      </SectionBoundary>
+      <div className="animate-in">
+        <SectionBoundary title="Categories">
+          {data.monthly_spending?.by_parent_category && data.monthly_spending.by_parent_category.length > 0
+            ? <SpendingBars
+                categories={data.monthly_spending.by_parent_category}
+                total={data.monthly_spending.total}
+              />
+            : null}
+        </SectionBoundary>
+      </div>
 
-      <SectionBoundary title="Budgets">
-        {data.insights?.account_limits && Object.keys(data.insights.account_limits).length > 0
-          ? <BudgetGrid accountLimits={data.insights.account_limits} accounts={data.accounts ?? []} />
-          : null}
-      </SectionBoundary>
+      <div className="animate-in">
+        <SectionBoundary title="Budgets">
+          {data.insights?.account_limits && Object.keys(data.insights.account_limits).length > 0
+            ? <BudgetGrid accountLimits={data.insights.account_limits} accounts={data.accounts ?? []} />
+            : null}
+        </SectionBoundary>
+      </div>
 
-      <SectionBoundary title="Monthly">
-        {data.insights?.monthly_comparison && data.insights.monthly_comparison.length > 0
-          ? <MonthlyComparison rows={data.insights.monthly_comparison} />
-          : null}
-      </SectionBoundary>
+      <div className="animate-in">
+        <SectionBoundary title="Monthly">
+          {data.insights?.monthly_comparison && data.insights.monthly_comparison.length > 0
+            ? <MonthlyComparison rows={data.insights.monthly_comparison} />
+            : null}
+        </SectionBoundary>
+      </div>
 
-      <SectionBoundary title="Recurring">
-        {data.insights?.recurring && data.insights.recurring.length > 0
-          ? <RecurringExpenses items={data.insights.recurring} />
-          : null}
-      </SectionBoundary>
+      <div className="animate-in">
+        <SectionBoundary title="Recurring">
+          {data.insights?.recurring && data.insights.recurring.length > 0
+            ? <RecurringExpenses items={data.insights.recurring} />
+            : null}
+        </SectionBoundary>
+      </div>
 
-      <SectionBoundary title="Transactions">
-        {data.recent_transactions && data.recent_transactions.length > 0
-          ? <RecentTransactions transactions={data.recent_transactions} />
-          : null}
-      </SectionBoundary>
+      <div className="animate-in">
+        <SectionBoundary title="Transactions">
+          {data.recent_transactions && data.recent_transactions.length > 0
+            ? <RecentTransactions transactions={data.recent_transactions} />
+            : null}
+        </SectionBoundary>
+      </div>
     </div>
   )
 }

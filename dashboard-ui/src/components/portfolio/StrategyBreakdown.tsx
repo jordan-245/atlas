@@ -48,10 +48,10 @@ const COLUMNS: Column<Row>[] = [
     align: 'right',
     render: (r) => {
       const ev = r.ev_per_trade
-      if (ev == null) return <span className="text-zinc-500">—</span>
-      const cls = r.ev_classification === 'positive' ? 'text-green-400'
-                : r.ev_classification === 'negative' ? 'text-red-400'
-                : 'text-zinc-400'
+      if (ev == null) return <span className="text-[var(--color-text-muted)]">—</span>
+      const cls = r.ev_classification === 'positive' ? 'text-[var(--color-positive)]'
+                : r.ev_classification === 'negative' ? 'text-[var(--color-negative)]'
+                : 'text-[var(--color-text-muted)]'
       return <span className={`font-mono ${cls}`}>{fmtSignedCcy(ev)}</span>
     },
   },

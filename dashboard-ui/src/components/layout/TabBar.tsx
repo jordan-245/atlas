@@ -1,21 +1,35 @@
+import { preloadPortfolioTab, preloadFinanceTab, preloadResearchTab } from '../../App'
+
+type TabId = 'portfolio' | 'finance' | 'research'
+
 interface TabBarProps {
-  activeTab: 'portfolio' | 'finance'
-  onChange: (tab: 'portfolio' | 'finance') => void
+  activeTab: TabId
+  onChange: (tab: TabId) => void
+}
+
+const preloaders: Record<string, () => void> = {
+  portfolio: preloadPortfolioTab,
+  finance: preloadFinanceTab,
+  research: preloadResearchTab,
 }
 
 export function TabBar({ activeTab, onChange }: TabBarProps) {
-  const tabs: Array<{ id: 'portfolio' | 'finance'; label: string }> = [
+  const tabs: Array<{ id: TabId; label: string }> = [
     { id: 'portfolio', label: 'Portfolio' },
     { id: 'finance', label: 'Finance' },
+    { id: 'research', label: 'Research' },
   ]
   return (
     <div className="flex gap-1 border-b border-[var(--color-border)]">
       {tabs.map((tab) => {
         const isActive = activeTab === tab.id
+        const preload = preloaders[tab.id]
         return (
           <button
             key={tab.id}
             onClick={() => onChange(tab.id)}
+            onMouseEnter={preload}
+            onFocus={preload}
             className={`py-3 px-6 min-h-[44px] inline-flex items-center font-medium text-sm transition-colors ${
               isActive
                 ? 'border-b-2 border-[var(--color-accent)] text-[var(--color-text)]'

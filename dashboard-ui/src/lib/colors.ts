@@ -26,10 +26,10 @@ export const REGIME_COLORS: Record<string, string> = {
 
 export function getStrategyColor(name: string | null | undefined): string {
   if (!name) return '#a1a1aa'
-  return STRATEGY_COLORS[name] ?? STRATEGY_COLORS[name.toLowerCase()] ?? '#a1a1aa'
+  return STRATEGY_COLORS[name] ?? STRATEGY_COLORS[String(name).toLowerCase()] ?? '#a1a1aa'
 }
 
 export function getRegimeColor(state: string | null | undefined): string {
   if (!state) return '#a1a1aa'
-  return REGIME_COLORS[state] ?? REGIME_COLORS[state.toLowerCase()] ?? '#a1a1aa'
+  return REGIME_COLORS[state] ?? REGIME_COLORS[String(state).toLowerCase()] ?? '#a1a1aa'
 }

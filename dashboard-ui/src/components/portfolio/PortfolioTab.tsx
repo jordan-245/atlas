@@ -38,7 +38,9 @@ function CollapsibleGroup({ label, defaultOpen = false, children }: CollapsibleG
       <summary className="flex items-center gap-3 py-2 cursor-pointer list-none select-none">
         <div className="h-px flex-1 bg-[var(--color-border)]"></div>
         <span className="text-[10px] uppercase tracking-[0.15em] text-[var(--color-text-muted)] font-semibold flex items-center gap-2">
-          <span className="transition-transform group-open:rotate-90">&#9654;</span>
+          <svg className="w-4 h-4 transition-transform duration-200 group-open:rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+        </svg>
           {label}
         </span>
         <div className="h-px flex-1 bg-[var(--color-border)]"></div>
@@ -90,33 +92,33 @@ function RegimeForecastCard({ data }: { data?: RegimeForecast }) {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 4)
   return (
-    <div className="rounded-lg border border-zinc-700 bg-zinc-900/50 p-3 text-xs">
-      <div className="text-xs uppercase tracking-wider text-zinc-400 mb-2">Regime Forecast &#xB7; 30 days</div>
+    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-xs">
+      <div className="text-xs uppercase tracking-wider text-[var(--color-text-muted)] mb-2">Regime Forecast &#xB7; 30 days</div>
       <div className="grid grid-cols-3 gap-3 mb-3 font-mono">
         <div>
-          <div className="text-zinc-500 text-[10px] uppercase">E[Return]</div>
-          <div className={(h30.expected_return ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}>
+          <div className="text-[var(--color-text-muted)] text-[10px] uppercase">E[Return]</div>
+          <div className={(h30.expected_return ?? 0) >= 0 ? 'text-[var(--color-positive)]' : 'text-[var(--color-negative)]'}>
             {((h30.expected_return ?? 0) * 100).toFixed(2)}%
           </div>
         </div>
         <div>
-          <div className="text-zinc-500 text-[10px] uppercase">Downside (5%)</div>
-          <div className="text-red-400">{((h30.var_5 ?? 0) * 100).toFixed(2)}%</div>
+          <div className="text-[var(--color-text-muted)] text-[10px] uppercase">Downside (5%)</div>
+          <div className="text-[var(--color-negative)]">{((h30.var_5 ?? 0) * 100).toFixed(2)}%</div>
         </div>
         <div>
-          <div className="text-zinc-500 text-[10px] uppercase">P(positive)</div>
-          <div className="text-zinc-200">{((h30.prob_positive ?? 0) * 100).toFixed(0)}%</div>
+          <div className="text-[var(--color-text-muted)] text-[10px] uppercase">P(positive)</div>
+          <div className="text-[var(--color-text)]">{((h30.prob_positive ?? 0) * 100).toFixed(0)}%</div>
         </div>
       </div>
-      <div className="text-zinc-500 text-[10px] uppercase mb-1">Most likely states at day 30</div>
+      <div className="text-[var(--color-text-muted)] text-[10px] uppercase mb-1">Most likely states at day 30</div>
       <div className="space-y-1">
         {stateProbs.map(([state, p]) => (
           <div key={state} className="flex items-center gap-2 font-mono text-[11px]">
-            <span className="text-zinc-400 w-44 truncate">{state}</span>
-            <div className="flex-1 bg-zinc-800 h-1.5 rounded overflow-hidden">
-              <div className="bg-blue-400 h-full" style={{ width: `${(p * 100).toFixed(0)}%` }} />
+            <span className="text-[var(--color-text-muted)] w-44 truncate">{state}</span>
+            <div className="flex-1 bg-[var(--color-surface-alt)] h-1.5 rounded overflow-hidden">
+              <div className="bg-[var(--color-accent)] h-full" style={{ width: `${(p * 100).toFixed(0)}%` }} />
             </div>
-            <span className="text-zinc-300 w-10 text-right">{(p * 100).toFixed(0)}%</span>
+            <span className="text-[var(--color-text)] w-10 text-right">{(p * 100).toFixed(0)}%</span>
           </div>
         ))}
       </div>
@@ -140,72 +142,88 @@ export function PortfolioTab() {
   void regimeCurrent
 
   return (
-    <div className="space-y-4 md:space-y-6">
+    <div className="space-y-4 md:space-y-6 stagger">
       {/* Group 1: AT-A-GLANCE */}
-      <SectionBoundary title="Summary">
-        {portfolio.data?.account
-          ? <SummaryStrip account={portfolio.data.account} positionsCount={portfolio.data.positions?.length ?? 0} />
-          : <Skeleton className="h-28" />}
-      </SectionBoundary>
+      <div className="animate-in">
+        <SectionBoundary title="Summary">
+          {portfolio.data?.account
+            ? <SummaryStrip account={portfolio.data.account} todayPnl={portfolio.data.summary?.today_pnl} positionsCount={portfolio.data.positions?.length ?? 0} />
+            : <Skeleton className="h-28" />}
+        </SectionBoundary>
+      </div>
 
-      <SectionBoundary title="Equity">
-        {portfolio.data ? <EquityChart /> : <Skeleton className="h-96" />}
-      </SectionBoundary>
+      <div className="animate-in">
+        <SectionBoundary title="Equity">
+          {portfolio.data ? <EquityChart /> : <Skeleton className="h-96" />}
+        </SectionBoundary>
+      </div>
 
       {/* Group 2: CURRENT STATE */}
-      <GroupDivider label="Current State" />
+      <div className="animate-in">
+        <GroupDivider label="Current State" />
+      </div>
 
-      <SectionBoundary title="Positions">
-        {portfolio.data?.positions
-          ? <PositionsGrid positions={portfolio.data.positions} />
-          : <Skeleton className="h-48" />}
-      </SectionBoundary>
+      <div className="animate-in">
+        <SectionBoundary title="Positions">
+          {portfolio.data?.positions
+            ? <PositionsGrid positions={portfolio.data.positions} />
+            : <Skeleton className="h-48" />}
+        </SectionBoundary>
+      </div>
 
-      <SectionBoundary title="Risk">
-        <SurvivalOddsBanner data={ruinData} />
-        {risk.data ? <RiskSection data={risk.data} /> : <Skeleton className="h-64" />}
-      </SectionBoundary>
+      <div className="animate-in">
+        <SectionBoundary title="Risk">
+          <SurvivalOddsBanner data={ruinData} />
+          {risk.data ? <RiskSection data={risk.data} /> : <Skeleton className="h-64" />}
+        </SectionBoundary>
+      </div>
 
       {/* Group 3: MARKET CONTEXT (collapsible, default open) */}
-      <CollapsibleGroup label="Market Context" defaultOpen={true}>
-        <SectionBoundary title="Regime">
-          {regimeHistory.data && transitions.data
-            ? <RegimeSection history={regimeHistory.data} transitions={transitions.data} />
-            : <Skeleton className="h-64" />}
-        </SectionBoundary>
+      <div className="animate-in">
+        <CollapsibleGroup label="Market Context" defaultOpen={true}>
+          <SectionBoundary title="Regime">
+            {regimeHistory.data && transitions.data
+              ? <RegimeSection history={regimeHistory.data} transitions={transitions.data} />
+              : <Skeleton className="h-64" />}
+          </SectionBoundary>
 
-        <RegimeForecastCard data={forecastData} />
+          <RegimeForecastCard data={forecastData} />
 
-        <SectionBoundary title="Macro">
-          {macro.data ? <MacroGauges data={macro.data} /> : <Skeleton className="h-40" />}
-        </SectionBoundary>
+          <SectionBoundary title="Macro">
+            {macro.data ? <MacroGauges data={macro.data} /> : <Skeleton className="h-40" />}
+          </SectionBoundary>
 
-        <SectionBoundary title="VIX Term Structure">
-          {vixTermStructure.data
-            ? <VixTermStructureCard data={vixTermStructure.data} />
-            : <Skeleton className="h-40" />}
-        </SectionBoundary>
-      </CollapsibleGroup>
+          <SectionBoundary title="VIX Term Structure">
+            {vixTermStructure.data
+              ? <VixTermStructureCard data={vixTermStructure.data} />
+              : <Skeleton className="h-40" />}
+          </SectionBoundary>
+        </CollapsibleGroup>
+      </div>
 
       {/* Group 4: PERFORMANCE (collapsible, default closed) */}
-      <CollapsibleGroup label="Performance" defaultOpen={false}>
-        <SectionBoundary title="Performance">
-          {portfolio.data ? <PerformanceSection data={portfolio.data} /> : <Skeleton className="h-64" />}
-        </SectionBoundary>
+      <div className="animate-in">
+        <CollapsibleGroup label="Performance" defaultOpen={false}>
+          <SectionBoundary title="Performance">
+            {portfolio.data ? <PerformanceSection data={portfolio.data} /> : <Skeleton className="h-64" />}
+          </SectionBoundary>
 
-        <SectionBoundary title="Orders">
-          {portfolio.data?.recent_orders
-            ? <OrdersTable orders={portfolio.data.recent_orders} />
-            : <Skeleton className="h-32" />}
-        </SectionBoundary>
-      </CollapsibleGroup>
+          <SectionBoundary title="Orders">
+            {portfolio.data?.recent_orders
+              ? <OrdersTable orders={portfolio.data.recent_orders} />
+              : <Skeleton className="h-32" />}
+          </SectionBoundary>
+        </CollapsibleGroup>
+      </div>
 
       {/* Group 5: SYSTEM (collapsible, default closed) */}
-      <CollapsibleGroup label="System" defaultOpen={false}>
-        <SectionBoundary title="Health">
-          {health.data ? <SystemHealth data={health.data} /> : <Skeleton className="h-40" />}
-        </SectionBoundary>
-      </CollapsibleGroup>
+      <div className="animate-in">
+        <CollapsibleGroup label="System" defaultOpen={false}>
+          <SectionBoundary title="Health">
+            {health.data ? <SystemHealth data={health.data} /> : <Skeleton className="h-40" />}
+          </SectionBoundary>
+        </CollapsibleGroup>
+      </div>
     </div>
   )
 }

@@ -1,50 +1,23 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useEquityChartData } from '../../api/queries'
 import { Skeleton } from '../layout/Skeleton'
+import { ChartTooltip } from '../shared/ChartTooltip'
 import { fmtCcy, fmtDateShort, fmtSignedPct } from '../../lib/format'
 import { useCssVars } from '../../hooks/useCssVar'
 
-// Rules applied in this file:
-//   rerender-no-inline-components  — CustomTooltip + EquityReturnBadge hoisted to module scope
-//   rerender-derived-state-no-effect — no props; data derived inside hook, not via effect
-//   async-parallel — pre-computed EquityChartData from useEquityChartData hook
-//   rendering-conditional-render   — explicit ternaries, no && short-circuit for JSX
+// Period selector options
+const PERIODS = [
+  { key: '1W', days: 7 },
+  { key: '1M', days: 30 },
+  { key: '3M', days: 90 },
+  { key: 'ALL', days: Infinity },
+] as const
 
-// ---------------------------------------------------------------------------
-// CustomTooltip — module-scoped (rerender-no-inline-components rule)
-// ---------------------------------------------------------------------------
-interface TooltipPayloadItem {
-  dataKey?: string | number
-  value?: number
-}
-
-interface CustomTooltipProps {
-  active?: boolean
-  payload?: TooltipPayloadItem[]
-  label?: string
-  portfolioColor: string
-  benchmarkColor: string
-}
-
-function CustomTooltip({ active, payload, label, portfolioColor, benchmarkColor }: CustomTooltipProps) {
-  if (!active || !payload || payload.length === 0) return null
-  const portfolio = payload.find((p) => p.dataKey === 'portfolio')?.value
-  const spy = payload.find((p) => p.dataKey === 'spy')?.value
-  // Rule: rendering-conditional-render — ternary instead of && to avoid rendering "0"
-  return (
-    <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-xs font-mono shadow-lg">
-      <div className="text-[var(--color-text-muted)] mb-1">{fmtDateShort(label)}</div>
-      {portfolio != null ? <div style={{ color: portfolioColor }}>Portfolio {fmtCcy(portfolio)}</div> : null}
-      {spy != null ? <div style={{ color: benchmarkColor }}>SPY {fmtCcy(spy)}</div> : null}
-    </div>
-  )
-}
+type PeriodKey = (typeof PERIODS)[number]['key']
 
 // ---------------------------------------------------------------------------
 // EquityReturnBadge — module-scoped (rerender-no-inline-components rule)
-// Replaces <ReturnBadge data={data} /> — receives pre-computed scalars so the
-// badge never needs to access DashboardData or call any hook.
 // ---------------------------------------------------------------------------
 interface EquityReturnBadgeProps {
   portfolioReturnPct: number
@@ -62,12 +35,32 @@ function EquityReturnBadge({ portfolioReturnPct, alphaVsSpy }: EquityReturnBadge
 }
 
 // ---------------------------------------------------------------------------
-// EquityChart — no props; fetches and derives all state via hooks
-// Rule: rerender-derived-state-no-effect — no prop drilling of DashboardData
-// Rule: async-parallel — useEquityChartData does merge + stat computation once
+// PeriodSelector — pill buttons for time range
+// ---------------------------------------------------------------------------
+function PeriodSelector({ active, onChange }: { active: PeriodKey; onChange: (k: PeriodKey) => void }) {
+  return (
+    <div className="flex gap-1">
+      {PERIODS.map(({ key }) => (
+        <button
+          key={key}
+          onClick={() => onChange(key)}
+          className={`px-2.5 py-1 rounded-full text-[10px] font-mono font-medium tracking-wide transition-colors ${
+            active === key
+              ? 'bg-[var(--color-accent)] text-white'
+              : 'bg-[var(--color-surface-alt)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
+          }`}
+        >
+          {key}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// EquityChart
 // ---------------------------------------------------------------------------
 export function EquityChart() {
-  // Rule: js-batch-dom-css — single getComputedStyle call for all 4 color vars
   const colors = useCssVars([
     '--color-series-portfolio',
     '--color-series-benchmark',
@@ -83,18 +76,36 @@ export function EquityChart() {
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768)
     check()
-    window.addEventListener('resize', check)
+    window.addEventListener('resize', check, { passive: true })
     return () => window.removeEventListener('resize', check)
   }, [])
 
+  const [period, setPeriod] = useState<PeriodKey>('ALL')
+
   const query = useEquityChartData()
-  // Rule: rendering-conditional-render — show Skeleton while data is absent
+
+  const filteredData = useMemo(() => {
+    if (!query.data?.chartData) return []
+    const all = query.data.chartData
+    const p = PERIODS.find((pp) => pp.key === period)
+    if (!p || p.days === Infinity) return all
+    return all.slice(-p.days)
+  }, [query.data?.chartData, period])
+
   if (!query.data) return <Skeleton className="h-96" />
+
+  const tooltipFormatter = (value: number, name: string) => {
+    if (name === 'Portfolio' || name === 'SPY') return fmtCcy(value)
+    return value.toLocaleString()
+  }
 
   return (
     <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5 dash-card">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-medium">Equity Curve</h3>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div className="flex items-center gap-3">
+          <h3 className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-medium">Equity Curve</h3>
+          <PeriodSelector active={period} onChange={setPeriod} />
+        </div>
         <EquityReturnBadge
           portfolioReturnPct={query.data.portfolioReturnPct}
           alphaVsSpy={query.data.alphaVsSpy}
@@ -102,10 +113,10 @@ export function EquityChart() {
       </div>
       <div className="h-[220px] md:h-[260px] lg:h-[300px]">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={query.data.chartData}>
+          <ComposedChart data={filteredData}>
             <defs>
               <linearGradient id="portfolioGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={portfolioColor || '#22c55e'} stopOpacity={0.3} />
+                <stop offset="0%" stopColor={portfolioColor || '#22c55e'} stopOpacity={0.25} />
                 <stop offset="100%" stopColor={portfolioColor || '#22c55e'} stopOpacity={0} />
               </linearGradient>
             </defs>
@@ -117,7 +128,7 @@ export function EquityChart() {
               tickLine={false}
               interval="preserveStartEnd"
               minTickGap={40}
-              tick={{ fontSize: isMobile ? 10 : 11, fill: textMuted || 'var(--color-text-muted)' }}
+              tick={{ fontSize: isMobile ? 9 : 10, fill: textMuted || 'var(--color-text-muted)' }}
             />
             <YAxis
               domain={[
@@ -127,35 +138,42 @@ export function EquityChart() {
               tickFormatter={(v) => '$' + Math.round(v as number).toLocaleString('en-US')}
               axisLine={false}
               tickLine={false}
-              tick={{ fontSize: isMobile ? 10 : 11, fill: textMuted || 'var(--color-text-muted)' }}
+              tick={{ fontSize: isMobile ? 9 : 10, fill: textMuted || 'var(--color-text-muted)' }}
               width={70}
               allowDataOverflow={false}
             />
             <Tooltip
+              cursor={{ stroke: 'var(--color-border)', strokeDasharray: '4 4' }}
               content={
-                <CustomTooltip
-                  portfolioColor={portfolioColor || '#22c55e'}
-                  benchmarkColor={benchmarkColor || '#a1a1aa'}
+                <ChartTooltip
+                  labelFormatter={(l) => fmtDateShort(l)}
+                  formatter={tooltipFormatter}
                 />
               }
             />
             <Area
               dataKey="portfolio"
+              name="Portfolio"
               stroke={portfolioColor || '#22c55e'}
               strokeWidth={2}
               fill="url(#portfolioGrad)"
               baseValue="dataMin"
               connectNulls={true}
-              isAnimationActive={false}
+              isAnimationActive={true}
+              animationDuration={1200}
+              animationEasing="ease-out"
             />
             <Line
               dataKey="spy"
+              name="SPY"
               stroke={benchmarkColor || '#a1a1aa'}
               strokeWidth={1.5}
               strokeDasharray="4 4"
               dot={false}
               connectNulls={true}
-              isAnimationActive={false}
+              isAnimationActive={true}
+              animationDuration={1200}
+              animationEasing="ease-out"
             />
           </ComposedChart>
         </ResponsiveContainer>

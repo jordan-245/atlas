@@ -26,18 +26,28 @@ function overallBadge(overall?: string) {
 function statusDot(status?: string) {
   const s = (status ?? '').toLowerCase()
   let color: string
+  let isActive = false
   if (s === 'active' || s === 'ok' || s === 'healthy' || s === 'running') {
     color = 'var(--color-green)'
+    isActive = true
   } else if (s === 'degraded' || s === 'warning') {
     color = '#f59e0b'
   } else {
     color = 'var(--color-red)'
   }
   return (
-    <span
-      className="inline-block rounded-full shrink-0 mt-0.5"
-      style={{ width: 8, height: 8, backgroundColor: color }}
-    />
+    <span className="relative inline-flex shrink-0 mt-0.5" style={{ width: 10, height: 10 }}>
+      {isActive && (
+        <span
+          className="absolute inset-0 rounded-full animate-ping opacity-40"
+          style={{ backgroundColor: color }}
+        />
+      )}
+      <span
+        className="relative inline-block rounded-full w-full h-full"
+        style={{ backgroundColor: color }}
+      />
+    </span>
   )
 }
 
@@ -45,16 +55,14 @@ function ServicesList({ services }: { services: Record<string, string> }) {
   const entries = Object.entries(services)
   if (entries.length === 0) return <EmptyState message="No data" className="py-4" />
   return (
-    <div className="space-y-2">
+    <div className="space-y-1">
       {entries.map(([name, status]) => (
-        <div key={name}>
-          <div className="flex items-start gap-2">
-            {statusDot(status)}
-            <div className="min-w-0">
-              <span className="text-sm">{name}</span>
-              <span className="text-xs text-[var(--color-text-muted)] ml-2 font-mono">{status}</span>
-            </div>
+        <div key={name} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-[var(--color-surface-alt)]/50 transition-colors">
+          {statusDot(status)}
+          <div className="min-w-0 flex-1">
+            <span className="text-sm">{name}</span>
           </div>
+          <span className="text-[10px] text-[var(--color-text-muted)] font-mono uppercase shrink-0">{status}</span>
         </div>
       ))}
     </div>
@@ -124,19 +132,24 @@ export function SystemHealth({ data }: Props) {
         <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-medium">
           SYSTEM HEALTH
         </div>
-        {overallBadge(data.overall)}
+        <div className="flex items-center gap-2">
+          {data.timestamp && (
+            <span className="text-[10px] text-[var(--color-text-muted)] font-mono">{fmtRelativeTime(data.timestamp)}</span>
+          )}
+          {overallBadge(data.overall)}
+        </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div>
-          <div className="text-[9px] uppercase tracking-wider text-[var(--color-text-muted)] mb-2">SERVICES</div>
+        <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-3">
+          <div className="text-[9px] uppercase tracking-wider text-[var(--color-text-muted)] mb-2 font-semibold">SERVICES</div>
           <ServicesList services={services} />
         </div>
-        <div>
-          <div className="text-[9px] uppercase tracking-wider text-[var(--color-text-muted)] mb-2">CRON JOBS</div>
+        <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-3">
+          <div className="text-[9px] uppercase tracking-wider text-[var(--color-text-muted)] mb-2 font-semibold">CRON JOBS</div>
           <CronJobsList jobs={cronJobs} />
         </div>
-        <div>
-          <div className="text-[9px] uppercase tracking-wider text-[var(--color-text-muted)] mb-2">DATA FRESHNESS</div>
+        <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-3">
+          <div className="text-[9px] uppercase tracking-wider text-[var(--color-text-muted)] mb-2 font-semibold">DATA FRESHNESS</div>
           <DataFreshnessList data={freshness} />
         </div>
       </div>

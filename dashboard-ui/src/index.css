@@ -16,6 +16,21 @@
   --color-series-grid: #3f3f46;
   --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.12);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.2);
+  --shadow-lg: 0 8px 25px rgba(0,0,0,0.3);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --transition-fast: 150ms ease;
+  --transition-normal: 250ms cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-slow: 400ms cubic-bezier(0.16, 1, 0.3, 1);
+  --color-positive: #22c55e;
+  --color-negative: #ef4444;
+  --color-savings: #22c55e;
+  --color-spending: #f59e0b;
+  --color-investment: #3b82f6;
+  --color-muted: #a1a1aa;
 }
 
 /* Light-mode overrides applied when <html> has class "light" */
@@ -29,6 +44,12 @@ html.light {
   --color-series-portfolio: #16a34a;
   --color-series-benchmark: #71717a;
   --color-series-grid: #e4e4e7;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.03);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.06);
+  --shadow-lg: 0 8px 25px rgba(0,0,0,0.09);
+  --color-positive: #16a34a;
+  --color-negative: #dc2626;
+  --color-muted: #52525b;
 }
 
 html, body, #root {
@@ -42,6 +63,67 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   margin: 0;
+}
+
+/* Card base */
+.dash-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--transition-normal), transform var(--transition-normal);
+}
+.dash-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+/* Animations */
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-in {
+  animation: fadeSlideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Stagger delays for children */
+.stagger > :nth-child(1) { animation-delay: 0ms; }
+.stagger > :nth-child(2) { animation-delay: 50ms; }
+.stagger > :nth-child(3) { animation-delay: 100ms; }
+.stagger > :nth-child(4) { animation-delay: 150ms; }
+.stagger > :nth-child(5) { animation-delay: 200ms; }
+.stagger > :nth-child(6) { animation-delay: 250ms; }
+.stagger > :nth-child(7) { animation-delay: 300ms; }
+.stagger > :nth-child(8) { animation-delay: 350ms; }
+.stagger > :nth-child(9) { animation-delay: 400ms; }
+.stagger > :nth-child(10) { animation-delay: 450ms; }
+.stagger > :nth-child(11) { animation-delay: 500ms; }
+.stagger > :nth-child(12) { animation-delay: 550ms; }
+
+.skeleton {
+  background: linear-gradient(90deg, var(--color-surface) 25%, var(--color-border) 50%, var(--color-surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+
+/* Section header */
+.section-header {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-muted);
+  padding-left: 0.75rem;
+  border-left: 3px solid var(--color-accent);
+  margin-bottom: 0.75rem;
 }
 
 /* Rule: rendering-content-visibility — defer offscreen layout/paint for long lists */
@@ -66,6 +148,8 @@ body {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+  .animate-in, .skeleton { animation: none !important; }
+  .dash-card { transition: none !important; }
 }
 
 @layer base {

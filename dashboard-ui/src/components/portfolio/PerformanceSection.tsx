@@ -13,7 +13,7 @@ export function PerformanceSection({ data }: Props) {
     <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5 space-y-6 dash-card">
       <div>
         <div className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-text-muted)] font-semibold mb-3">PERFORMANCE</div>
-        <div className="grid grid-cols-6 lg:grid-cols-3 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <StatCard label="TOTAL P&L" value={<span className={pnlClass(summary?.total_pnl)}>{fmtSignedCcy(summary?.total_pnl)}</span>} sub={<span className={pnlClass(summary?.total_pnl_pct)}>{fmtSignedPct(summary?.total_pnl_pct)}</span>} />
           <StatCard label="WIN RATE" value={fmtPct(overall?.win_rate)} sub={`${overall?.trades ?? 0} trades`} />
           <StatCard label="PROFIT FACTOR" value={overall?.profit_factor != null ? overall.profit_factor.toFixed(2) : '\u2014'} />

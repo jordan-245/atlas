@@ -18,6 +18,10 @@ const FinanceTab = lazy(() =>
 // request before the user clicks so the chunk is already warm).
 export const preloadPortfolioTab = () => import('./components/portfolio/PortfolioTab')
 export const preloadFinanceTab = () => import('./components/finance/FinanceTab')
+const ResearchTab = lazy(() =>
+  import('./components/research/ResearchTab').then((m) => ({ default: m.ResearchTab })),
+)
+export const preloadResearchTab = () => import('./components/research/ResearchTab')
 
 // Skeleton matching the tab content shape — prevents layout shift during
 // code-split load (async-suspense-boundaries rule).
@@ -32,7 +36,7 @@ function TabFallback() {
 
 export default function App() {
   useTheme()
-  const [activeTab, setActiveTab] = useState<'portfolio' | 'finance'>('portfolio')
+  const [activeTab, setActiveTab] = useState<'portfolio' | 'finance' | 'research'>('portfolio')
 
   return (
     <div className="min-h-screen bg-[var(--color-bg)] text-[var(--color-text)] overflow-x-hidden">
@@ -42,7 +46,9 @@ export default function App() {
         <main className="py-4 md:py-6">
           <ErrorBoundary>
             <Suspense fallback={<TabFallback />}>
-              {activeTab === 'portfolio' ? <PortfolioTab /> : <FinanceTab />}
+              <div key={activeTab} className="animate-in">
+                {activeTab === 'portfolio' ? <PortfolioTab /> : activeTab === 'finance' ? <FinanceTab /> : <ResearchTab />}
+              </div>
             </Suspense>
           </ErrorBoundary>
         </main>

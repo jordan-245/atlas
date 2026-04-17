@@ -7,13 +7,15 @@ import { fmtCcy, fmtNum, fmtRelativeTime } from '../../lib/format'
 interface Props { orders: Order[] }
 
 function sideBadge(side?: 'buy' | 'sell') {
-  if (!side) return <span className="font-mono text-xs text-[var(--color-text-muted)]">\u2014</span>
+  if (!side) return <span className="font-mono text-xs text-[var(--color-text-muted)]">{'\u2014'}</span>
+  const dotColor = side === 'buy' ? 'var(--color-green)' : 'var(--color-red)'
   const cls =
     side === 'buy'
       ? 'bg-[var(--color-green)]/20 text-[var(--color-green)]'
       : 'bg-[var(--color-red)]/20 text-[var(--color-red)]'
   return (
-    <span className={`rounded-md px-2 py-0.5 text-[10px] font-mono ${cls}`}>
+    <span className={`inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[10px] font-mono ${cls}`}>
+      <span className="inline-block rounded-full" style={{ width: 6, height: 6, backgroundColor: dotColor }} />
       {side.toUpperCase()}
     </span>
   )
@@ -65,7 +67,7 @@ const COLUMNS: Column<Order>[] = [
     align: 'right',
     className: 'hidden sm:table-cell',
     render: (o) => (
-      <span className="font-mono">{fmtNum(o.filled_qty ?? o.qty ?? o.requested_qty, 0)}</span>
+      <span className="font-mono tabular-nums">{fmtNum(o.filled_qty ?? o.qty ?? o.requested_qty, 0)}</span>
     ),
   },
   {
@@ -73,7 +75,7 @@ const COLUMNS: Column<Order>[] = [
     label: 'Price',
     align: 'right',
     render: (o) => (
-      <span className="font-mono">
+      <span className="font-mono tabular-nums">
         {fmtCcy(o.fill_price ?? o.filled_price ?? o.limit_price ?? o.requested_price)}
       </span>
     ),

@@ -29,4 +29,13 @@ export const qk = {
   signals: {
     vixTermStructure: () => [...qk.all, 'signals', 'vix-term-structure'] as const,
   },
+  research: {
+    all: () => [...qk.all, 'research'] as const,
+    summary: () => [...qk.research.all(), 'summary'] as const,
+    strategies: () => [...qk.research.all(), 'strategies'] as const,
+    timeline: (days: number) => [...qk.research.all(), 'timeline', days] as const,
+    experiments: (params: Record<string, unknown>) => [...qk.research.all(), 'experiments', params] as const,
+    brain: () => [...qk.research.all(), 'brain'] as const,
+    discoveries: () => [...qk.research.all(), 'discoveries'] as const,
+  },
 } as const

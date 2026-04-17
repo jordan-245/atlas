@@ -6,46 +6,52 @@ interface Props {
   spent: number
 }
 
-function barColor(pct: number, over: boolean): string {
+function ringColor(pct: number, over: boolean): string {
   if (over) return 'var(--color-red)'
-  if (pct > 80) return '#f59e0b'
+  if (pct > 85) return 'var(--color-red)'
+  if (pct > 60) return '#f59e0b'
   return 'var(--color-green)'
-}
-
-function pctColor(pct: number, over: boolean): string {
-  if (over) return 'text-[var(--color-red)]'
-  if (pct > 80) return 'text-[#f59e0b]'
-  return 'text-[var(--color-text-muted)]'
 }
 
 export function BudgetCard({ name, limit, spent }: Props) {
   const pct = Math.min(100, (spent / limit) * 100)
   const remaining = limit - spent
   const over = spent > limit
+  const color = ringColor(pct, over)
+
+  const radius = 32
+  const circumference = 2 * Math.PI * radius
+  const offset = circumference * (1 - pct / 100)
 
   return (
-    <div className="bg-[var(--color-surface)] rounded-xl p-4 border border-[var(--color-border)]">
-      <div className="flex items-center justify-between">
-        <div className="font-mono font-semibold text-sm truncate">{name}</div>
-        <div className={`font-mono text-xs ml-2 shrink-0 ${pctColor(pct, over)}`}>
+    <div className="bg-[var(--color-surface)] rounded-xl p-4 border border-[var(--color-border)] flex items-center gap-4">
+      <svg width={80} height={80} className="shrink-0">
+        <circle cx={40} cy={40} r={radius} fill="none" stroke="var(--color-border)" strokeWidth={6} />
+        <circle cx={40} cy={40} r={radius} fill="none" stroke={color} strokeWidth={6}
+          strokeDasharray={circumference} strokeDashoffset={offset}
+          strokeLinecap="round" transform="rotate(-90 40 40)"
+          style={{ transition: 'stroke-dashoffset 0.8s cubic-bezier(0.16,1,0.3,1)' }} />
+        <text x={40} y={40} textAnchor="middle" dominantBaseline="central"
+          className="fill-[var(--color-text)] text-xs font-mono font-semibold" style={{ fontSize: 13 }}>
           {pct.toFixed(0)}%
-        </div>
-      </div>
-      <div className="h-2 bg-[var(--color-surface-alt)] rounded-full mt-2 overflow-hidden">
-        <div
-          className="h-full rounded-full"
-          style={{ width: pct + '%', backgroundColor: barColor(pct, over) }}
-        />
-      </div>
-      <div className="flex justify-between mt-3 text-xs font-mono">
-        <div>
-          <div className="text-[var(--color-text-muted)] text-[10px] uppercase">SPENT</div>
-          <div>{fmtCcy(spent)}</div>
-        </div>
-        <div className="text-right">
-          <div className="text-[var(--color-text-muted)] text-[10px] uppercase">{over ? 'OVER' : 'LEFT'}</div>
-          <div className={over ? 'text-[var(--color-red)]' : 'text-[var(--color-green)]'}>
-            {fmtCcy(Math.abs(remaining))}
+        </text>
+      </svg>
+      <div className="flex-1 min-w-0">
+        <div className="font-mono font-semibold text-sm truncate">{name}</div>
+        <div className="mt-2 space-y-1">
+          <div className="flex justify-between text-xs font-mono">
+            <span className="text-[var(--color-text-muted)]">Spent</span>
+            <span>{fmtCcy(spent)}</span>
+          </div>
+          <div className="flex justify-between text-xs font-mono">
+            <span className="text-[var(--color-text-muted)]">{over ? 'Over' : 'Left'}</span>
+            <span className={`font-semibold ${over ? 'text-[var(--color-red)]' : 'text-[var(--color-green)]'}`}>
+              {fmtCcy(Math.abs(remaining))}
+            </span>
+          </div>
+          <div className="flex justify-between text-xs font-mono">
+            <span className="text-[var(--color-text-muted)]">Budget</span>
+            <span className="text-[var(--color-text-muted)]">{fmtCcy(limit)}</span>
           </div>
         </div>
       </div>
