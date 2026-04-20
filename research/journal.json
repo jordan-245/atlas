@@ -8369,5 +8369,1960 @@
     "promoted": false,
     "runtime_s": 6.2,
     "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_002844",
+    "timestamp": "2026-04-17T14:28:44.643935+00:00",
+    "market": "commodity_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "tighter stops - cut losers faster",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.7912,
+      "cagr_pct": 14.571,
+      "max_drawdown_pct": 14.5139,
+      "total_trades": 471,
+      "profit_factor": 1.4328
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 tighter stops - cut losers faster"
+    ],
+    "promoted": false,
+    "runtime_s": 20.8,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_003310",
+    "timestamp": "2026-04-17T14:33:10.605259+00:00",
+    "market": "commodity_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "shorter momentum lookback",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.7599,
+      "cagr_pct": 11.8856,
+      "max_drawdown_pct": 12.6378,
+      "total_trades": 336,
+      "profit_factor": 1.5614
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 shorter momentum lookback"
+    ],
+    "promoted": false,
+    "runtime_s": 21.3,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_003331",
+    "timestamp": "2026-04-17T14:33:31.964061+00:00",
+    "market": "commodity_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "lookback 12",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.8335,
+      "cagr_pct": 12.5477,
+      "max_drawdown_pct": 13.782,
+      "total_trades": 355,
+      "profit_factor": 1.5382
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 lookback 12"
+    ],
+    "promoted": false,
+    "runtime_s": 21.3,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_003414",
+    "timestamp": "2026-04-17T14:34:14.235051+00:00",
+    "market": "commodity_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "extended lookback for commodity trends",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.9587,
+      "cagr_pct": 14.3529,
+      "max_drawdown_pct": 11.5497,
+      "total_trades": 351,
+      "profit_factor": 1.7331
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 extended lookback for commodity trends"
+    ],
+    "promoted": false,
+    "runtime_s": 21.5,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_003555",
+    "timestamp": "2026-04-17T14:35:55.816684+00:00",
+    "market": "commodity_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "tight stops with extended lookback",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.7912,
+      "cagr_pct": 14.571,
+      "max_drawdown_pct": 14.5139,
+      "total_trades": 471,
+      "profit_factor": 1.4328
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 tight stops with extended lookback"
+    ],
+    "promoted": false,
+    "runtime_s": 20.6,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_003900",
+    "timestamp": "2026-04-17T14:39:00.124712+00:00",
+    "market": "commodity_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "slower trend filter",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.8142,
+      "cagr_pct": 14.6965,
+      "max_drawdown_pct": 16.3436,
+      "total_trades": 462,
+      "profit_factor": 1.4508
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 slower trend filter"
+    ],
+    "promoted": false,
+    "runtime_s": 20.5,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_003922",
+    "timestamp": "2026-04-17T14:39:22.248786+00:00",
+    "market": "commodity_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "very slow trend filter - fewer false signals",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.9232,
+      "cagr_pct": 16.5764,
+      "max_drawdown_pct": 15.6594,
+      "total_trades": 479,
+      "profit_factor": 1.4847
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 very slow trend filter - fewer false signals"
+    ],
+    "promoted": false,
+    "runtime_s": 22.1,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_004234",
+    "timestamp": "2026-04-17T14:42:34.755790+00:00",
+    "market": "commodity_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "atr_stop_mult: confirmed win",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.7912,
+      "cagr_pct": 14.571,
+      "max_drawdown_pct": 14.5139,
+      "total_trades": 471,
+      "profit_factor": 1.4328
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 atr_stop_mult: confirmed win"
+    ],
+    "promoted": false,
+    "runtime_s": 20.6,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_004255",
+    "timestamp": "2026-04-17T14:42:55.069309+00:00",
+    "market": "commodity_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "lookback_days=25 on better stop base",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 1.0707,
+      "cagr_pct": 18.1823,
+      "max_drawdown_pct": 19.3762,
+      "total_trades": 515,
+      "profit_factor": 1.6127
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 lookback_days=25 on better stop base"
+    ],
+    "promoted": false,
+    "runtime_s": 20.3,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_004358",
+    "timestamp": "2026-04-17T14:43:58.345486+00:00",
+    "market": "commodity_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "trend_ma=30 on optimized base",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 1.0923,
+      "cagr_pct": 18.3363,
+      "max_drawdown_pct": 19.5126,
+      "total_trades": 500,
+      "profit_factor": 1.6479
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 trend_ma=30 on optimized base"
+    ],
+    "promoted": false,
+    "runtime_s": 19.7,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_010032",
+    "timestamp": "2026-04-17T15:00:32.549244+00:00",
+    "market": "sector_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "zscore_entry: -1.8 \u2192 -1.35",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.7576,
+      "cagr_pct": 10.8194,
+      "max_drawdown_pct": 7.823,
+      "total_trades": 50,
+      "profit_factor": 2.4073
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 zscore_entry: -1.8 \u2192 -1.35"
+    ],
+    "promoted": false,
+    "runtime_s": 5.7,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_010126",
+    "timestamp": "2026-04-17T15:01:26.982760+00:00",
+    "market": "sector_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "rsi_oversold: 52 \u2192 39",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.8094,
+      "cagr_pct": 11.237,
+      "max_drawdown_pct": 7.823,
+      "total_trades": 49,
+      "profit_factor": 2.5587
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 rsi_oversold: 52 \u2192 39"
+    ],
+    "promoted": false,
+    "runtime_s": 5.3,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_010220",
+    "timestamp": "2026-04-17T15:02:20.379658+00:00",
+    "market": "sector_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "atr_stop_mult: 1.35 \u2192 1.22",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.8498,
+      "cagr_pct": 11.6807,
+      "max_drawdown_pct": 7.628,
+      "total_trades": 50,
+      "profit_factor": 2.5927
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 atr_stop_mult: 1.35 \u2192 1.22"
+    ],
+    "promoted": false,
+    "runtime_s": 5.6,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_010251",
+    "timestamp": "2026-04-17T15:02:51.426086+00:00",
+    "market": "sector_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "profit_target_atr_mult: 2.5 \u2192 2.75",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.8981,
+      "cagr_pct": 12.1867,
+      "max_drawdown_pct": 7.4685,
+      "total_trades": 50,
+      "profit_factor": 2.6551
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 profit_target_atr_mult: 2.5 \u2192 2.75"
+    ],
+    "promoted": false,
+    "runtime_s": 5.7,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_011517",
+    "timestamp": "2026-04-17T15:15:17.357633+00:00",
+    "market": "sector_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "atr_period: 20 \u2192 25",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.6024,
+      "cagr_pct": 9.5063,
+      "max_drawdown_pct": 6.3079,
+      "total_trades": 46,
+      "profit_factor": 2.2005
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 atr_period: 20 \u2192 25"
+    ],
+    "promoted": false,
+    "runtime_s": 5.4,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_011537",
+    "timestamp": "2026-04-17T15:15:37.202442+00:00",
+    "market": "sector_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "trend_ma_period: 20 \u2192 15",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.6292,
+      "cagr_pct": 9.7135,
+      "max_drawdown_pct": 6.3079,
+      "total_trades": 45,
+      "profit_factor": 2.2652
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 trend_ma_period: 20 \u2192 15"
+    ],
+    "promoted": false,
+    "runtime_s": 5.3,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_011548",
+    "timestamp": "2026-04-17T15:15:48.228728+00:00",
+    "market": "sector_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "trend_ma_period: 20 \u2192 25",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.6694,
+      "cagr_pct": 9.9947,
+      "max_drawdown_pct": 6.2244,
+      "total_trades": 45,
+      "profit_factor": 2.342
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 trend_ma_period: 20 \u2192 25"
+    ],
+    "promoted": false,
+    "runtime_s": 5.7,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_020024",
+    "timestamp": "2026-04-17T16:00:24.790006+00:00",
+    "market": "gold_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "zscore_entry: -1.8 \u2192 -1.35",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.7576,
+      "cagr_pct": 10.8194,
+      "max_drawdown_pct": 7.823,
+      "total_trades": 50,
+      "profit_factor": 2.4073
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 zscore_entry: -1.8 \u2192 -1.35"
+    ],
+    "promoted": false,
+    "runtime_s": 3.9,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_020108",
+    "timestamp": "2026-04-17T16:01:08.230894+00:00",
+    "market": "gold_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "rsi_oversold: 52 \u2192 39",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.8094,
+      "cagr_pct": 11.237,
+      "max_drawdown_pct": 7.823,
+      "total_trades": 49,
+      "profit_factor": 2.5587
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 rsi_oversold: 52 \u2192 39"
+    ],
+    "promoted": false,
+    "runtime_s": 3.8,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_020135",
+    "timestamp": "2026-04-17T16:01:35.102267+00:00",
+    "market": "gold_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "atr_stop_mult: 1.35 \u2192 1.22",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.8498,
+      "cagr_pct": 11.6807,
+      "max_drawdown_pct": 7.628,
+      "total_trades": 50,
+      "profit_factor": 2.5927
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 atr_stop_mult: 1.35 \u2192 1.22"
+    ],
+    "promoted": false,
+    "runtime_s": 3.4,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_020950",
+    "timestamp": "2026-04-17T16:09:50.233619+00:00",
+    "market": "gold_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "atr_period: 20 \u2192 25",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.6024,
+      "cagr_pct": 9.5063,
+      "max_drawdown_pct": 6.3079,
+      "total_trades": 46,
+      "profit_factor": 2.2005
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 atr_period: 20 \u2192 25"
+    ],
+    "promoted": false,
+    "runtime_s": 3.8,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_021004",
+    "timestamp": "2026-04-17T16:10:04.167750+00:00",
+    "market": "gold_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "trend_ma_period: 20 \u2192 15",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.6292,
+      "cagr_pct": 9.7135,
+      "max_drawdown_pct": 6.3079,
+      "total_trades": 45,
+      "profit_factor": 2.2652
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 trend_ma_period: 20 \u2192 15"
+    ],
+    "promoted": false,
+    "runtime_s": 4.8,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_021011",
+    "timestamp": "2026-04-17T16:10:11.032708+00:00",
+    "market": "gold_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "trend_ma_period: 20 \u2192 25",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.6694,
+      "cagr_pct": 9.9947,
+      "max_drawdown_pct": 6.2244,
+      "total_trades": 45,
+      "profit_factor": 2.342
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 trend_ma_period: 20 \u2192 25"
+    ],
+    "promoted": false,
+    "runtime_s": 3.6,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_030025",
+    "timestamp": "2026-04-17T17:00:25.683375+00:00",
+    "market": "treasury_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "zscore_entry: -1.8 \u2192 -1.35",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.7576,
+      "cagr_pct": 10.8194,
+      "max_drawdown_pct": 7.823,
+      "total_trades": 50,
+      "profit_factor": 2.4073
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 zscore_entry: -1.8 \u2192 -1.35"
+    ],
+    "promoted": false,
+    "runtime_s": 4.0,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_030116",
+    "timestamp": "2026-04-17T17:01:16.427895+00:00",
+    "market": "treasury_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "rsi_oversold: 52 \u2192 39",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.8094,
+      "cagr_pct": 11.237,
+      "max_drawdown_pct": 7.823,
+      "total_trades": 49,
+      "profit_factor": 2.5587
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 rsi_oversold: 52 \u2192 39"
+    ],
+    "promoted": false,
+    "runtime_s": 4.1,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_030143",
+    "timestamp": "2026-04-17T17:01:43.154906+00:00",
+    "market": "treasury_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "atr_stop_mult: 1.35 \u2192 1.22",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.8498,
+      "cagr_pct": 11.6807,
+      "max_drawdown_pct": 7.628,
+      "total_trades": 50,
+      "profit_factor": 2.5927
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 atr_stop_mult: 1.35 \u2192 1.22"
+    ],
+    "promoted": false,
+    "runtime_s": 3.8,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_030204",
+    "timestamp": "2026-04-17T17:02:04.515995+00:00",
+    "market": "treasury_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "profit_target_atr_mult: 2.5 \u2192 2.75",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.8981,
+      "cagr_pct": 12.1867,
+      "max_drawdown_pct": 7.4685,
+      "total_trades": 50,
+      "profit_factor": 2.6551
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 profit_target_atr_mult: 2.5 \u2192 2.75"
+    ],
+    "promoted": false,
+    "runtime_s": 4.3,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_031053",
+    "timestamp": "2026-04-17T17:10:53.745471+00:00",
+    "market": "treasury_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "atr_period: 20 \u2192 25",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.6024,
+      "cagr_pct": 9.5063,
+      "max_drawdown_pct": 6.3079,
+      "total_trades": 46,
+      "profit_factor": 2.2005
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 atr_period: 20 \u2192 25"
+    ],
+    "promoted": false,
+    "runtime_s": 3.7,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_031108",
+    "timestamp": "2026-04-17T17:11:08.226927+00:00",
+    "market": "treasury_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "trend_ma_period: 20 \u2192 15",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.6292,
+      "cagr_pct": 9.7135,
+      "max_drawdown_pct": 6.3079,
+      "total_trades": 45,
+      "profit_factor": 2.2652
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 trend_ma_period: 20 \u2192 15"
+    ],
+    "promoted": false,
+    "runtime_s": 4.0,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_031115",
+    "timestamp": "2026-04-17T17:11:15.555050+00:00",
+    "market": "treasury_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "trend_ma_period: 20 \u2192 25",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.6694,
+      "cagr_pct": 9.9947,
+      "max_drawdown_pct": 6.2244,
+      "total_trades": 45,
+      "profit_factor": 2.342
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 trend_ma_period: 20 \u2192 25"
+    ],
+    "promoted": false,
+    "runtime_s": 3.9,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_040028",
+    "timestamp": "2026-04-17T18:00:28.419478+00:00",
+    "market": "defensive_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "zscore_lookback: 38 \u2192 42",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.7594,
+      "cagr_pct": 10.7207,
+      "max_drawdown_pct": 6.4122,
+      "total_trades": 47,
+      "profit_factor": 2.5863
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 zscore_lookback: 38 \u2192 42"
+    ],
+    "promoted": false,
+    "runtime_s": 4.0,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_040048",
+    "timestamp": "2026-04-17T18:00:48.206507+00:00",
+    "market": "defensive_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "zscore_lookback: 38 \u2192 28",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.7738,
+      "cagr_pct": 10.9674,
+      "max_drawdown_pct": 7.913,
+      "total_trades": 48,
+      "profit_factor": 2.5814
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 zscore_lookback: 38 \u2192 28"
+    ],
+    "promoted": false,
+    "runtime_s": 4.2,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_040056",
+    "timestamp": "2026-04-17T18:00:56.228563+00:00",
+    "market": "defensive_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "zscore_lookback: 38 \u2192 34",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.9507,
+      "cagr_pct": 12.4289,
+      "max_drawdown_pct": 5.9053,
+      "total_trades": 48,
+      "profit_factor": 2.8642
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 zscore_lookback: 38 \u2192 34"
+    ],
+    "promoted": false,
+    "runtime_s": 4.2,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_040145",
+    "timestamp": "2026-04-17T18:01:45.778072+00:00",
+    "market": "defensive_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "atr_stop_mult: 1.35 \u2192 1.01",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.9803,
+      "cagr_pct": 12.8598,
+      "max_drawdown_pct": 6.5318,
+      "total_trades": 49,
+      "profit_factor": 2.7664
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 atr_stop_mult: 1.35 \u2192 1.01"
+    ],
+    "promoted": false,
+    "runtime_s": 4.3,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_040201",
+    "timestamp": "2026-04-17T18:02:01.236195+00:00",
+    "market": "defensive_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "profit_target_atr_mult: 2.5 \u2192 2.75",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 1.002,
+      "cagr_pct": 13.038,
+      "max_drawdown_pct": 6.5004,
+      "total_trades": 49,
+      "profit_factor": 2.7891
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 profit_target_atr_mult: 2.5 \u2192 2.75"
+    ],
+    "promoted": false,
+    "runtime_s": 4.5,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_041056",
+    "timestamp": "2026-04-17T18:10:56.401650+00:00",
+    "market": "defensive_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "atr_period: 20 \u2192 25",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.6024,
+      "cagr_pct": 9.5063,
+      "max_drawdown_pct": 6.3079,
+      "total_trades": 46,
+      "profit_factor": 2.2005
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 atr_period: 20 \u2192 25"
+    ],
+    "promoted": false,
+    "runtime_s": 4.0,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_041111",
+    "timestamp": "2026-04-17T18:11:11.617345+00:00",
+    "market": "defensive_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "trend_ma_period: 20 \u2192 15",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.6292,
+      "cagr_pct": 9.7135,
+      "max_drawdown_pct": 6.3079,
+      "total_trades": 45,
+      "profit_factor": 2.2652
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 trend_ma_period: 20 \u2192 15"
+    ],
+    "promoted": false,
+    "runtime_s": 4.3,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_041119",
+    "timestamp": "2026-04-17T18:11:19.158137+00:00",
+    "market": "defensive_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "trend_ma_period: 20 \u2192 25",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.6694,
+      "cagr_pct": 9.9947,
+      "max_drawdown_pct": 6.2244,
+      "total_trades": 45,
+      "profit_factor": 2.342
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 trend_ma_period: 20 \u2192 25"
+    ],
+    "promoted": false,
+    "runtime_s": 4.0,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_050136",
+    "timestamp": "2026-04-17T19:01:36.665815+00:00",
+    "market": "crypto",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "zscore_lookback: 38 \u2192 42",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": -0.0184,
+      "cagr_pct": 5.3716,
+      "max_drawdown_pct": 6.1997,
+      "total_trades": 25,
+      "profit_factor": 2.0716
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 zscore_lookback: 38 \u2192 42"
+    ],
+    "promoted": false,
+    "runtime_s": 5.1,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260418_050210",
+    "timestamp": "2026-04-17T19:02:10.472513+00:00",
+    "market": "crypto",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "atr_stop_mult: 1.35 \u2192 1.01",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": -0.0058,
+      "cagr_pct": 5.5932,
+      "max_drawdown_pct": 7.5765,
+      "total_trades": 27,
+      "profit_factor": 1.9066
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 atr_stop_mult: 1.35 \u2192 1.01"
+    ],
+    "promoted": false,
+    "runtime_s": 4.8,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260419_010032",
+    "timestamp": "2026-04-18T15:00:32.114267+00:00",
+    "market": "sector_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "zscore_entry: -1.8 \u2192 -1.35",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.7576,
+      "cagr_pct": 10.8194,
+      "max_drawdown_pct": 7.823,
+      "total_trades": 50,
+      "profit_factor": 2.4148
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 zscore_entry: -1.8 \u2192 -1.35"
+    ],
+    "promoted": false,
+    "runtime_s": 5.8,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260419_010126",
+    "timestamp": "2026-04-18T15:01:26.638934+00:00",
+    "market": "sector_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "rsi_oversold: 52 \u2192 39",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.8094,
+      "cagr_pct": 11.237,
+      "max_drawdown_pct": 7.823,
+      "total_trades": 49,
+      "profit_factor": 2.5667
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 rsi_oversold: 52 \u2192 39"
+    ],
+    "promoted": false,
+    "runtime_s": 5.3,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260419_010219",
+    "timestamp": "2026-04-18T15:02:19.773413+00:00",
+    "market": "sector_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "atr_stop_mult: 1.35 \u2192 1.22",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.8498,
+      "cagr_pct": 11.6807,
+      "max_drawdown_pct": 7.628,
+      "total_trades": 50,
+      "profit_factor": 2.6016
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 atr_stop_mult: 1.35 \u2192 1.22"
+    ],
+    "promoted": false,
+    "runtime_s": 5.2,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260419_010249",
+    "timestamp": "2026-04-18T15:02:49.825304+00:00",
+    "market": "sector_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "profit_target_atr_mult: 2.5 \u2192 2.75",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.8981,
+      "cagr_pct": 12.1867,
+      "max_drawdown_pct": 7.4685,
+      "total_trades": 50,
+      "profit_factor": 2.664
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 profit_target_atr_mult: 2.5 \u2192 2.75"
+    ],
+    "promoted": false,
+    "runtime_s": 5.4,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260419_020024",
+    "timestamp": "2026-04-18T16:00:24.685661+00:00",
+    "market": "gold_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "zscore_entry: -1.8 \u2192 -1.35",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.7576,
+      "cagr_pct": 10.8194,
+      "max_drawdown_pct": 7.823,
+      "total_trades": 50,
+      "profit_factor": 2.4148
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 zscore_entry: -1.8 \u2192 -1.35"
+    ],
+    "promoted": false,
+    "runtime_s": 4.0,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260419_020106",
+    "timestamp": "2026-04-18T16:01:06.164769+00:00",
+    "market": "gold_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "rsi_oversold: 52 \u2192 39",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.8094,
+      "cagr_pct": 11.237,
+      "max_drawdown_pct": 7.823,
+      "total_trades": 49,
+      "profit_factor": 2.5667
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 rsi_oversold: 52 \u2192 39"
+    ],
+    "promoted": false,
+    "runtime_s": 3.7,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260419_020132",
+    "timestamp": "2026-04-18T16:01:32.149240+00:00",
+    "market": "gold_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "atr_stop_mult: 1.35 \u2192 1.22",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.8498,
+      "cagr_pct": 11.6807,
+      "max_drawdown_pct": 7.628,
+      "total_trades": 50,
+      "profit_factor": 2.6016
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 atr_stop_mult: 1.35 \u2192 1.22"
+    ],
+    "promoted": false,
+    "runtime_s": 3.4,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260419_030026",
+    "timestamp": "2026-04-18T17:00:26.177942+00:00",
+    "market": "treasury_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "zscore_entry: -1.8 \u2192 -1.35",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.7576,
+      "cagr_pct": 10.8194,
+      "max_drawdown_pct": 7.823,
+      "total_trades": 50,
+      "profit_factor": 2.4148
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 zscore_entry: -1.8 \u2192 -1.35"
+    ],
+    "promoted": false,
+    "runtime_s": 4.3,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260419_030117",
+    "timestamp": "2026-04-18T17:01:17.177060+00:00",
+    "market": "treasury_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "rsi_oversold: 52 \u2192 39",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.8094,
+      "cagr_pct": 11.237,
+      "max_drawdown_pct": 7.823,
+      "total_trades": 49,
+      "profit_factor": 2.5667
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 rsi_oversold: 52 \u2192 39"
+    ],
+    "promoted": false,
+    "runtime_s": 3.7,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260419_030142",
+    "timestamp": "2026-04-18T17:01:42.103227+00:00",
+    "market": "treasury_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "atr_stop_mult: 1.35 \u2192 1.22",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.8498,
+      "cagr_pct": 11.6807,
+      "max_drawdown_pct": 7.628,
+      "total_trades": 50,
+      "profit_factor": 2.6016
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 atr_stop_mult: 1.35 \u2192 1.22"
+    ],
+    "promoted": false,
+    "runtime_s": 3.8,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260419_030203",
+    "timestamp": "2026-04-18T17:02:03.534775+00:00",
+    "market": "treasury_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "profit_target_atr_mult: 2.5 \u2192 2.75",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.8981,
+      "cagr_pct": 12.1867,
+      "max_drawdown_pct": 7.4685,
+      "total_trades": 50,
+      "profit_factor": 2.664
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 profit_target_atr_mult: 2.5 \u2192 2.75"
+    ],
+    "promoted": false,
+    "runtime_s": 4.4,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260419_040029",
+    "timestamp": "2026-04-18T18:00:29.321564+00:00",
+    "market": "defensive_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "zscore_lookback: 38 \u2192 42",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.7594,
+      "cagr_pct": 10.7207,
+      "max_drawdown_pct": 6.4122,
+      "total_trades": 47,
+      "profit_factor": 2.5948
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 zscore_lookback: 38 \u2192 42"
+    ],
+    "promoted": false,
+    "runtime_s": 4.1,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260419_040049",
+    "timestamp": "2026-04-18T18:00:49.125693+00:00",
+    "market": "defensive_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "zscore_lookback: 38 \u2192 28",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.7738,
+      "cagr_pct": 10.9674,
+      "max_drawdown_pct": 7.913,
+      "total_trades": 48,
+      "profit_factor": 2.5897
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 zscore_lookback: 38 \u2192 28"
+    ],
+    "promoted": false,
+    "runtime_s": 4.3,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260419_040056",
+    "timestamp": "2026-04-18T18:00:56.965284+00:00",
+    "market": "defensive_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "zscore_lookback: 38 \u2192 34",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.9507,
+      "cagr_pct": 12.4289,
+      "max_drawdown_pct": 5.9053,
+      "total_trades": 48,
+      "profit_factor": 2.8741
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 zscore_lookback: 38 \u2192 34"
+    ],
+    "promoted": false,
+    "runtime_s": 4.2,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260419_040146",
+    "timestamp": "2026-04-18T18:01:46.940822+00:00",
+    "market": "defensive_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "atr_stop_mult: 1.35 \u2192 1.01",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.9803,
+      "cagr_pct": 12.8598,
+      "max_drawdown_pct": 6.5318,
+      "total_trades": 49,
+      "profit_factor": 2.7755
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 atr_stop_mult: 1.35 \u2192 1.01"
+    ],
+    "promoted": false,
+    "runtime_s": 4.3,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260419_040201",
+    "timestamp": "2026-04-18T18:02:01.958642+00:00",
+    "market": "defensive_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "profit_target_atr_mult: 2.5 \u2192 2.75",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 1.002,
+      "cagr_pct": 13.038,
+      "max_drawdown_pct": 6.5004,
+      "total_trades": 49,
+      "profit_factor": 2.7982
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 profit_target_atr_mult: 2.5 \u2192 2.75"
+    ],
+    "promoted": false,
+    "runtime_s": 4.5,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260419_050138",
+    "timestamp": "2026-04-18T19:01:38.798826+00:00",
+    "market": "crypto",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "zscore_lookback: 38 \u2192 42",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": -0.0184,
+      "cagr_pct": 5.3717,
+      "max_drawdown_pct": 6.1997,
+      "total_trades": 25,
+      "profit_factor": 2.0813
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 zscore_lookback: 38 \u2192 42"
+    ],
+    "promoted": false,
+    "runtime_s": 5.1,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260419_050213",
+    "timestamp": "2026-04-18T19:02:13.271954+00:00",
+    "market": "crypto",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "atr_stop_mult: 1.35 \u2192 1.01",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": -0.0058,
+      "cagr_pct": 5.5933,
+      "max_drawdown_pct": 7.5765,
+      "total_trades": 27,
+      "profit_factor": 1.9145
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 atr_stop_mult: 1.35 \u2192 1.01"
+    ],
+    "promoted": false,
+    "runtime_s": 5.0,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260420_003445",
+    "timestamp": "2026-04-19T14:34:45.569412+00:00",
+    "market": "sp500",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "atr_stop_mult=1.0: testing stop distance",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.8199,
+      "cagr_pct": 24.1174,
+      "max_drawdown_pct": 34.5646,
+      "total_trades": 1036,
+      "profit_factor": 1.2797
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 atr_stop_mult=1.0: testing stop distance"
+    ],
+    "promoted": false,
+    "runtime_s": 117.4,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260420_010031",
+    "timestamp": "2026-04-19T15:00:31.697114+00:00",
+    "market": "sector_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "zscore_entry: -1.8 \u2192 -1.35",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.8259,
+      "cagr_pct": 11.3073,
+      "max_drawdown_pct": 7.7796,
+      "total_trades": 50,
+      "profit_factor": 2.5097
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 zscore_entry: -1.8 \u2192 -1.35"
+    ],
+    "promoted": false,
+    "runtime_s": 5.9,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260420_010126",
+    "timestamp": "2026-04-19T15:01:26.043266+00:00",
+    "market": "sector_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "rsi_oversold: 52 \u2192 39",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.8458,
+      "cagr_pct": 11.4444,
+      "max_drawdown_pct": 7.7796,
+      "total_trades": 49,
+      "profit_factor": 2.6363
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 rsi_oversold: 52 \u2192 39"
+    ],
+    "promoted": false,
+    "runtime_s": 5.1,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260420_010217",
+    "timestamp": "2026-04-19T15:02:17.729651+00:00",
+    "market": "sector_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "atr_stop_mult: 1.35 \u2192 1.22",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.9243,
+      "cagr_pct": 12.3195,
+      "max_drawdown_pct": 7.4418,
+      "total_trades": 50,
+      "profit_factor": 2.7242
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 atr_stop_mult: 1.35 \u2192 1.22"
+    ],
+    "promoted": false,
+    "runtime_s": 5.1,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260420_011518",
+    "timestamp": "2026-04-19T15:15:18.877988+00:00",
+    "market": "sector_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "atr_period: 20 \u2192 25",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.5923,
+      "cagr_pct": 9.6133,
+      "max_drawdown_pct": 6.4036,
+      "total_trades": 54,
+      "profit_factor": 2.0156
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 atr_period: 20 \u2192 25"
+    ],
+    "promoted": false,
+    "runtime_s": 5.7,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260420_011540",
+    "timestamp": "2026-04-19T15:15:40.619593+00:00",
+    "market": "sector_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "trend_ma_period: 20 \u2192 15",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.6744,
+      "cagr_pct": 10.2407,
+      "max_drawdown_pct": 6.3293,
+      "total_trades": 52,
+      "profit_factor": 2.1735
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 trend_ma_period: 20 \u2192 15"
+    ],
+    "promoted": false,
+    "runtime_s": 5.7,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260420_011553",
+    "timestamp": "2026-04-19T15:15:53.810513+00:00",
+    "market": "sector_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "trend_ma_period: 20 \u2192 10",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.7098,
+      "cagr_pct": 10.5062,
+      "max_drawdown_pct": 6.283,
+      "total_trades": 51,
+      "profit_factor": 2.2206
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 trend_ma_period: 20 \u2192 10"
+    ],
+    "promoted": false,
+    "runtime_s": 5.7,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260420_020025",
+    "timestamp": "2026-04-19T16:00:25.314900+00:00",
+    "market": "gold_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "zscore_entry: -1.8 \u2192 -1.35",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.8259,
+      "cagr_pct": 11.3073,
+      "max_drawdown_pct": 7.7796,
+      "total_trades": 50,
+      "profit_factor": 2.5097
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 zscore_entry: -1.8 \u2192 -1.35"
+    ],
+    "promoted": false,
+    "runtime_s": 4.0,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260420_020107",
+    "timestamp": "2026-04-19T16:01:07.691791+00:00",
+    "market": "gold_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "rsi_oversold: 52 \u2192 39",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.8458,
+      "cagr_pct": 11.4444,
+      "max_drawdown_pct": 7.7796,
+      "total_trades": 49,
+      "profit_factor": 2.6363
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 rsi_oversold: 52 \u2192 39"
+    ],
+    "promoted": false,
+    "runtime_s": 3.8,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260420_020133",
+    "timestamp": "2026-04-19T16:01:33.871051+00:00",
+    "market": "gold_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "atr_stop_mult: 1.35 \u2192 1.22",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.9243,
+      "cagr_pct": 12.3195,
+      "max_drawdown_pct": 7.4418,
+      "total_trades": 50,
+      "profit_factor": 2.7242
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 atr_stop_mult: 1.35 \u2192 1.22"
+    ],
+    "promoted": false,
+    "runtime_s": 3.3,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260420_020950",
+    "timestamp": "2026-04-19T16:09:50.301665+00:00",
+    "market": "gold_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "atr_period: 20 \u2192 25",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.5923,
+      "cagr_pct": 9.6133,
+      "max_drawdown_pct": 6.4036,
+      "total_trades": 54,
+      "profit_factor": 2.0156
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 atr_period: 20 \u2192 25"
+    ],
+    "promoted": false,
+    "runtime_s": 3.5,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260420_021003",
+    "timestamp": "2026-04-19T16:10:03.776890+00:00",
+    "market": "gold_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "trend_ma_period: 20 \u2192 15",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.6744,
+      "cagr_pct": 10.2407,
+      "max_drawdown_pct": 6.3293,
+      "total_trades": 52,
+      "profit_factor": 2.1735
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 trend_ma_period: 20 \u2192 15"
+    ],
+    "promoted": false,
+    "runtime_s": 4.4,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260420_021012",
+    "timestamp": "2026-04-19T16:10:12.152801+00:00",
+    "market": "gold_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "trend_ma_period: 20 \u2192 10",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.7098,
+      "cagr_pct": 10.5062,
+      "max_drawdown_pct": 6.283,
+      "total_trades": 51,
+      "profit_factor": 2.2206
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 trend_ma_period: 20 \u2192 10"
+    ],
+    "promoted": false,
+    "runtime_s": 3.6,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260420_030026",
+    "timestamp": "2026-04-19T17:00:26.025664+00:00",
+    "market": "treasury_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "zscore_entry: -1.8 \u2192 -1.35",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.8259,
+      "cagr_pct": 11.3073,
+      "max_drawdown_pct": 7.7796,
+      "total_trades": 50,
+      "profit_factor": 2.5097
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 zscore_entry: -1.8 \u2192 -1.35"
+    ],
+    "promoted": false,
+    "runtime_s": 4.3,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260420_030108",
+    "timestamp": "2026-04-19T17:01:08.447087+00:00",
+    "market": "treasury_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "rsi_oversold: 52 \u2192 39",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.8458,
+      "cagr_pct": 11.4444,
+      "max_drawdown_pct": 7.7796,
+      "total_trades": 49,
+      "profit_factor": 2.6363
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 rsi_oversold: 52 \u2192 39"
+    ],
+    "promoted": false,
+    "runtime_s": 3.8,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260420_030133",
+    "timestamp": "2026-04-19T17:01:33.928256+00:00",
+    "market": "treasury_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "atr_stop_mult: 1.35 \u2192 1.22",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.9243,
+      "cagr_pct": 12.3195,
+      "max_drawdown_pct": 7.4418,
+      "total_trades": 50,
+      "profit_factor": 2.7242
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 atr_stop_mult: 1.35 \u2192 1.22"
+    ],
+    "promoted": false,
+    "runtime_s": 3.5,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260420_030953",
+    "timestamp": "2026-04-19T17:09:53.379300+00:00",
+    "market": "treasury_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "atr_period: 20 \u2192 25",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.5923,
+      "cagr_pct": 9.6133,
+      "max_drawdown_pct": 6.4036,
+      "total_trades": 54,
+      "profit_factor": 2.0156
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 atr_period: 20 \u2192 25"
+    ],
+    "promoted": false,
+    "runtime_s": 3.8,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260420_031008",
+    "timestamp": "2026-04-19T17:10:08.561500+00:00",
+    "market": "treasury_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "trend_ma_period: 20 \u2192 15",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.6744,
+      "cagr_pct": 10.2407,
+      "max_drawdown_pct": 6.3293,
+      "total_trades": 52,
+      "profit_factor": 2.1735
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 trend_ma_period: 20 \u2192 15"
+    ],
+    "promoted": false,
+    "runtime_s": 4.1,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260420_031017",
+    "timestamp": "2026-04-19T17:10:17.419479+00:00",
+    "market": "treasury_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "trend_ma_period: 20 \u2192 10",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.7098,
+      "cagr_pct": 10.5062,
+      "max_drawdown_pct": 6.283,
+      "total_trades": 51,
+      "profit_factor": 2.2206
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 trend_ma_period: 20 \u2192 10"
+    ],
+    "promoted": false,
+    "runtime_s": 4.0,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260420_040026",
+    "timestamp": "2026-04-19T18:00:26.985863+00:00",
+    "market": "defensive_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "zscore_lookback: 38 \u2192 42",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.85,
+      "cagr_pct": 11.4946,
+      "max_drawdown_pct": 6.2773,
+      "total_trades": 47,
+      "profit_factor": 2.733
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 zscore_lookback: 38 \u2192 42"
+    ],
+    "promoted": false,
+    "runtime_s": 3.9,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260420_040051",
+    "timestamp": "2026-04-19T18:00:51.848430+00:00",
+    "market": "defensive_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "zscore_lookback: 38 \u2192 34",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.9885,
+      "cagr_pct": 12.632,
+      "max_drawdown_pct": 5.8727,
+      "total_trades": 48,
+      "profit_factor": 2.9569
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 zscore_lookback: 38 \u2192 34"
+    ],
+    "promoted": false,
+    "runtime_s": 4.0,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260420_040139",
+    "timestamp": "2026-04-19T18:01:39.441986+00:00",
+    "market": "defensive_etfs",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "atr_stop_mult: 1.35 \u2192 1.01",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 1.0608,
+      "cagr_pct": 13.5755,
+      "max_drawdown_pct": 6.3449,
+      "total_trades": 49,
+      "profit_factor": 2.9165
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 atr_stop_mult: 1.35 \u2192 1.01"
+    ],
+    "promoted": false,
+    "runtime_s": 4.1,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260420_040955",
+    "timestamp": "2026-04-19T18:09:55.422468+00:00",
+    "market": "defensive_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "atr_period: 20 \u2192 25",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.5923,
+      "cagr_pct": 9.6133,
+      "max_drawdown_pct": 6.4036,
+      "total_trades": 54,
+      "profit_factor": 2.0156
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 atr_period: 20 \u2192 25"
+    ],
+    "promoted": false,
+    "runtime_s": 4.0,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260420_041011",
+    "timestamp": "2026-04-19T18:10:11.064646+00:00",
+    "market": "defensive_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "trend_ma_period: 20 \u2192 15",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.6744,
+      "cagr_pct": 10.2407,
+      "max_drawdown_pct": 6.3293,
+      "total_trades": 52,
+      "profit_factor": 2.1735
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 trend_ma_period: 20 \u2192 15"
+    ],
+    "promoted": false,
+    "runtime_s": 3.9,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260420_041020",
+    "timestamp": "2026-04-19T18:10:20.391206+00:00",
+    "market": "defensive_etfs",
+    "category": "autoresearch",
+    "strategy": "momentum_breakout",
+    "hypothesis": "trend_ma_period: 20 \u2192 10",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.7098,
+      "cagr_pct": 10.5062,
+      "max_drawdown_pct": 6.283,
+      "total_trades": 51,
+      "profit_factor": 2.2206
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 trend_ma_period: 20 \u2192 10"
+    ],
+    "promoted": false,
+    "runtime_s": 4.1,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260420_050143",
+    "timestamp": "2026-04-19T19:01:43.059646+00:00",
+    "market": "crypto",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "atr_period: 20 \u2192 22",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": -0.0249,
+      "cagr_pct": 5.2438,
+      "max_drawdown_pct": 6.2209,
+      "total_trades": 25,
+      "profit_factor": 2.036
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 atr_period: 20 \u2192 22"
+    ],
+    "promoted": false,
+    "runtime_s": 4.7,
+    "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260420_050157",
+    "timestamp": "2026-04-19T19:01:57.838797+00:00",
+    "market": "crypto",
+    "category": "autoresearch",
+    "strategy": "mean_reversion",
+    "hypothesis": "atr_stop_mult: 1.35 \u2192 1.22",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": -0.0103,
+      "cagr_pct": 5.5663,
+      "max_drawdown_pct": 6.731,
+      "total_trades": 26,
+      "profit_factor": 2.0147
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 atr_stop_mult: 1.35 \u2192 1.22"
+    ],
+    "promoted": false,
+    "runtime_s": 4.8,
+    "agent_id": "autoresearch"
   }
 ]
