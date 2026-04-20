@@ -5,18 +5,18 @@
     {
       "ticker": "FCX",
       "strategy": "reconciled",
-      "entry_date": "2026-04-17",
+      "entry_date": "2026-04-18",
       "entry_price": 68.03,
       "shares": 5,
-      "stop_price": 63.82,
+      "stop_price": 66.495,
       "order_id": "",
-      "stop_order_id": "a46d60fc-5399-4f41-abea-bd0eaefaa45b",
+      "stop_order_id": "5393b1d1-001b-4b8d-a251-5a5cc4c64e0b",
       "tp_order_id": ""
     },
     {
       "ticker": "GLD",
       "strategy": "momentum_breakout",
-      "entry_date": "2026-04-17",
+      "entry_date": "2026-04-18",
       "entry_price": 442.8,
       "shares": 2,
       "stop_price": 428.06,
@@ -27,21 +27,21 @@
     {
       "ticker": "SLV",
       "strategy": "momentum_breakout",
-      "entry_date": "2026-04-17",
+      "entry_date": "2026-04-18",
       "entry_price": 71.92,
       "shares": 6,
-      "stop_price": 66.4,
+      "stop_price": 71.56,
       "order_id": "",
-      "stop_order_id": "66cae339-cbac-4a27-8d8d-0e772bc03eb2",
+      "stop_order_id": "30b9c443-8465-4c22-890e-683ed6368557",
       "tp_order_id": ""
     },
     {
       "ticker": "UNG",
       "strategy": "reconciled",
-      "entry_date": "2026-04-17",
+      "entry_date": "2026-04-18",
       "entry_price": 10.68,
       "shares": 54,
-      "stop_price": 10.26,
+      "stop_price": 10.4,
       "order_id": "",
       "stop_order_id": "36edef0f-37ae-4ec9-bfd3-3d2be113ac17",
       "tp_order_id": ""
@@ -224,10 +224,65 @@
           "holding_days": -1
         }
       ]
+    },
+    {
+      "date": "2026-04-17",
+      "equity": 5036.06,
+      "cash": 520.58,
+      "positions_value": 4515.48,
+      "num_positions": 4,
+      "total_realized_pnl": 0,
+      "total_closed_trades": 0,
+      "positions": [
+        {
+          "ticker": "FCX",
+          "strategy": "reconciled",
+          "shares": 5,
+          "entry_price": 68.03,
+          "current_price": 70.21,
+          "unrealized_pnl": 10.9,
+          "mae": 0.0,
+          "mfe": 3.2,
+          "holding_days": -1
+        },
+        {
+          "ticker": "GLD",
+          "strategy": "momentum_breakout",
+          "shares": 2,
+          "entry_price": 442.8,
+          "current_price": 445.93,
+          "unrealized_pnl": 6.26,
+          "mae": 0.0,
+          "mfe": 0.71,
+          "holding_days": -1
+        },
+        {
+          "ticker": "SLV",
+          "strategy": "momentum_breakout",
+          "shares": 6,
+          "entry_price": 71.92,
+          "current_price": 73.63,
+          "unrealized_pnl": 10.26,
+          "mae": 0.0,
+          "mfe": 2.38,
+          "holding_days": -1
+        },
+        {
+          "ticker": "UNG",
+          "strategy": "reconciled",
+          "shares": 54,
+          "entry_price": 10.68,
+          "current_price": 10.84,
+          "unrealized_pnl": 8.64,
+          "mae": 0.0,
+          "mfe": 1.5,
+          "holding_days": -1
+        }
+      ]
     }
   ],
-  "daily_high_water": 5000,
+  "daily_high_water": 5036.06,
   "halted": false,
   "halt_reason": "",
-  "last_saved": "2026-04-17T08:00:12.101838"
+  "last_saved": "2026-04-18T08:01:03.523574"
 }
