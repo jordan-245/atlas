@@ -1,0 +1,15 @@
+[Unit]
+Description=Unified Health Check for All Projects
+After=network.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/root
+ExecStart=/root/atlas/ops/unified-healthcheck.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=unified-healthcheck
+
+[Install]
+WantedBy=multi-user.target

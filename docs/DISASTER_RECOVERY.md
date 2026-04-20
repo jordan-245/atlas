@@ -130,7 +130,7 @@ Sun 08:00 AEST    → Director queue review (atlas-director.timer)
 
 ### Automated Backup System
 **Schedule:** Daily at 04:00 AEST (via `atlas-backup.timer` → `atlas-backup.service`)  
-**Method:** `restic` incremental snapshots via `/root/scripts/backup-all-projects.sh`  
+**Method:** `restic` incremental snapshots via `/root/atlas/ops/backup-all-projects.sh`  
 **Repository:** `/root/backups/restic-repo` (local filesystem)  
 **Retention:** 7 daily, 4 weekly, 3 monthly  
 
@@ -167,7 +167,7 @@ echo "Manual backup tagged: manual-${timestamp}"
 
 ### List Available Backups
 ```bash
-# Credentials (from /root/scripts/backup-all-projects.sh)
+# Credentials (from /root/atlas/ops/backup-all-projects.sh)
 export RESTIC_PASSWORD="atlas-backup-2026"
 export RESTIC_REPOSITORY="/root/backups/restic-repo"
 
@@ -1076,7 +1076,7 @@ EOF
 ```
 
 **Restic Backup Password:** `atlas-backup-2026`  
-(Hardcoded in `/root/scripts/backup-all-projects.sh` — rotate if repo is exposed)
+(Hardcoded in `/root/atlas/ops/backup-all-projects.sh` — rotate if repo is exposed)
 
 **Backup:** Encrypted offsite storage
 - Location: [Your backup location]

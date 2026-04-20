@@ -16,7 +16,7 @@ Manages **12 enabled production timers** covering backup, discovery, heartbeat/s
 | `atlas-research-window@<universe>.timer` × 7 | timers | Nightly per-universe sweeps, staggered hourly 23:00–05:00 local. |
 | `atlas-director.service` | oneshot | Runs `scripts/director_cron.py` — weekly queue management + portfolio review digest. |
 | `atlas-director.timer` | timer | Fires director once weekly, Sun 08:00 AEST (Sat 22:00 UTC). **Enabled in production.** |
-| `atlas-backup.service` | oneshot | Runs `/root/scripts/backup-all-projects.sh` — restic backup of atlas/cronus/NRL-Predict/midas/.pi/ceo-board configs, data, state, secrets, systemd units. Repo: `/root/backups/restic-repo`. Retention: 7 daily / 4 weekly / 3 monthly. |
+| `atlas-backup.service` | oneshot | Runs `/root/atlas/ops/backup-all-projects.sh` — restic backup of atlas/cronus/NRL-Predict/midas/.pi/ceo-board configs, data, state, secrets, systemd units. Repo: `/root/backups/restic-repo`. Retention: 7 daily / 4 weekly / 3 monthly. |
 | `atlas-backup.timer` | timer | Daily 04:00 AEST, 300s randomized delay. Persistent. |
 | `atlas-discovery.service` | oneshot (static) | `research/discovery/run.py` — LLM paper-to-strategy pipeline. Static unit (no `[Install]` section), triggered only by the timer (not `systemctl enable`-able directly). |
 | `atlas-discovery.timer` | timer | Weekly Wed 10:00 AEST (Wed 00:00 UTC). Midweek slot chosen to avoid competing with director. Persistent. |
@@ -60,7 +60,7 @@ sudo systemctl enable --now atlas-research-runner.service
 
 ## Backup system
 
-`atlas-backup.timer` fires `atlas-backup.service` daily at 04:00 AEST (5-minute randomized delay). The backup script (`/root/scripts/backup-all-projects.sh`) uses `restic` to snapshot configs, data, state, secrets, and systemd units across atlas / cronus / NRL-Predict / midas / .pi / ceo-board into `/root/backups/restic-repo`, then applies a 7-daily / 4-weekly / 3-monthly retention policy.
+`atlas-backup.timer` fires `atlas-backup.service` daily at 04:00 AEST (5-minute randomized delay). The backup script (`/root/atlas/ops/backup-all-projects.sh`) uses `restic` to snapshot configs, data, state, secrets, and systemd units across atlas / cronus / NRL-Predict / midas / .pi / ceo-board into `/root/backups/restic-repo`, then applies a 7-daily / 4-weekly / 3-monthly retention policy.
 
 Known failure mode: a stale restic lock (from a dead prior process) blocks the retention step. Manual fix: `RESTIC_PASSWORD=atlas-backup-2026 restic -r /root/backups/restic-repo unlock`. The backup itself (snapshot save) still succeeds during such failures — only `forget --prune` blocks on the lock.
 

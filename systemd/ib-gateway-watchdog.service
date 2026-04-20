@@ -1,0 +1,18 @@
+[Unit]
+Description=IB Gateway Watchdog - Auto-restart if down
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/root/atlas/ops/ib-gateway-watchdog.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ib-gateway-watchdog
+
+# Security
+NoNewPrivileges=false
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
