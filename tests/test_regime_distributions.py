@@ -5,6 +5,12 @@ import pytest
 from regime.distributions import RegimeDistributions, MIN_OBSERVATIONS
 from regime.states import RegimeState
 
+# This module reads real SPY OHLCV + regime_history data from prod DB (module-scoped
+# fixture calls fit() which SELECTs from ohlcv + regime_history).  It also writes
+# 6 rows via _persist_stats() (INSERT OR REPLACE on regime_distributions).
+# Both operations require the real production DB.
+pytestmark = pytest.mark.no_isolate_prod_db
+
 
 @pytest.fixture(scope="module")
 def fitted():

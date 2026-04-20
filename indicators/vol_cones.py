@@ -197,6 +197,9 @@ def compute_dynamic_stop(
 
     Falls back to a fixed 5% stop if the ticker has no data or insufficient history.
     """
+    if direction not in ("long", "short"):
+        raise ValueError(f"direction must be 'long' or 'short', got {direction!r}")
+
     cone_result = compute_vol_cone(ticker)
 
     if cone_result.get("error") or 20 not in cone_result.get("cone", {}):

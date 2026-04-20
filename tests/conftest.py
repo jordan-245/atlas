@@ -89,6 +89,57 @@ def _isolate_test_logs():
             pass
 
 # ---------------------------------------------------------------------------
+# DB isolation — prevent ANY test from writing to production data/atlas.db
+# ---------------------------------------------------------------------------
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Register custom markers so -v output shows them cleanly."""
+    config.addinivalue_line(
+        "markers",
+        "no_isolate_prod_db: opt out of prod DB isolation (test legitimately reads/writes real DB)",
+    )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_prod_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> None:
+    """Redirect all atlas_db writes to a throw-away tmp file per test.
+
+    Prevents production data/atlas.db contamination.  Tests that need real
+    SQLite semantics still get them — just against a throw-away path.
+
+    Tests that explicitly opt-in to the production DB (e.g. because they
+    read prod data in a read-only way) can bypass via the marker:
+
+        @pytest.mark.no_isolate_prod_db
+
+    The marker MUST be accompanied by a comment explaining why prod access
+    is needed and confirming the test does NOT write.
+    """
+    if "no_isolate_prod_db" in request.keywords:
+        yield
+        return
+
+    try:
+        import db.atlas_db as _adb
+        from db.atlas_db import init_db
+    except Exception:
+        # Module not importable in this test environment — no isolation needed.
+        yield
+        return
+
+    db_path = str(tmp_path / "isolated_atlas.db")
+    monkeypatch.setattr(_adb, "_db_path_override", db_path)
+    try:
+        init_db()
+    except Exception:
+        # init_db may fail on obscure schema issues; isolation still holds
+        # because _db_path_override is already set to the tmp path.
+        pass
+    yield
+    # monkeypatch auto-restores _db_path_override on fixture teardown.
+
+
+# ---------------------------------------------------------------------------
 # Minimal config that satisfies all strategy constructors (no network calls)
 # ---------------------------------------------------------------------------
 
