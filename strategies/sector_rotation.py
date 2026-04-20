@@ -296,8 +296,11 @@ class SectorRotation(BaseStrategy):
                 try:
                     entry_dt = pd.Timestamp(entry_date)
                     days_held = len(df.loc[entry_dt:])
-                except Exception:
-                    pass
+                except Exception as e:
+                    self._logger.warning(
+                        f"sector_rotation days_held calc failed for {ticker}: {e}"
+                    )
+                    continue
 
             # Exit 1: Stop loss
             if today_low <= stop_price:
@@ -339,8 +342,11 @@ class SectorRotation(BaseStrategy):
                                         "details": f"Trailing stop at {trail_stop:.2f} (high={highest:.2f})"
                                     })
                                     continue
-                except Exception:
-                    pass
+                except Exception as e:
+                    self._logger.warning(
+                        f"sector_rotation trailing-stop check failed for {ticker}: {e}"
+                    )
+                    continue
 
             # Exit 4: Max hold period
             if days_held >= self.max_hold_days:

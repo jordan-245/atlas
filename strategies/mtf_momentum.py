@@ -113,9 +113,15 @@ class MTFMomentum(BaseStrategy):
         with daily pullback entry logic.
         """
         signals: List[Signal] = []
+        held_tickers = self._get_held_tickers(existing_positions)
 
         for ticker, df in data.items():
             try:
+                if ticker in held_tickers:
+                    continue
+                if not self._can_open_position(existing_positions):
+                    self._logger.debug("Max positions reached, skipping remaining tickers")
+                    break
                 if len(df) < max(self.weekly_sma_period * 5, 100):
                     continue
 
@@ -355,7 +361,17 @@ class MTFMomentum(BaseStrategy):
                         "details": f"{ticker} hit stop at ${today_close:.2f} (stop=${stop_price:.2f})",
                     })
 
-                # 2. Trailing stop
+                # 2. Take profit (checked before trailing so the upside hard cap is reachable
+                #    even after days_held >= 3 — see audit C7)
+                elif pos.get("take_profit") and today_close >= pos["take_profit"]:
+                    exits.append({
+                        "ticker": ticker,
+                        "reason": "take_profit",
+                        "exit_price": today_close,
+                        "details": f"{ticker} take profit at ${today_close:.2f}",
+                    })
+
+                # 3. Trailing stop
                 elif days_held >= 3:
                     # Audit H3: trail from highest high since entry, not from today_close
                     entry_ts = pd.Timestamp(entry_date)
@@ -370,15 +386,6 @@ class MTFMomentum(BaseStrategy):
                                 "exit_price": today_close,
                                 "details": f"{ticker} trailing stop at ${today_close:.2f}",
                             })
-
-                # 3. Take profit
-                elif pos.get("take_profit") and today_close >= pos["take_profit"]:
-                    exits.append({
-                        "ticker": ticker,
-                        "reason": "take_profit",
-                        "exit_price": today_close,
-                        "details": f"{ticker} take profit at ${today_close:.2f}",
-                    })
 
                 # 4. Time exit
                 elif days_held >= self.max_hold_days:
