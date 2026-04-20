@@ -1007,24 +1007,29 @@ class LiveExecutor:
                             ticker, order_result.order_id)
                 while _time.time() - _poll_start < _max_wait:
                     _time.sleep(_poll_interval)
-                    status_result = self._broker.get_order_status(
-                        order_result.order_id)
-                    if status_result.fill_price > 0:
-                        result["fill_price"] = status_result.fill_price
-                        result["status"] = status_result.status.value
-                        logger.info(
-                            "Fill confirmed: %s @ $%.4f (waited %.0fs)",
-                            ticker, status_result.fill_price,
-                            _time.time() - _poll_start,
-                        )
-                        break
-                    if status_result.status.value in ("FAILED", "CANCELLED",
-                                                       "CANCELLED_ALL"):
-                        result["status"] = status_result.status.value
-                        result["message"] = f"Order {status_result.status.value}"
-                        logger.warning("Order %s for %s: %s",
-                                       order_result.order_id, ticker,
-                                       status_result.status.value)
+                    try:
+                        status_result = self._broker.get_order_status(
+                            order_result.order_id)
+                        if status_result.fill_price > 0:
+                            result["fill_price"] = status_result.fill_price
+                            result["status"] = status_result.status.value
+                            logger.info(
+                                "Fill confirmed: %s @ $%.4f (waited %.0fs)",
+                                ticker, status_result.fill_price,
+                                _time.time() - _poll_start,
+                            )
+                            break
+                        if status_result.status.value in ("FAILED", "CANCELLED",
+                                                           "CANCELLED_ALL"):
+                            result["status"] = status_result.status.value
+                            result["message"] = f"Order {status_result.status.value}"
+                            logger.warning("Order %s for %s: %s",
+                                           order_result.order_id, ticker,
+                                           status_result.status.value)
+                            break
+                    except Exception as _poll_exc:
+                        logger.warning("Exit fill poll error for %s: %s",
+                                       ticker, _poll_exc)
                         break
                 else:
                     logger.warning(
@@ -1095,7 +1100,6 @@ class LiveExecutor:
                 from brokers.live_portfolio import LivePortfolio
                 _market_id = self.config.get("market_id", "sp500")
                 _portfolio = LivePortfolio(self.config, market_id=_market_id)
-                _portfolio.load_state()
                 _closed_trade = {
                     "ticker": ticker,
                     "strategy": _exit_record.get("strategy", "unknown"),
@@ -1951,7 +1955,7 @@ class LiveExecutor:
                 after=datetime.now(tz=timezone.utc) - timedelta(days=7),
                 limit=200,
             )
-            orders = client.get_orders(filter=req)
+            orders = self._broker._broker_call(self._broker._trade_client.get_orders, filter=req)
         except Exception as e:
             logger.error("reconcile_entry_fills: cannot fetch orders: %s", e)
             return []
@@ -2077,7 +2081,7 @@ class LiveExecutor:
                 after=datetime.now(tz=timezone.utc) - timedelta(days=7),
                 limit=200,
             )
-            orders = client.get_orders(filter=req)
+            orders = self._broker._broker_call(self._broker._trade_client.get_orders, filter=req)
         except Exception as e:
             logger.error("reconcile_exit_fills: cannot fetch orders: %s", e)
             return []
@@ -2174,7 +2178,6 @@ class LiveExecutor:
                 from brokers.live_portfolio import LivePortfolio
                 _market_id = self.config.get("market_id", "sp500")
                 _portfolio = LivePortfolio(self.config, market_id=_market_id)
-                _portfolio.load_state()
                 _closed_trade = {
                     "ticker": ticker,
                     "strategy": strategy,

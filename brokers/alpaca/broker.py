@@ -770,7 +770,7 @@ class AlpacaBroker(BrokerAdapter):
         # nested=True includes OCO/OTO child legs that are otherwise invisible.
         try:
             req = GetOrdersRequest(status=QueryOrderStatus.OPEN, nested=True)
-            open_orders_raw = self._trade_client.get_orders(req)
+            open_orders_raw = self._broker_call(self._trade_client.get_orders, req)
         except Exception as e:
             logger.error("sync_all_protective_orders: get_orders failed: %s", e, exc_info=True)
             return {
@@ -1014,7 +1014,7 @@ class AlpacaBroker(BrokerAdapter):
                                             stop_loss=StopLossRequest(stop_price=round(ideal_stop, 2)),
                                             time_in_force=TimeInForce.GTC,
                                         )
-                                        order = self._trade_client.submit_order(request)
+                                        order = self._broker_call(self._trade_client.submit_order, request)
                                         
                                         logger.info(
                                             "sync_protective: tightened %s stop from $%.2f to $%.2f "
@@ -1116,7 +1116,7 @@ class AlpacaBroker(BrokerAdapter):
                                 stop_loss=StopLossRequest(stop_price=stop_price),
                                 time_in_force=TimeInForce.GTC,
                             )
-                            order = self._trade_client.submit_order(request)
+                            order = self._broker_call(self._trade_client.submit_order, request)
 
                             # Success
                             sl_placed += 1
