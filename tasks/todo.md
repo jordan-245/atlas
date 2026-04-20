@@ -34,10 +34,38 @@ tracks real work against real commits.
 These are structural items the audit flagged. Each needs its own focused
 session — none are quick fixes.
 
+- [x] **#250 — Trade-ledger dual-write leak diagnosis + fix** (blocker for
+      #192 gate). Diagnosed 3 leak points: (a) reconcile_ledger.py
+      hardcoding `strategy="reconciled"` instead of looking up real
+      strategy from broker JSON/plans; (b) reconcile_ledger.py filtering
+      broker positions by `get_universe_tickers(market_id)` — silently
+      excluded XLY and other sector ETFs from SQLite backfill forever;
+      (c) reconcile_positions.py `--fix` path writing JSON only, never
+      calling `atlas_db.record_trade_entry()`. Fixed in:
+      - `3e3d53a5` — reconcile_ledger `_lookup_strategy()` helper (state
+        file → plans → "reconciled"), union of universe_tickers and
+        state_file tickers as broker-position filter; reconcile_positions
+        `--fix` now dual-writes SQLite
+      - `d70ecc52` — `scripts/backfill_orphan_trades.py` repair script;
+        applied to data/atlas.db: INSERT XLY/momentum_breakout, UPDATE
+        AMD strategy 'reconciled'→'momentum_breakout' (id=140), DELETE
+        duplicate FCX id=139
+      - `aaa025d1` — 18 regression tests in
+        `tests/test_dual_write_leak_regression.py`, all passing
+      Manual `verify_dual_write.py` now shows Trades ✅ PASS. Gate
+      (5 consecutive cron-tagged PASSes, weekdays Tue-Sat 10:00 UTC)
+      still open — earliest close date: Sat 2026-04-25. #192 remains
+      open until gate closes.
+
 - [ ] **#192 — Kill JSON trade-ledger dual-write.** Atlas currently writes
       trades to both `data/state.json` and SQLite. Requires data-migration
       script + careful cutover + rollback plan. Out of scope for audit
       waves — needs a dedicated cutover window.
+      **Status (2026-04-20):** leak points diagnosed and patched by #250
+      (commits 3e3d53a5 / d70ecc52 / aaa025d1). `verify_dual_write.py`
+      Trades check now PASS manually; awaiting 5 consecutive real-cron
+      PASSes (gate: 0/5 as of today; schedule `0 10 * * 2-6` UTC;
+      earliest close Sat 2026-04-25).
 - [ ] **#215 — Overlay gate enforcement.** Confirm overlay signals actually
       gate order placement (not just annotate decisions). Needs end-to-end
       trace from overlay engine → plan file → executor.
