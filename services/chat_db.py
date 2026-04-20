@@ -8,7 +8,7 @@ import json
 import sqlite3
 import uuid
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -100,7 +100,7 @@ def create_session(
     Returns a dict with keys: id, name, model, status, pi_session_path, created_at.
     """
     session_id = str(uuid.uuid4())
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     with get_db() as conn:
         conn.execute(
             """
@@ -143,7 +143,7 @@ def update_session(session_id: str, **kwargs) -> None:
     """Update arbitrary session columns (e.g. name, status, pi_session_path)."""
     if not kwargs:
         return
-    kwargs["updated_at"] = datetime.utcnow().isoformat()
+    kwargs["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     cols = ", ".join(f"{k} = ?" for k in kwargs)
     vals = list(kwargs.values()) + [session_id]
     with get_db() as conn:
@@ -162,7 +162,7 @@ def add_message(
 
     Also bumps the session's updated_at timestamp.
     """
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     meta_json = json.dumps(metadata) if metadata else None
     with get_db() as conn:
         cursor = conn.execute(
@@ -240,7 +240,7 @@ def rename_session(session_id: str, name: str) -> bool:
     with get_db() as conn:
         cursor = conn.execute(
             "UPDATE chat_sessions SET name = ?, updated_at = ? WHERE id = ?",
-            (name, datetime.utcnow().isoformat(), session_id),
+            (name, datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), session_id),
         )
         return cursor.rowcount > 0
 
@@ -250,6 +250,6 @@ def delete_session(session_id: str) -> bool:
     with get_db() as conn:
         cursor = conn.execute(
             "UPDATE chat_sessions SET status = 'deleted', updated_at = ? WHERE id = ?",
-            (datetime.utcnow().isoformat(), session_id),
+            (datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), session_id),
         )
         return cursor.rowcount > 0

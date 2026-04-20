@@ -17,7 +17,7 @@ import logging
 import argparse
 import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -305,7 +305,7 @@ def save_results(
     """Persist results to JSON."""
     OUTPUT_JSON.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "generated_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z",
         "start_date": START_DATE,
         "strategies": strategies,
         "universes": universes,

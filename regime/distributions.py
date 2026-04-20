@@ -14,7 +14,7 @@ Cache: in-memory dict, refreshed if > 7 days old.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import numpy as np
@@ -42,7 +42,7 @@ class RegimeDistributions:
     def _is_cache_valid(self) -> bool:
         if self._fitted_at is None or not self._cache:
             return False
-        return (datetime.utcnow() - self._fitted_at) < timedelta(days=CACHE_TTL_DAYS)
+        return (datetime.now(timezone.utc).replace(tzinfo=None) - self._fitted_at) < timedelta(days=CACHE_TTL_DAYS)
 
     def fit(
         self,
@@ -59,7 +59,7 @@ class RegimeDistributions:
         """
         # Compute date range
         if end_date is None:
-            end_date = datetime.utcnow().strftime("%Y-%m-%d")
+            end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         if start_date is None:
             end_dt = datetime.strptime(end_date, "%Y-%m-%d")
             start_dt = end_dt - timedelta(days=int(lookback_years * 365.25))
@@ -111,7 +111,7 @@ class RegimeDistributions:
             else:
                 self._cache[state.value] = samples
 
-        self._fitted_at = datetime.utcnow()
+        self._fitted_at = datetime.now(timezone.utc).replace(tzinfo=None)
         # Optional: persist stats to DB (best-effort, ignore if table missing)
         try:
             self._persist_stats()

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Sequence
 
 import numpy as np
@@ -227,7 +227,7 @@ def _simulate_regime_conditional(
 def _zero_result(positions, method: str = "gaussian_cholesky", n_paths: int = 0, lookback_days: int = 60) -> dict:
     """Return a sane zero-risk result for empty/degenerate inputs."""
     return {
-        "as_of": datetime.utcnow().strftime("%Y-%m-%d"),
+        "as_of": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         "equity": 0.0,
         "positions_value": 0.0,
         "positions_count": 0,
@@ -356,7 +356,7 @@ def compute_portfolio_var(
         horizons_out[f"{h}d"] = _percentiles_to_metrics(pnl, pos_value_total)
 
     return {
-        "as_of": datetime.utcnow().strftime("%Y-%m-%d"),
+        "as_of": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         "equity": round(float(equity or pos_value_total), 2),
         "positions_value": round(pos_value_total, 2),
         "positions_count": len(tickers),
@@ -454,7 +454,7 @@ def compute_portfolio_var_regime_aware(
         horizons_out[f"{h}d"] = _percentiles_to_metrics(pnl, pos_value_total)
 
     return {
-        "as_of": datetime.utcnow().strftime("%Y-%m-%d"),
+        "as_of": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         "equity": round(float(equity or pos_value_total), 2),
         "positions_value": round(pos_value_total, 2),
         "positions_count": len(tickers),

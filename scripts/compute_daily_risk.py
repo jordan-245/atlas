@@ -10,7 +10,7 @@ from __future__ import annotations
 import sys
 import logging
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # Path setup
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -154,7 +154,7 @@ def main() -> int:
                 ).fetchone()
                 if row and row["last"]:
                     last = datetime.fromisoformat(str(row["last"]).split(".")[0])
-                    age_days = (datetime.utcnow() - last).days
+                    age_days = (datetime.now(timezone.utc).replace(tzinfo=None) - last).days
                     stale = age_days > 7
                     logger.info("Regime distributions age: %d days (stale=%s)", age_days, stale)
         except Exception:
