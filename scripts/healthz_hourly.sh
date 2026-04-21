@@ -53,12 +53,22 @@ DOW=$(date +%u)  # 1=Mon, 7=Sun
 HOUR=$(date +%H)
 if [ "$DOW" -le 5 ] || [ "$DOW" -eq 6 ]; then
     # Tue-Sat AEST covers Mon-Fri US sessions
-    RECONCILE_OUT=$(python3 "$RECONCILE" --market sp500 --fix 2>&1) || RECONCILE_EXIT=$?
-    log "Reconcile exit code: $RECONCILE_EXIT"
-    if [ -n "$RECONCILE_OUT" ]; then
-        log "Reconcile output:"
-        echo "$RECONCILE_OUT" >> "$LOG_FILE"
-    fi
+    for MKT in sp500 commodity_etfs; do
+        MKT_OUT=$(python3 "$RECONCILE" --market "$MKT" --fix 2>&1) || MKT_EXIT=$?
+        log "Reconcile $MKT exit code: ${MKT_EXIT:-0}"
+        if [ -n "$MKT_OUT" ]; then
+            log "Reconcile $MKT output:"
+            echo "$MKT_OUT" >> "$LOG_FILE"
+        fi
+        # Accumulate output for the drift-detection step below
+        RECONCILE_OUT="${RECONCILE_OUT}${MKT_OUT}
+"
+        # Track worst exit code
+        if [ "${MKT_EXIT:-0}" -ne 0 ]; then
+            RECONCILE_EXIT="${MKT_EXIT}"
+        fi
+        MKT_EXIT=0
+    done
 fi
 
 # ── Step 2b: Hard-gate — immediate Telegram CRITICAL on drift ──
