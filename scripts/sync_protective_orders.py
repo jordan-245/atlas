@@ -55,6 +55,9 @@ _DEFAULT_BROKER: dict[str, str] = {
     "sp500": "alpaca",
 }
 
+# State file tracking stop orders observed in "held" status
+_HELD_STATE_FILE = PROJECT / "data" / "stops_held_state.json"
+
 
 # ═══════════════════════════════════════════════════════════════
 # Config loading
@@ -109,6 +112,177 @@ def load_plan(market_id: str, trade_date: str) -> dict | None:
 
     logger.info("No plan file found for %s — will use position data only", market_id)
     return None
+
+
+
+# ═══════════════════════════════════════════════════════════════
+# Held-stop detection and auto-resubmit
+# ═══════════════════════════════════════════════════════════════
+
+def _load_held_state(state_file: Path | None = None) -> dict:
+    """Load per-ticker held-stop state from JSON file."""
+    path = state_file or _HELD_STATE_FILE
+    if path.exists():
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except Exception as exc:
+            logger.warning("Could not read held-stop state file %s: %s", path, exc)
+    return {}
+
+
+def _save_held_state(state: dict, state_file: Path | None = None) -> None:
+    """Persist held-stop state to JSON file."""
+    path = state_file or _HELD_STATE_FILE
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(state, f, indent=2)
+    except Exception as exc:
+        logger.warning("Could not save held-stop state file %s: %s", path, exc)
+
+
+def _handle_held_stops(
+    broker,
+    market_id: str,
+    *,
+    dry_run: bool = False,
+    send_telegram: bool = True,
+    state_file: Path | None = None,
+    now_iso: str | None = None,
+) -> dict:
+    """Detect stop orders stuck in 'held' status and resubmit on the second consecutive cycle.
+
+    First observed cycle: record in ``data/stops_held_state.json`` keyed by
+    ``"{ticker}::{market_id}"``.  Second+ consecutive cycle: cancel the stuck
+    order and let the subsequent ``sync_all_protective_orders`` call re-place it.
+
+    On resubmit: logs WARNING + sends Telegram alert.
+
+    Parameters
+    ----------
+    broker:        Connected broker instance (must support get_open_orders / cancel_order).
+    market_id:     Market identifier string (e.g. "sp500").
+    dry_run:       Log intent but do not cancel or write state.
+    send_telegram: Send Telegram alert on resubmit.  Set False in tests.
+    state_file:    Override state file path (for testing).
+    now_iso:       Override current timestamp (for testing).
+
+    Returns
+    -------
+    dict with keys:
+      resubmitted (list[str]) — tickers whose held stop was cancelled this cycle.
+      newly_held  (list[str]) — tickers newly observed as held (first cycle).
+      errors      (list[str]) — tickers where cancel_order failed.
+    """
+    resubmitted: list[str] = []
+    newly_held: list[str] = []
+    errors: list[str] = []
+
+    _now = now_iso or datetime.now().isoformat()
+
+    try:
+        open_orders = broker.get_open_orders()
+    except Exception as exc:
+        logger.warning("_handle_held_stops: get_open_orders failed (non-fatal): %s", exc)
+        return {"resubmitted": resubmitted, "newly_held": newly_held, "errors": errors}
+
+    # Identify stop SELL orders with raw status == "held"
+    currently_held: dict[str, str] = {}   # ticker → order_id
+    for order in open_orders:
+        raw = getattr(order, "raw", {}) or {}
+        order_status = raw.get("status", "")
+        order_type = raw.get("order_type", "")
+        side = raw.get("side", "")
+        ticker = getattr(order, "ticker", "") or ""
+        if (
+            order_status == "held"
+            and order_type in ("stop", "stop_limit", "trailing_stop")
+            and side == "sell"
+            and ticker
+        ):
+            currently_held[ticker] = getattr(order, "order_id", "") or ""
+
+    if currently_held:
+        logger.info(
+            "_handle_held_stops: %d held stop(s) detected for %s: %s",
+            len(currently_held), market_id, list(currently_held.keys()),
+        )
+    else:
+        logger.debug("_handle_held_stops: no held stops for %s", market_id)
+
+    state = _load_held_state(state_file)
+
+    # Determine which tickers to resubmit vs record-new
+    for ticker, order_id in currently_held.items():
+        key = f"{ticker}::{market_id}"
+        if key in state:
+            # Second+ consecutive held cycle → cancel so sync_all_protective_orders re-places
+            if dry_run:
+                logger.info(
+                    "[DRY RUN] _handle_held_stops: would cancel+resubmit stuck held stop "
+                    "for %s (was held since %s, order_id=%s)",
+                    ticker, state[key].get("first_seen", "?"), order_id,
+                )
+                resubmitted.append(ticker)
+                # Remove from state even in dry-run so next real run starts fresh
+                state.pop(key, None)
+            else:
+                logger.warning(
+                    "Stop for %s (%s) has been held for ≥2 consecutive sync cycles "
+                    "(first seen %s, order_id=%s) — cancelling and resubmitting",
+                    ticker, market_id, state[key].get("first_seen", "?"), order_id,
+                )
+                cancel_result = broker.cancel_order(order_id)
+                if cancel_result and cancel_result.success:
+                    logger.info(
+                        "_handle_held_stops: successfully cancelled held stop for %s (id=%s)",
+                        ticker, order_id,
+                    )
+                    state.pop(key, None)
+                    resubmitted.append(ticker)
+
+                    if send_telegram:
+                        try:
+                            from utils.telegram import send_message
+                            send_message(
+                                f"⚠️ Resubmitted stuck <code>held</code> stop for "
+                                f"<b>{ticker}</b>\n"
+                                f"Market: {market_id.upper()} | "
+                                f"Order: <code>{order_id[:16]}</code>"
+                            )
+                        except Exception as tg_exc:
+                            logger.warning(
+                                "_handle_held_stops: Telegram alert failed (non-fatal): %s",
+                                tg_exc,
+                            )
+                else:
+                    err_msg = getattr(cancel_result, "message", "unknown") if cancel_result else "cancel_order returned None"
+                    logger.error(
+                        "_handle_held_stops: cancel_order FAILED for %s (id=%s): %s",
+                        ticker, order_id, err_msg,
+                    )
+                    errors.append(ticker)
+        else:
+            # First time seeing this ticker as held — record, do NOT cancel yet
+            logger.info(
+                "_handle_held_stops: stop for %s (%s) is held for the first time "
+                "(order_id=%s) — recording, will resubmit next cycle if still held",
+                ticker, market_id, order_id,
+            )
+            state[key] = {"first_seen": _now, "order_id": order_id}
+            newly_held.append(ticker)
+
+    # Clean up state entries for tickers that are no longer held (resolved on their own)
+    resolved_keys = [k for k in list(state.keys()) if k.split("::")[0] not in currently_held]
+    for k in resolved_keys:
+        logger.debug("_handle_held_stops: clearing resolved held state for %s", k)
+        state.pop(k, None)
+
+    if not dry_run:
+        _save_held_state(state, state_file)
+
+    return {"resubmitted": resubmitted, "newly_held": newly_held, "errors": errors}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -317,6 +491,31 @@ def sync_market(
         except Exception as e:
             logger.warning("Orphan order cleanup failed (non-fatal): %s", e)
             _orphans_cancelled = 0
+
+        # ── Check for stops stuck in "held" status ──────────────
+        # Stops may sit in held (e.g., pre-market, non-RTH) for >1 cycle.
+        # On second consecutive held observation: cancel so the main sync
+        # re-places the order with a fresh GTC submission.
+        _held_result: dict = {"resubmitted": [], "newly_held": [], "errors": []}
+        try:
+            _held_result = _handle_held_stops(
+                broker,
+                market_id,
+                dry_run=dry_run,
+                send_telegram=True,
+            )
+            if _held_result["resubmitted"]:
+                logger.info(
+                    "Held-stop resubmit: %d cancelled — sync will re-place: %s",
+                    len(_held_result["resubmitted"]), _held_result["resubmitted"],
+                )
+            if _held_result["newly_held"]:
+                logger.info(
+                    "Held-stop first-cycle: %s — will resubmit next cycle if still held",
+                    _held_result["newly_held"],
+                )
+        except Exception as _held_exc:
+            logger.warning("_handle_held_stops failed (non-fatal): %s", _held_exc)
 
         # ── Sync protective orders ────────────────────────────
 
