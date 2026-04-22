@@ -73,6 +73,11 @@ function PortfolioTailRisk({ pr }: { pr: PortfolioRiskMetrics }) {
   )
 }
 
+/** Pure helper: avoids calling Date.now() directly in render (lint rule: components-must-be-pure) */
+function ageHours(iso: string): number {
+  return (new Date().getTime() - new Date(iso).getTime()) / (1000 * 60 * 60)
+}
+
 // RuinStalenessSection — shows a banner when ruin probability is stale + refresh button
 function RuinStalenessSection() {
   const { data: ruinData } = useRuinProbability()
@@ -81,9 +86,7 @@ function RuinStalenessSection() {
 
   if (!ruinData) return null
 
-  const ageH = ruinData.as_of
-    ? (Date.now() - new Date(ruinData.as_of).getTime()) / (1000 * 60 * 60)
-    : 0
+  const ageH = ruinData.as_of ? ageHours(ruinData.as_of) : 0
   const isStale = ruinData.stale === true || ageH > 24
 
   if (!isStale) return null
