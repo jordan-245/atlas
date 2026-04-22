@@ -182,25 +182,6 @@ export interface RegimeTransitions {
 }
 
 // ============================================================================
-// /api/overlay/decisions
-// ============================================================================
-
-export interface OverlayDecision {
-  id?: string | number
-  timestamp?: string
-  decision?: string
-  action?: string
-  reasoning?: string
-  rationale?: string
-  confidence?: number
-  mode?: string
-  symbol?: string
-  strategy?: string
-}
-
-export type OverlayDecisions = OverlayDecision[]
-
-// ============================================================================
 // /api/system/health
 // ============================================================================
 
