@@ -20,7 +20,7 @@ detected and skipped; only missing orders are placed.
     python scripts/sync_protective_orders.py [options]
 
     Options:
-      --market {asx,sp500,all}       Market to sync (default: all)
+      --market {asx,sp500,commodity_etfs,sector_etfs,all}       Market to sync (default: all)
       --dry-run                     Log intent but do NOT send orders
       --no-telegram                 Suppress Telegram notification
       --date YYYY-MM-DD             Trade date override (default: today)
@@ -49,10 +49,12 @@ from utils.logging_config import setup_logging  # noqa: E402
 logger = logging.getLogger("atlas.sync_protective_orders")
 
 # Markets supported by this script
-_MARKETS = ("asx", "sp500")
+_MARKETS = ("asx", "sp500", "commodity_etfs", "sector_etfs")
 # Default broker per market (overridden by config)
 _DEFAULT_BROKER: dict[str, str] = {
     "sp500": "alpaca",
+    "commodity_etfs": "alpaca",
+    "sector_etfs": "alpaca",
 }
 
 # State file tracking stop orders observed in "held" status
