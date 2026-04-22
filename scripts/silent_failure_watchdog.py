@@ -238,6 +238,16 @@ def check_director_coverage(dry_run: bool = False) -> None:
 
 _AR_RE = re.compile(r"^autoresearch_(?P<strat>[a-z_]+)_(?P<d>\d{8})\.log$")
 
+# Strategies whose autoresearch runners are intentionally stopped per Phase 2
+# (auto-research disabled). Zero-byte logs for these strategies are EXPECTED
+# and must NOT trigger silent-failure alerts. Remove entries here when the
+# corresponding research service is re-enabled.
+PAUSED_AUTORESEARCH_STRATEGIES: frozenset[str] = frozenset({
+    "mean_reversion",
+    "momentum_breakout",
+    "opening_gap",
+})
+
 
 def _is_rotation_stub(log_file: Path) -> bool:
     """Return True if *log_file* looks like a logrotate-created empty stub.
@@ -287,12 +297,18 @@ def check_autoresearch_logs(dry_run: bool = False) -> None:
         cutoff_ts = now_ts - 86400  # 24 h ago
 
         zero_byte_files: list[str] = []
+        skipped_paused: list[str] = []
         for log_file in LOGS_DIR.glob("autoresearch_*.log"):
             try:
                 st = log_file.stat()
             except OSError:
                 continue
             if st.st_mtime >= cutoff_ts and st.st_size == 0 and not _is_rotation_stub(log_file):
+                m = _AR_RE.match(log_file.name)
+                strat = m["strat"] if m else None
+                if strat and strat in PAUSED_AUTORESEARCH_STRATEGIES:
+                    skipped_paused.append(log_file.name)
+                    continue
                 zero_byte_files.append(log_file.name)
 
         if zero_byte_files:
@@ -308,7 +324,15 @@ def check_autoresearch_logs(dry_run: bool = False) -> None:
                 dry_run=dry_run,
             )
         else:
-            logger.info("check_autoresearch_logs: OK (no zero-byte logs in last 24h)")
+            if skipped_paused:
+                logger.info(
+                    "check_autoresearch_logs: OK (no actionable zero-byte logs; "
+                    "skipped %d paused-strategy stub(s): %s)",
+                    len(skipped_paused),
+                    ", ".join(sorted(skipped_paused)),
+                )
+            else:
+                logger.info("check_autoresearch_logs: OK (no zero-byte logs in last 24h)")
 
     except Exception as exc:  # noqa: BLE001
         logger.error("check_autoresearch_logs: unexpected error: %s", exc)
