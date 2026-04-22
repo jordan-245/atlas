@@ -1,4 +1,5 @@
 import { ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
+import { ChartGate } from '../shared/ChartGate'
 import type { PacePoint } from '../../api/types'
 import { ChartTooltip } from '../shared/ChartTooltip'
 import { fmtSignedCcy, fmtDateShort, fmtCcy } from '../../lib/format'
@@ -31,7 +32,8 @@ export function SpendingPaceChart({ paceData, paceStatus, paceDiff }: Props) {
           </div>
         ) : null}
       </div>
-      <ResponsiveContainer width="100%" height={280} minWidth={0} minHeight={0}>
+      <ChartGate className="h-[280px] w-full">
+      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
         <ComposedChart data={paceData}>
           <defs>
             <linearGradient id="spendingGrad" x1="0" y1="0" x2="0" y2="1">
@@ -95,6 +97,7 @@ export function SpendingPaceChart({ paceData, paceStatus, paceDiff }: Props) {
           />
         </ComposedChart>
       </ResponsiveContainer>
+      </ChartGate>
     </div>
   )
 }

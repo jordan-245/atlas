@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { ChartGate } from '../shared/ChartGate'
 import { useEquityChartData } from '../../api/queries'
 import { Skeleton } from '../layout/Skeleton'
 import { ChartTooltip } from '../shared/ChartTooltip'
@@ -111,7 +112,7 @@ export function EquityChart() {
           alphaVsSpy={query.data.alphaVsSpy}
         />
       </div>
-      <div className="h-[220px] md:h-[260px] lg:h-[300px]">
+      <ChartGate className="h-[220px] md:h-[260px] lg:h-[300px]">
         <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
           <ComposedChart data={filteredData}>
             <defs>
@@ -177,7 +178,7 @@ export function EquityChart() {
             />
           </ComposedChart>
         </ResponsiveContainer>
-      </div>
+      </ChartGate>
     </div>
   )
 }

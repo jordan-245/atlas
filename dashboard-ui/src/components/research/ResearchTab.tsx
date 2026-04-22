@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { ChartGate } from '../shared/ChartGate'
 import { useResearchSummary, useResearchStrategies, useResearchTimeline, useResearchExperiments, useResearchBrain, useResearchDiscoveries, useResearchOverview, useResearchLeaderboard } from '../../api/research-queries'
 import { Skeleton } from '../layout/Skeleton'
 import { SectionBoundary } from '../layout/SectionBoundary'
@@ -87,7 +88,7 @@ function SharpeChart() {
           ))}
         </div>
       </div>
-      <div className="h-[200px] md:h-[260px]">
+      <ChartGate className="h-[200px] md:h-[260px]">
         <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
           <AreaChart data={chartData}>
             <defs>
@@ -107,7 +108,7 @@ function SharpeChart() {
             <Area yAxisId="right" dataKey="experiments" name="Experiments" stroke="none" fill="var(--color-text-muted)" fillOpacity={0.1} />
           </AreaChart>
         </ResponsiveContainer>
-      </div>
+      </ChartGate>
     </div>
   )
 }

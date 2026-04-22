@@ -1,4 +1,5 @@
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts'
+import { ChartGate } from './ChartGate'
 
 interface SparklineProps {
   data: number[]
@@ -27,7 +28,7 @@ export function Sparkline({ data, color, height = 32, strokeWidth = 1.5 }: Spark
   const chartData = data.map((value, index) => ({ index, value }))
 
   return (
-    <div style={{ height, width: '100%' }}>
+    <ChartGate style={{ height, width: '100%' }}>
       <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
         <LineChart data={chartData}>
           <defs>
@@ -66,6 +67,6 @@ export function Sparkline({ data, color, height = 32, strokeWidth = 1.5 }: Spark
           />
         </LineChart>
       </ResponsiveContainer>
-    </div>
+    </ChartGate>
   )
 }
