@@ -858,6 +858,7 @@ def monitor_get_gone(
 
 
 # ── GET /api/portfolio  +  /api/db/portfolio ──────────────────────────────────
+# TODO: unused — not called by dashboard UI (data via /api/dashboard-data)
 
 @app.get("/api/portfolio")
 @app.get("/api/db/portfolio")
@@ -878,6 +879,7 @@ def db_portfolio(_auth: HTTPBasicCredentials = Depends(check_auth)):
 
 
 # ── GET /api/trades  +  /api/db/trades ───────────────────────────────────────
+# TODO: unused — not called by dashboard UI
 
 @app.get("/api/trades")
 @app.get("/api/db/trades")
@@ -900,6 +902,7 @@ def db_trades(
 
 
 # ── GET /api/performance  +  /api/db/performance ─────────────────────────────
+# TODO: unused — not called by dashboard UI
 
 @app.get("/api/performance")
 @app.get("/api/db/performance")
@@ -918,6 +921,7 @@ def db_performance(
 
 
 # ── GET /api/equity-curve ─────────────────────────────────────────────────────
+# TODO: unused — not called by dashboard UI (equity data via /api/dashboard-data)
 
 @app.get("/api/equity-curve")
 def equity_curve(
@@ -980,6 +984,7 @@ def regime_current(_auth: HTTPBasicCredentials = Depends(check_auth)):
 
 
 # ── GET /api/overlay/decisions ────────────────────────────────────────────────
+# TODO: unused — not called by dashboard UI (OverlayDecisions component not rendered)
 
 @app.get("/api/overlay/decisions")
 def overlay_decisions(
@@ -1023,8 +1028,8 @@ def system_health(_auth: HTTPBasicCredentials = Depends(check_auth)):
         data_freshness = {}
         try:
             with get_db() as db:
-                # MIN across all tickers = the stalest ticker in the universe
-                row = db.execute("SELECT MIN(date) as last_date FROM ohlcv").fetchone()
+                # MAX across all tickers = most recent data available (freshness indicator)
+                row = db.execute("SELECT MAX(date) as last_date FROM ohlcv").fetchone()
                 data_freshness["ohlcv_last_date"] = row["last_date"] if row else None
                 # Per-ticker breakdown — 10 stalest tickers (most useful for diagnostics)
                 ticker_rows = db.execute(
@@ -1977,6 +1982,7 @@ def finance_data(_auth: HTTPBasicCredentials = Depends(check_auth)):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # ── POST /api/approve ─────────────────────────────────────────────────────────
+# TODO: unused — not called by dashboard UI (plan approval handled via Telegram bot)
 
 @app.post("/api/approve")
 def approve_plan(
@@ -2026,6 +2032,7 @@ def approve_plan(
 
 
 # ── POST /api/reject ──────────────────────────────────────────────────────────
+# TODO: unused — not called by dashboard UI (plan rejection handled via Telegram bot)
 
 @app.post("/api/reject")
 def reject_plan(
@@ -2624,6 +2631,7 @@ def research_leaderboard(_auth: HTTPBasicCredentials = Depends(check_auth)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# TODO: unused — not called by dashboard UI (admin-only endpoint)
 @app.post("/api/research/prioritize")
 async def research_prioritize(
     request: Request,

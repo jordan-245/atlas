@@ -92,8 +92,8 @@ def inspect_portfolio(page: Page, issues: list[Issue]) -> dict:
     # --- Stat strip ---
     try:
         stat_texts = page.locator(
-            '[class*="StatCard"], [class*="SummaryStrip"], [class*="stat-card"], '
-            '[class*="summary-strip"], [class*="KpiCard"], [class*="kpi"]'
+            '[data-testid="summary-strip"], [data-testid="stat-card"],'
+            ' [class*="SummaryStrip"], [class*="StatCard"]'
         ).all_text_contents()
         result["stat_strip_texts"] = stat_texts
         if not stat_texts:
@@ -105,8 +105,7 @@ def inspect_portfolio(page: Page, issues: list[Issue]) -> dict:
     # --- PositionCard count ---
     try:
         pos_locator = page.locator(
-            '[class*="PositionCard"], [class*="position-card"], '
-            '[class*="PositionsGrid"] [class*="row"], [class*="positions-grid"] tr'
+            '[data-testid="position-card"], [class*="PositionCard"]'
         )
         pos_count = pos_locator.count()
         result["position_card_count"] = pos_count
@@ -121,8 +120,8 @@ def inspect_portfolio(page: Page, issues: list[Issue]) -> dict:
     # --- EquityChart ---
     try:
         chart_loc = page.locator(
-            '[class*="EquityChart"], [class*="equity-chart"], '
-            'canvas, [class*="Chart"], [class*="recharts"]'
+            '.recharts-wrapper, canvas,'
+            ' [data-testid="equity-chart"], [class*="EquityChart"]'
         )
         chart_count = chart_loc.count()
         result["equity_chart_count"] = chart_count
@@ -136,8 +135,7 @@ def inspect_portfolio(page: Page, issues: list[Issue]) -> dict:
     # --- MacroGauges ---
     try:
         gauge_loc = page.locator(
-            '[class*="MacroGauge"], [class*="macro-gauge"], '
-            '[class*="Gauge"], [class*="gauge"]'
+            '[data-testid="macro-gauge"], [class*="MacroGauge"]'
         )
         gauge_count = gauge_loc.count()
         result["macro_gauge_count"] = gauge_count
@@ -151,8 +149,7 @@ def inspect_portfolio(page: Page, issues: list[Issue]) -> dict:
     # --- RegimeTimeline ---
     try:
         regime_loc = page.locator(
-            '[class*="RegimeTimeline"], [class*="regime-timeline"], '
-            '[class*="Regime"], [class*="regime"]'
+            '[data-testid="regime-timeline"], [class*="RegimeTimeline"]'
         )
         regime_count = regime_loc.count()
         result["regime_element_count"] = regime_count
@@ -217,8 +214,7 @@ def inspect_finance(page: Page, issues: list[Issue]) -> dict:
     # --- Bank accounts ---
     try:
         account_loc = page.locator(
-            '[class*="AccountCard"], [class*="account-card"], '
-            '[class*="BankAccount"], [class*="bank-account"]'
+            '[data-testid="account-card"], [class*="AccountCard"]'
         )
         account_count = account_loc.count()
         result["account_card_count"] = account_count
@@ -229,9 +225,23 @@ def inspect_finance(page: Page, issues: list[Issue]) -> dict:
     except Exception as e:
         issues.append(Issue("ERROR", "missing", f"Finance AccountCard error: {e}"))
 
+    # --- Finance summary strip ---
+    try:
+        fin_strip_loc = page.locator(
+            '[data-testid="finance-summary-strip"], [data-testid="stat-card"]'
+        )
+        fin_strip_count = fin_strip_loc.count()
+        result["finance_strip_count"] = fin_strip_count
+        if fin_strip_count == 0:
+            issues.append(Issue("WARN", "missing", "Finance: no FinSummaryStrip/stat-card elements"))
+        else:
+            print(f"  ✓ Finance strip/stat elements: {fin_strip_count}")
+    except Exception as e:
+        issues.append(Issue("WARN", "missing", f"Finance strip error: {e}"))
+
     # --- Budget grid ---
     try:
-        budget_count = page.locator('[class*="Budget"], [class*="budget"]').count()
+        budget_count = page.locator('[data-testid="budget-card"], [class*="Budget"]').count()
         result["budget_element_count"] = budget_count
         if budget_count == 0:
             issues.append(Issue("INFO", "missing", "Finance: no Budget elements"))
@@ -242,7 +252,10 @@ def inspect_finance(page: Page, issues: list[Issue]) -> dict:
 
     # --- Charts ---
     try:
-        chart_count = page.locator('canvas, [class*="Chart"], [class*="chart"], [class*="recharts"]').count()
+        chart_count = page.locator(
+            '.recharts-wrapper, [data-testid="finance-summary-strip"],'
+            ' [data-testid="stat-card"], [class*="recharts"]'
+        ).count()
         result["chart_count"] = chart_count
         print(f"  ✓ Finance chart elements: {chart_count}")
         if chart_count == 0:
@@ -315,8 +328,8 @@ def inspect_research(page: Page, issues: list[Issue]) -> dict:
     # --- Strategy list ---
     try:
         strat_count = page.locator(
-            '[class*="Strategy"], [class*="strategy"], '
-            '[class*="Leaderboard"], [class*="leaderboard"]'
+            '[data-testid="strategy-breakdown"], [data-testid="leaderboard-row"],'
+            ' [class*="Strategy"], [class*="Leaderboard"]'
         ).count()
         result["strategy_element_count"] = strat_count
         print(f"  ✓ Strategy/Leaderboard elements: {strat_count}")
@@ -327,7 +340,9 @@ def inspect_research(page: Page, issues: list[Issue]) -> dict:
 
     # --- Timeline / charts ---
     try:
-        chart_count = page.locator('canvas, [class*="Chart"], [class*="chart"], [class*="recharts"]').count()
+        chart_count = page.locator(
+            '.recharts-wrapper, [class*="recharts"]'
+        ).count()
         result["chart_count"] = chart_count
         print(f"  ✓ Research chart elements: {chart_count}")
     except Exception as e:
