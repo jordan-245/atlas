@@ -63,7 +63,9 @@ TIMERS_TO_ENABLE=(
     atlas-director.timer
     atlas-discovery.timer
     atlas-backup.timer
+    atlas-fred-health.timer
     unified-healthcheck.timer
+    atlas-canary-check.timer
 )
 
 changed=0
