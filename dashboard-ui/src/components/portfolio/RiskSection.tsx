@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import type { PositionRisk, PortfolioRiskMetrics } from '../../api/types'
 import { StatCard } from '../shared/StatCard'
 import { RiskTable } from './RiskTable'
 import { fmtCcy, fmtPct } from '../../lib/format'
+import { useRuinProbability, useRefreshRuinProbability } from '../../api/queries'
 
 interface Props { data: PositionRisk }
 
@@ -71,12 +73,72 @@ function PortfolioTailRisk({ pr }: { pr: PortfolioRiskMetrics }) {
   )
 }
 
+// RuinStalenessSection — shows a banner when ruin probability is stale + refresh button
+function RuinStalenessSection() {
+  const { data: ruinData } = useRuinProbability()
+  const refresh = useRefreshRuinProbability()
+  const [refreshing, setRefreshing] = useState(false)
+
+  if (!ruinData) return null
+
+  const ageH = ruinData.as_of
+    ? (Date.now() - new Date(ruinData.as_of).getTime()) / (1000 * 60 * 60)
+    : 0
+  const isStale = ruinData.stale === true || ageH > 24
+
+  if (!isStale) return null
+
+  const h90 = ruinData.horizons?.['90d']
+  const pRuin = h90?.prob_ruin ?? 0
+  const survivalPct = (1 - pRuin) * 100
+
+  const bannerMsg = ruinData.reason
+    ? `🟡 ${ruinData.reason}`
+    : '🟡 PORTFOLIO CHANGED — recomputing ruin probability with current positions'
+
+  function handleRefresh() {
+    setRefreshing(true)
+    refresh.mutate(undefined, {
+      onSettled: () => setTimeout(() => setRefreshing(false), 5_500),
+    })
+  }
+
+  return (
+    <div className="bg-amber-900/30 border border-amber-700/50 rounded p-3 mb-4">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <div className="text-amber-200 text-xs font-medium mb-1">{bannerMsg}</div>
+          {h90 && (
+            <div className="text-amber-300/60 text-xs font-mono opacity-60">
+              Last computed: {survivalPct.toFixed(1)}% safe over 90d
+              {ruinData.as_of && (
+                <span className="ml-2 text-amber-300/40">
+                  ({new Date(ruinData.as_of).toLocaleDateString()})
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={handleRefresh}
+          disabled={refreshing || refresh.isPending}
+          className="text-[11px] px-3 py-1.5 rounded border border-amber-600/50 text-amber-200 hover:bg-amber-800/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-mono whitespace-nowrap"
+        >
+          {refreshing || refresh.isPending ? '⟳ Refreshing…' : '↻ Refresh now'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export function RiskSection({ data }: Props) {
   const s = data.summary
   const unprotected = s?.positions_without_stops ?? 0
   const pr = data.portfolio_risk
   return (
     <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5 space-y-6 dash-card">
+      <RuinStalenessSection />
       <div>
         <div className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-text-muted)] font-semibold mb-3">POSITION RISK</div>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">

@@ -1,13 +1,16 @@
 import { useRegimeCurrent, usePortfolioData } from '../../api/queries'
 import { useMarketClock } from '../../hooks/useMarketClock'
 import { useTheme } from '../../hooks/useTheme'
+import { useShowAllUniverses } from '../../hooks/useShowAllUniverses'
 import { getRegimeColor } from '../../lib/colors'
+import { DataFreshnessChip } from './DataFreshnessChip'
 
 export function Header() {
   const { data: regimeData, isLoading: regimeLoading } = useRegimeCurrent()
   const { data: portfolioData } = usePortfolioData()
   const { toggleTheme } = useTheme()
   const clockString = useMarketClock(portfolioData?.market_clock)
+  const { showAll, setShowAll } = useShowAllUniverses()
 
   const regimeState = regimeData?.label || regimeData?.state || '—'
   const regimeColor = getRegimeColor(regimeData?.state)
@@ -46,6 +49,31 @@ export function Header() {
 
         {/* Spacer */}
         <div className="flex-1" />
+
+        {/* Data Freshness Chip */}
+        <DataFreshnessChip />
+
+        {/* Show All Markets toggle (P4.2) */}
+        <label className="hidden md:flex items-center gap-1.5 cursor-pointer select-none" title="Show all configured markets (including passive)">
+          <span className="text-[11px] text-[var(--color-text-muted)] font-mono whitespace-nowrap">All markets</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={showAll}
+            onClick={() => setShowAll(!showAll)}
+            className={`relative inline-flex h-4 w-7 items-center rounded-full border transition-colors ${
+              showAll
+                ? 'bg-[var(--color-accent)] border-[var(--color-accent)]'
+                : 'bg-[var(--color-surface-alt)] border-[var(--color-border)]'
+            }`}
+          >
+            <span
+              className={`inline-block h-2.5 w-2.5 transform rounded-full bg-white shadow transition-transform ${
+                showAll ? 'translate-x-3.5' : 'translate-x-0.5'
+              }`}
+            />
+          </button>
+        </label>
 
         {/* Agent Link */}
         <a

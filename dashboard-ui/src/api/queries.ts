@@ -1,4 +1,4 @@
-import { useQuery, keepPreviousData } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { get } from './client'
 import { qk } from './keys'
 import type {
@@ -17,6 +17,7 @@ import type {
   RuinProbability,
   RegimeForecast,
   SignalEVResponse,
+  UniverseInfo,
 } from './types'
 
 const REFETCH_60S = 60_000
@@ -270,6 +271,35 @@ export function useSignalEV() {
     queryKey: ['signals', 'ev'],
     queryFn: () => get<SignalEVResponse>('/api/signals/ev'),
     staleTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  })
+}
+
+export function useRefreshRuinProbability() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () =>
+      fetch('/api/risk/ruin/refresh', {
+        method: 'POST',
+        credentials: 'same-origin',
+      }).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json() as Promise<unknown>
+      }),
+    onSuccess: () => {
+      // Give the server 5s to recompute, then invalidate the cached result
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['risk', 'ruin'] })
+      }, 5_000)
+    },
+  })
+}
+
+export function useUniversesHealth() {
+  return useQuery<UniverseInfo[]>({
+    queryKey: ['system', 'health', 'universes'],
+    queryFn: () => get<UniverseInfo[]>('/api/system/health/universes'),
+    staleTime: STALE_1HR,
     refetchOnWindowFocus: false,
   })
 }
