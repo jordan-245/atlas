@@ -397,14 +397,21 @@ def _build_dashboard_data() -> dict:
                     " FROM trades"
                     " ORDER BY is_closed, id DESC"
                 ).fetchall()
+            # Strategies that are placeholder / uninformative — always prefer a real one
+            _POISON: set = {"reconciled", "unknown", "", None}
+
             trade_meta: dict = {}
             for t in all_trades:
                 tk = t["ticker"]
                 td = dict(t)
                 if tk not in trade_meta:
                     trade_meta[tk] = td
-                elif trade_meta[tk].get("strategy") == "reconciled" and td.get("strategy") != "reconciled":
-                    # Prefer real strategy over reconciled placeholder
+                elif (
+                    trade_meta[tk].get("strategy") in _POISON
+                    and td.get("strategy") not in _POISON
+                ):
+                    # Prefer any real strategy over a placeholder entry,
+                    # regardless of which appeared first in the ORDER BY.
                     trade_meta[tk] = td
             for p in positions:
                 meta = trade_meta.get(p.get("ticker", ""))
