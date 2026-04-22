@@ -23,6 +23,23 @@ Usage:
 
     # All-in-one regime snapshot
     regime = fred.get_regime_snapshot()
+
+Health monitoring:
+    Run ``scripts/check_fred_health.py`` to verify that the FRED API key is
+    present, each series returns fresh data, and no series is stale.  A weekly
+    systemd timer (``atlas-fred-health.timer``) fires every Monday 08:00 AEST
+    and sends a Telegram alert on failure.
+
+    The API key must be set in ``~/.atlas-secrets.json`` under the field
+    ``fred_api_key`` (lowercase — canonical; the client also accepts
+    ``FRED_API_KEY`` as a fallback for backward compatibility).
+
+    Quick self-test (never prints the key value):
+        from data.fred import FREDClient
+        client = FREDClient()
+        assert client.available, "FRED key missing"
+        s = client.get_yield_curve_slope()
+        assert len(s) > 0
 """
 
 import json

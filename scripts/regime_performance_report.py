@@ -63,6 +63,91 @@ def _sharpe(pnl_list: list[float]) -> float | None:
 
 # ── Core report logic ──────────────────────────────────────────────────────────
 
+
+def _build_data_quality_section(db_path: Path, days: int) -> list[str]:
+    """Return Markdown lines for the Data Quality section.
+
+    Non-fatal — returns a minimal section on any error.
+    """
+    lines: list[str] = ["## Data Quality", ""]
+    try:
+        import re
+        import sqlite3 as _sq3
+        _FEAT = re.compile(
+            r"(?P<trend>trend\s+[+-]?\d+\.\d+)|"
+            r"(?P<risk>\brisk\s+[+-]?\d+\.\d+)|"
+            r"(?P<credit>\bcredit\s+[+-]?\d+\.\d+)|"
+            r"(?P<yield_curve>yield curve[^(]*\([+-]?\d+\.\d+\))"
+        )
+
+        # ── FRED health (subprocess call to check_fred_health.py) ────────────
+        fred_status = "unknown"
+        try:
+            import subprocess
+            res = subprocess.run(
+                [sys.executable, str(_ATLAS_ROOT / "scripts" / "check_fred_health.py"), "--json"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if res.returncode == 0:
+                import json as _json
+                payload = _json.loads(res.stdout)
+                fred_status = f"OK (latest {payload.get('latest_date', 'n/a')})"
+            else:
+                import json as _json
+                try:
+                    payload = _json.loads(res.stdout)
+                    failures = [r["name"] for r in payload.get("results", []) if not r.get("ok")]
+                    fred_status = f"WARN: {', '.join(failures)}"
+                except Exception:
+                    fred_status = f"WARN (exit {res.returncode})"
+        except Exception as exc:
+            fred_status = f"error: {exc}"
+
+        lines.append(f"- **FRED health:** {fred_status}")
+
+        # ── regime_history rows ───────────────────────────────────────────────
+        try:
+            with _sq3.connect(str(db_path), timeout=10) as conn:
+                conn.row_factory = _sq3.Row
+                rows = conn.execute(
+                    "SELECT date, reasoning FROM regime_history "
+                    "WHERE date >= date('now', ?) ORDER BY date ASC",
+                    (f"-{days} days",),
+                ).fetchall()
+        except _sq3.OperationalError:
+            rows = []
+
+        n_rows = len(rows)
+        latest_row = rows[-1]["date"] if rows else "n/a"
+        lines.append(f"- **regime_history rows last {days}d:** {n_rows} / {days} (expected ≤{days})")
+        lines.append(f"- **Latest regime_history row:** {latest_row}")
+
+        # ── per-feature coverage ──────────────────────────────────────────────
+        feat_names = ["credit", "yield_curve", "trend", "risk"]
+        _FEAT_PAT = {
+            "trend":       re.compile(r"\btrend\s+([+-]?\d+\.\d+)"),
+            "risk":        re.compile(r"\brisk\s+([+-]?\d+\.\d+)"),
+            "credit":      re.compile(r"\bcredit\s+([+-]?\d+\.\d+)"),
+            "yield_curve": re.compile(r"yield curve[^(]*\(([+-]?\d+\.\d+)\)"),
+        }
+        feat_counts: dict[str, int] = {f: 0 for f in feat_names}
+        for row in rows:
+            r_text = row["reasoning"] or ""
+            for fname, pat in _FEAT_PAT.items():
+                if pat.search(r_text):
+                    feat_counts[fname] += 1
+
+        for fname in feat_names:
+            pct = feat_counts[fname]
+            display = fname.replace("_", " ").title()
+            lines.append(f"- **{display} feature populated last {days}d:** {pct}/{n_rows}")
+
+    except Exception as exc:
+        lines.append(f"- _(error building data quality section: {exc})_")
+
+    lines.append("")
+    return lines
+
 def build_report(db_path: Path, days: int) -> str:
     """Query DB and return Markdown report string."""
     conn = sqlite3.connect(str(db_path), timeout=30)
@@ -127,8 +212,14 @@ def build_report(db_path: Path, days: int) -> str:
             })
 
         # ── Build Markdown ─────────────────────────────────────────────────────
+        # Data Quality section — non-fatal, additive
+        dq_lines = _build_data_quality_section(db_path, days)
         lines: list[str] = [
             f"# Regime Performance Report — {date_str}",
+            "",
+        ]
+        lines.extend(dq_lines)
+        lines += [
             f"Coverage: {coverage_pct:.0f}% of last-{days}-day trades tagged with regime "
             f"({tagged_count}/{total_closed})\n",
             "## By Strategy × Regime",
