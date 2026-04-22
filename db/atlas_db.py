@@ -115,10 +115,13 @@ def _group_performance(trades: List[Dict], field: str) -> Dict[str, Any]:
             "total_pnl": round(total_pnl, 4),
             "avg_pnl": round(total_pnl / len(group_trades), 4),
             "profit_factor": (
-                sum(t.get("pnl") or 0 for t in wins)
-                / sum(abs(t.get("pnl") or 0) for t in losses)
+                min(
+                    sum(t.get("pnl") or 0 for t in wins)
+                    / sum(abs(t.get("pnl") or 0) for t in losses),
+                    99.99,
+                )
                 if losses and any((t.get("pnl") or 0) < 0 for t in losses)
-                else float("inf")
+                else (99.99 if wins else None)
             ),
         }
     return result
@@ -310,14 +313,17 @@ def performance_summary(days: Optional[int] = None) -> Dict:
     avg_loss = sum(abs(t["pnl"]) for t in losses) / len(losses) if losses else 0
     gross_profit = sum(t["pnl"] for t in wins)
     gross_loss = sum(abs(t["pnl"]) for t in losses)
+    if gross_loss == 0 or gross_loss is None:
+        profit_factor = 99.99 if gross_profit > 0 else None
+    else:
+        pf = gross_profit / gross_loss
+        profit_factor = min(pf, 99.99)
     return {
         "trades": len(trades),
         "win_rate": len(wins) / len(trades) * 100,
         "avg_win": round(avg_win, 4),
         "avg_loss": round(avg_loss, 4),
-        "profit_factor": (
-            gross_profit / gross_loss if gross_loss else float("inf")
-        ),
+        "profit_factor": profit_factor,
         "expectancy": round(sum(t["pnl"] for t in trades) / len(trades), 4),
         "by_universe": _group_performance(trades, "universe"),
         "by_strategy": _group_performance(trades, "strategy"),
