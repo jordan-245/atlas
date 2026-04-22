@@ -11,17 +11,16 @@ Usage:
     python3 scripts/trigger_commodity_promotion.py          # dry-run (default)
     python3 scripts/trigger_commodity_promotion.py --apply  # fire auto_promote
 
-NOTE on _run_promotion_sweep coverage (D4 investigation):
-    autoresearch_nightly.py's _run_promotion_sweep() accepts any market/universe
-    and does NOT hardcode sp500.  HOWEVER, the cron entry in pi-cron.sh
-    (line 611) is COMMENTED OUT and defaults to --market sp500 --universe sp500.
-    There is NO separate cron entry for commodity_etfs.  To add nightly coverage
-    you would need a separate cron line such as:
-        python3 research/autoresearch_nightly.py \\
-            --market commodity_etfs --universe commodity_etfs \\
-            --strategies momentum_breakout --hours 4 --workers 1 --notify
-    This is a confirmed blocker for automated commodity_etfs promotion via the
-    nightly sweep.  This manual trigger script is the workaround.
+NOTE on _run_promotion_sweep coverage:
+    As of 2026-04-22, commodity_etfs is covered by the systemd timer
+    atlas-research-window@commodity_etfs.timer (fires daily at 00:00 AEST).
+    That service calls research_window_universe.sh which runs
+    autoresearch_nightly.py with --universe commodity_etfs. run_nightly()
+    unconditionally invokes _run_promotion_sweep(results, market, universe)
+    which reads the research_best SQLite row for each strategy/universe and
+    calls auto_promote() — gates and Telegram human-approval are preserved.
+    This manual trigger script remains useful for one-shot promotions when
+    you don't want to wait for the nightly sweep.
 
 auto_promote() signature (from research/promoter.py):
     auto_promote(
