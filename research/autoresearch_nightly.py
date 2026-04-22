@@ -314,16 +314,22 @@ def _send_summary_telegram(
 # ─── Strategy Filter ─────────────────────────────────────────────────────────
 
 
-def _filter_enabled_strategies(strategies: List[str], market: str) -> List[str]:
+def _filter_enabled_strategies(strategies: List[str], market_or_universe: str) -> List[str]:
     """Drop strategies whose `enabled` flag is False in the active config.
+
+    Args:
+        strategies: List of strategy names to filter.
+        market_or_universe: Config key to read enabled flags from
+            (use universe for non-sp500 sweeps so gold_etfs/sector_etfs
+            configs are read instead of sp500).
 
     Returns the filtered list; logs any strategies that were skipped.
     """
     try:
         from utils.config import get_active_config
-        cfg = get_active_config(market)
+        cfg = get_active_config(market_or_universe)
     except Exception as exc:
-        print(f"[filter] Could not load active config for {market}: {exc} — running all strategies")
+        print(f"[filter] Could not load active config for {market_or_universe}: {exc} — running all strategies")
         return strategies
 
     strat_cfg = cfg.get("strategies", {}) or {}
@@ -336,7 +342,7 @@ def _filter_enabled_strategies(strategies: List[str], market: str) -> List[str]:
         if is_enabled:
             enabled.append(s)
         else:
-            print(f"[filter] Skipping {s} — disabled in {market} active config")
+            print(f"[filter] Skipping {s} — disabled in {market_or_universe} active config")
     return enabled
 
 
@@ -378,22 +384,44 @@ def _run_promotion_sweep(results: List[Dict], market: str, universe: str) -> Lis
         if r.get("exit_code", 0) != 0:
             continue  # don't promote from failed workers
 
-        # Locate the best-params file (universe-suffixed for non-sp500)
-        candidate_file = best_dir / f"{strategy}_{universe}.json"
-        if not candidate_file.exists():
-            candidate_file = best_dir / f"{strategy}.json"
-        if not candidate_file.exists():
-            print(f"[promo] No best file for {strategy} ({universe}) — skipping")
-            continue
-
+        # Read best params from SQLite (canonical), fall back to JSON file.
+        best_params = {}
+        best_metrics = {}
         try:
-            best_data = _json.loads(candidate_file.read_text())
+            from db.atlas_db import get_research_best
+            import json as _json_pkg
+            rows = get_research_best(strategy, universe)
+            row = rows[0] if rows else None
+            if row:
+                raw_params = row.get("params", {})
+                best_params = (
+                    _json_pkg.loads(raw_params)
+                    if isinstance(raw_params, str)
+                    else (raw_params or {})
+                )
+                best_metrics = {
+                    "sharpe": row.get("sharpe"),
+                    "total_trades": row.get("trades"),
+                    "max_drawdown_pct": row.get("max_dd_pct"),
+                }
         except Exception as exc:
-            print(f"[promo] Failed to read {candidate_file}: {exc}")
-            continue
+            print(f"[promo] SQLite read failed for {strategy}/{universe}: {exc} — falling back to JSON")
 
-        best_params = best_data.get("params", {}) or {}
-        best_metrics = best_data.get("metrics", {}) or {}
+        if not best_params:
+            # JSON fallback (legacy path)
+            candidate_file = best_dir / f"{strategy}_{universe}.json"
+            if not candidate_file.exists():
+                candidate_file = best_dir / f"{strategy}.json"
+            if not candidate_file.exists():
+                print(f"[promo] No best data for {strategy} ({universe}) — skipping")
+                continue
+            try:
+                best_data = _json.loads(candidate_file.read_text())
+                best_params = best_data.get("params", {}) or {}
+                best_metrics = best_data.get("metrics", {}) or {}
+            except Exception as exc:
+                print(f"[promo] Failed to read {candidate_file}: {exc}")
+                continue
         best_sharpe = best_metrics.get("sharpe")
         if best_sharpe is None:
             # Fall back to r['final_sharpe'] if set
@@ -458,8 +486,20 @@ def run_nightly(
         Summary dict with per-strategy results and aggregate counts.
     """
     session_start = time.time()
+
+    # When sweeping a non-sp500 universe, treat universe as the effective market so
+    # downstream config loads (get_active_config) hit the universe's config file.
+    if universe != "sp500" and market == "sp500":
+        market = universe
+
+    # Defensive: after coercion, market must equal universe for non-sp500 sweeps
+    if universe != "sp500":
+        assert market == universe, (
+            f"market ({market}) must equal universe ({universe}) for non-sp500 sweeps"
+        )
+
     strategies = strategies or list(DEFAULT_STRATEGIES)
-    strategies = _filter_enabled_strategies(strategies, market)
+    strategies = _filter_enabled_strategies(strategies, universe)
 
     if not strategies:
         print("[filter] No enabled strategies — nothing to run")

@@ -179,13 +179,23 @@ def save_best(
             params=params,
             sharpe=float(metrics.get("sharpe", 0) or 0),
             trades=int(metrics.get("total_trades", 0) or 0),
-            max_dd_pct=float(metrics.get("max_dd_pct", 0) or 0),
+            max_dd_pct=float(metrics.get("max_drawdown_pct", 0) or 0),
         )
     except Exception as exc:
         import logging
         logging.getLogger(__name__).warning(
             "Failed to write research_best to SQLite: %s", exc
         )
+
+    # Regenerate brain/strategies/{strategy}.md so LLM context stays fresh.
+    # Non-fatal — brain.md is a derived artifact, not authoritative.
+    try:
+        from research.brain.writer import update_strategy
+        update_strategy(strategy, metrics, params,
+                        description=description or "autoresearch keep")
+    except Exception as _bexc:
+        import logging
+        logging.getLogger(__name__).warning("brain update_strategy failed (non-fatal): %s", _bexc)
 
 
 def _increment_run_count(strategy: str, universe: str = "sp500") -> None:
@@ -552,12 +562,12 @@ class ResearchSession:
         )
 
         # Load best-known params if they exist
-        best = load_best(strategy)
+        best = load_best(strategy, market)
         if best and best.get("params"):
             self._best_params = best["params"]
             logger.info(
-                "Loaded best params for %s (Sharpe %.4f from %d experiments).",
-                strategy,
+                "Loaded best params for %s/%s (Sharpe %.4f from %d experiments).",
+                strategy, market,
                 best.get("metrics", {}).get("sharpe", 0),
                 best.get("experiments_run", 0),
             )
@@ -579,7 +589,7 @@ class ResearchSession:
         self._experiments_run += 1
 
         # Save as best if we don't have one yet
-        best = load_best(self.strategy)
+        best = load_best(self.strategy, self.market)
         if not best or not best.get("metrics"):
             save_best(
                 self.strategy, self.market,
@@ -733,7 +743,7 @@ class ResearchSession:
 
     def best(self) -> dict:
         """Current best params and metrics."""
-        saved = load_best(self.strategy)
+        saved = load_best(self.strategy, self.market)
         if saved:
             return {
                 "params": saved.get("params", {}),

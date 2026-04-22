@@ -596,6 +596,14 @@ def run_session(
     from research.lockfile import EvaluationLockViolation
 
     session = ResearchSession(strategy, market, snapshot_id=snapshot_id)
+    # Sanity: config market must match the session market (catches cross-universe leaks)
+    try:
+        assert session._config.get("market") == market, (
+            f"ResearchSession market mismatch: config.market={session._config.get('market')!r} "
+            f"!= arg={market!r}"
+        )
+    except AttributeError:
+        pass  # session._config may not exist on all code paths
 
     # ── Override data source for non-sp500 universes ──────────────────────────
     # When --universe is specified, replace session data with data loaded via
@@ -853,6 +861,18 @@ def run_session(
                 result.get("delta", {}).get("sharpe", 0.0),
                 rationale,
             )
+            # Regenerate brain/strategies/{strategy}.md with new best params
+            try:
+                from research.brain.writer import update_strategy
+                keep_metrics = result.get("metrics", {})
+                update_strategy(
+                    strategy, keep_metrics, exp_params,
+                    description=(
+                        f"autoresearch_runner keep: {dotted_key}={candidate_value}"
+                    ),
+                )
+            except Exception as _bexc:
+                logger.warning("brain update_strategy failed (non-fatal): %s", _bexc)
             # Update current best so subsequent experiments build on it
             current_best_params = dict(session._best_params)
 

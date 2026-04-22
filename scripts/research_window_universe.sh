@@ -45,6 +45,7 @@ echo "$(date -Iseconds) [$UNIVERSE] sweep start (hours=$HOURS, workers=$WORKERS,
 
 timeout --signal=TERM --kill-after=60 "$SWEEP_TIMEOUT" python3 research/autoresearch_nightly.py \
     --universe "$UNIVERSE" \
+    --market "$UNIVERSE" \
     --hours "$HOURS" \
     --workers "$WORKERS" \
     >> "$LOGFILE" 2>&1 || true
