@@ -22,7 +22,10 @@ PROJECT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT))
 
 from strategies.base import BaseStrategy, Signal  # noqa: E402
-from tests.conftest import MINIMAL_CONFIG, make_ohlcv_df  # noqa: E402
+TESTS_DIR = Path(__file__).resolve().parent
+if str(TESTS_DIR) not in sys.path:
+    sys.path.insert(0, str(TESTS_DIR))
+from conftest import MINIMAL_CONFIG, make_ohlcv_df  # noqa: E402
 
 import copy
 
