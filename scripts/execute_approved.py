@@ -80,6 +80,70 @@ def main():
         log.info("Empty plan — nothing to execute")
         return
 
+    # ── Apply overlay sizing_override + avoid_tickers (#215) ────────────
+    overlay_ctx = plan.get("overlay_context") or {}
+    # plan.py writes the field as "tickers_to_avoid"; also handle legacy "avoid_tickers"
+    _avoid_raw = (
+        overlay_ctx.get("tickers_to_avoid")
+        or overlay_ctx.get("avoid_tickers")
+        or []
+    )
+    overlay_avoid = set(_avoid_raw)
+    overlay_sizing = overlay_ctx.get("sizing_override")
+    if overlay_sizing is not None:
+        overlay_sizing = float(overlay_sizing)
+
+    if overlay_ctx:
+        log.info(
+            "overlay_context active: action=%s sizing_override=%s avoid=%s",
+            overlay_ctx.get("action", "no_change"),
+            overlay_sizing,
+            sorted(overlay_avoid),
+        )
+
+    filtered_entries: list = []
+    for _entry in entries:
+        _ticker = _entry.get("ticker", "")
+
+        # Skip tickers the overlay wants to avoid
+        if _ticker in overlay_avoid:
+            log.info(
+                "overlay_applied: ticker=%s action=skip reason=avoid_tickers "
+                "avoided=%s",
+                _ticker, sorted(overlay_avoid),
+            )
+            continue
+
+        # Apply sizing_override multiplier to position_size
+        if overlay_sizing is not None:
+            _orig_qty = _entry.get("position_size", 0)
+            _new_qty = int(_orig_qty * overlay_sizing)
+            if _new_qty <= 0:
+                log.info(
+                    "overlay_applied: ticker=%s sizing=%s qty→0 — skipping "
+                    "avoided=%s",
+                    _ticker, overlay_sizing, sorted(overlay_avoid),
+                )
+                continue
+            _entry = dict(_entry)   # shallow copy — do not mutate original plan
+            _entry["position_size"] = _new_qty
+            log.info(
+                "overlay_applied: ticker=%s sizing=%s qty=%d→%d avoided=%s",
+                _ticker, overlay_sizing, _orig_qty, _new_qty, sorted(overlay_avoid),
+            )
+
+        filtered_entries.append(_entry)
+
+    if len(filtered_entries) != len(entries):
+        log.info(
+            "overlay: %d/%d entries proceeding after overlay filter (dropped %d)",
+            len(filtered_entries), len(entries),
+            len(entries) - len(filtered_entries),
+        )
+        plan = dict(plan)   # shallow copy — do not mutate stored plan
+        plan["proposed_entries"] = filtered_entries
+        entries = filtered_entries
+
     # ── Execute via LiveExecutor ─────────────────────────────
     from brokers.live_executor import LiveExecutor
 

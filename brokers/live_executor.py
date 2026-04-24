@@ -561,8 +561,50 @@ class LiveExecutor:
                         "dry_run": self.is_dry_run,
                     })
             else:
+                # ── Overlay context (sizing_override + tickers_to_avoid) (#215) ──
+                overlay_ctx = plan.get("overlay_context") or {}
+                _avoid_raw = (
+                    overlay_ctx.get("tickers_to_avoid")
+                    or overlay_ctx.get("avoid_tickers")
+                    or []
+                )
+                overlay_avoid = set(_avoid_raw)
+                overlay_sizing = overlay_ctx.get("sizing_override")
+                if overlay_sizing is not None:
+                    overlay_sizing = float(overlay_sizing)
+
+                if overlay_ctx:
+                    logger.info(
+                        "overlay_context active: action=%s sizing_override=%s "
+                        "avoid=%s",
+                        overlay_ctx.get("action", "no_change"),
+                        overlay_sizing,
+                        sorted(overlay_avoid),
+                    )
+
                 # Proceed with entries — apply size reduction if gate is in "reduce" mode
                 for entry_rec in plan.get("proposed_entries", []):
+                    ticker = entry_rec.get("ticker", "")
+
+                    # ── Overlay: skip avoided tickers ────────────────────
+                    if ticker in overlay_avoid:
+                        logger.info(
+                            "overlay_applied: ticker=%s action=skip "
+                            "reason=avoid_tickers avoided=%s",
+                            ticker, sorted(overlay_avoid),
+                        )
+                        report["entries"].append({
+                            "ticker": ticker,
+                            "side": "BUY",
+                            "qty": entry_rec.get("position_size", 0),
+                            "price": entry_rec.get("entry_price", 0),
+                            "success": False,
+                            "blocked": True,
+                            "reason": "overlay_avoid_tickers",
+                            "dry_run": self.is_dry_run,
+                        })
+                        continue
+
                     if vol_gate["action"] == "reduce":
                         # Apply 50% size reduction: halve position_size
                         original_qty = entry_rec.get("position_size", 0)
@@ -573,9 +615,40 @@ class LiveExecutor:
                         entry_rec["vol_gate_original_qty"] = original_qty
                         logger.warning(
                             "Volatility gate REDUCING %s size: %d → %d (50%%): %s",
-                            entry_rec.get("ticker", ""), original_qty, reduced_qty,
+                            ticker, original_qty, reduced_qty,
                             vol_gate["message"],
                         )
+
+                    # ── Overlay: apply sizing_override multiplier ──────────
+                    if overlay_sizing is not None:
+                        original_qty = entry_rec.get("position_size", 0)
+                        new_qty = int(original_qty * overlay_sizing)
+                        if new_qty <= 0:
+                            logger.info(
+                                "overlay_applied: ticker=%s sizing=%s "
+                                "qty→0 — skipping avoided=%s",
+                                ticker, overlay_sizing, sorted(overlay_avoid),
+                            )
+                            report["entries"].append({
+                                "ticker": ticker,
+                                "side": "BUY",
+                                "qty": 0,
+                                "price": entry_rec.get("entry_price", 0),
+                                "success": False,
+                                "blocked": True,
+                                "reason": "overlay_sizing_zero",
+                                "dry_run": self.is_dry_run,
+                            })
+                            continue
+                        entry_rec = dict(entry_rec)   # shallow copy — don't mutate plan
+                        entry_rec["position_size"] = new_qty
+                        logger.info(
+                            "overlay_applied: ticker=%s sizing=%s "
+                            "qty=%d→%d avoided=%s",
+                            ticker, overlay_sizing, original_qty, new_qty,
+                            sorted(overlay_avoid),
+                        )
+
                     result = self._execute_entry(entry_rec, trade_date)
                     report["entries"].append(result)
 
