@@ -190,8 +190,15 @@ class TradeLedger:
         with open(self.FILE, "w") as f:
             json.dump(self.trades, f, indent=2, default=str)
 
-    def record_entry(self, fill_record: dict):
-        """Record an entry fill."""
+    def record_entry(self, fill_record: dict) -> "int | None":
+        """Record an entry fill.
+
+        Returns:
+            The new SQLite trade id on success, or None on a duplicate
+            (UNIQUE constraint violation — open trade already exists for
+            this ticker/universe pair).  Callers may use this return value
+            to emit structured log lines such as TRADE_OPENED.
+        """
         fill_record["recorded_at"] = datetime.now().isoformat()
         # Ensure universe is present in the audit trail (parity with SQLite trades table)
         if "universe" not in fill_record:
@@ -200,10 +207,11 @@ class TradeLedger:
         self._save()
         # SQLite dual-write — JSON file is source of truth; SQLite failure is non-fatal
         _dw_ticker = fill_record.get('ticker', '?')
+        _new_trade_id: "int | None" = None
         try:
             from db import atlas_db
             logger.debug(f"SQLite dual-write: inserting entry for {_dw_ticker}")
-            atlas_db.record_trade_entry(
+            _new_trade_id = atlas_db.record_trade_entry(
                 ticker=fill_record.get('ticker', ''),
                 strategy=fill_record.get('strategy', ''),
                 universe=_derive_universe_safe(fill_record.get('ticker', ''), fill_record.get('market_id')),
@@ -219,6 +227,7 @@ class TradeLedger:
             logger.error(f"SQLite trade entry dual-write FAILED for {_dw_ticker}: {_db_exc}", exc_info=True)
         logger.info(f"Ledger entry: BUY {fill_record.get('ticker')} "
                     f"{fill_record.get('shares')}@{fill_record.get('fill_price')}")
+        return _new_trade_id
 
     def record_exit(self, trade_record: dict):
         """Record a completed trade (exit)."""

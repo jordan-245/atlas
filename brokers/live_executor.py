@@ -815,7 +815,7 @@ class LiveExecutor:
                 try:
                     from journal.logger import TradeLedger
                     _ledger = TradeLedger()
-                    _ledger.record_entry({
+                    _trade_id = _ledger.record_entry({
                         "ticker": ticker, "strategy": strategy, "shares": qty,
                         "fill_price": order_result.fill_price or price,
                         "planned_price": price, "stop_price": stop_price,
@@ -828,6 +828,18 @@ class LiveExecutor:
                         "config_version": self.config.get("version"),
                         "regime_state": _regime_state,
                     })
+                    # Emit structured TRADE_OPENED only on a genuine new insert
+                    # (record_entry returns None on duplicate constraint)
+                    if _trade_id is not None:
+                        logger.info(
+                            "TRADE_OPENED symbol=%s qty=%d entry_price=%.2f"
+                            " strategy=%s universe=%s trade_id=%s"
+                            " order_id=%s stop_price=%.2f",
+                            ticker, qty, order_result.fill_price or price, strategy,
+                            self.config.get("market_id", "unknown"),
+                            _trade_id,
+                            order_result.order_id, stop_price,
+                        )
                 except Exception as _ledger_exc:
                     logger.warning("TradeLedger entry record failed (non-fatal): %s", _ledger_exc)
             else:
@@ -2076,11 +2088,22 @@ class LiveExecutor:
                 "regime_state": _recon_regime,
             }
             try:
-                _ledger.record_entry(ledger_record)
+                _trade_id = _ledger.record_entry(ledger_record)
                 logger.info(
                     "Reconciled fill: BUY %s %d @ $%.2f (order %s)",
                     ticker, qty, fill_price, order_id[:12],
                 )
+                # Emit structured TRADE_OPENED only on a genuine new insert
+                if _trade_id is not None:
+                    logger.info(
+                        "TRADE_OPENED symbol=%s qty=%d entry_price=%.2f"
+                        " strategy=%s universe=%s trade_id=%s"
+                        " order_id=%s stop_price=%.2f",
+                        ticker, qty, fill_price, strategy,
+                        self.config.get("market_id", "unknown"),
+                        _trade_id,
+                        order_id, stop_price,
+                    )
                 reconciled.append(ledger_record)
             except Exception as e:
                 logger.error(
