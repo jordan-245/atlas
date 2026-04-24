@@ -496,6 +496,58 @@ send_message(
     fi
 fi
 
+
+# ── Signal-write divergence check ───────────────────────────
+# P1-D (2026-04-24): guard against silent-failure recurrence (d0b939d0 / P1-9).
+# Compares proposed_entries in today's plan JSON vs SQLite signals rows.
+# Alert fires within 1 hour if signals are generated but not persisted.
+SIGNAL_WRITE_RC=0
+python3 "$PROJECT/scripts/check_signal_writes.py" >> "$LOG_FILE" 2>&1 || SIGNAL_WRITE_RC=$?
+if [ "$SIGNAL_WRITE_RC" -ne 0 ]; then
+    log "WARN: signal-write divergence detected (check_signal_writes.py exit $SIGNAL_WRITE_RC) — alert sent"
+else
+    log "Signal-write check OK"
+fi
+
+# ── SuperCoach API reachability check ────────────────────────
+# Layered check: localhost direct (bypasses Caddy) + basicauth-authed public.
+# Direct failure = app is down; public-only failure = Caddy routing broken.
+SC_DIRECT_CODE=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/ --max-time 10 2>/dev/null || echo "000")
+SC_PUBLIC_CODE="skip"
+SC_PASS=$(jq -r '.caddy_basic_auth.password // .dashboard_pass // empty' /root/.atlas-secrets.json 2>/dev/null)
+if [ -n "$SC_PASS" ]; then
+    SC_PUBLIC_CODE=$(curl -sS -o /dev/null -w '%{http_code}' -u "atlas:$SC_PASS" http://127.0.0.1/api/ --max-time 10 2>/dev/null || echo "000")
+fi
+
+if [ "$SC_DIRECT_CODE" != "200" ]; then
+    log "CRITICAL: SuperCoach API direct (localhost:8000/) returned $SC_DIRECT_CODE"
+    python3 -c "
+import sys
+sys.path.insert(0, '$PROJECT')
+from utils.telegram import send_message
+send_message(
+    '\U0001f6a8 <b>SuperCoach API DOWN</b>\n'
+    'localhost:8000/ returned HTTP <code>$SC_DIRECT_CODE</code>\n'
+    'Check: <code>systemctl status supercoach-api</code>\n'
+    'Watchdog log: <code>/var/log/supercoach-watchdog.log</code>'
+)
+" 2>/dev/null || true
+elif [ "$SC_PUBLIC_CODE" != "skip" ] && [ "$SC_PUBLIC_CODE" != "200" ]; then
+    log "WARN: SuperCoach API public (Caddy /api/) returned $SC_PUBLIC_CODE (direct OK)"
+    python3 -c "
+import sys
+sys.path.insert(0, '$PROJECT')
+from utils.telegram import send_message
+send_message(
+    '\u26a0\ufe0f <b>SuperCoach API public route broken</b>\n'
+    'Direct localhost:8000/ = 200, Caddy /api/ = <code>$SC_PUBLIC_CODE</code>\n'
+    'Check <code>/etc/caddy/Caddyfile</code> and <code>systemctl status caddy</code>'
+)
+" 2>/dev/null || true
+else
+    log "SuperCoach API OK: direct=$SC_DIRECT_CODE public=$SC_PUBLIC_CODE"
+fi
+
 # ── Cleanup ──────────────────────────────────────────────────
 find "$LOG_DIR" -name "healthz-hourly_*.log" -mtime +3 -delete 2>/dev/null
 find "$LOG_DIR" -name "healthz-autofix_*.log" -mtime +14 -delete 2>/dev/null
