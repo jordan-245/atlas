@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "built_at": "2026-04-15T19:01:23.249695",
+    "built_at": "2026-04-24T11:36:35.893557",
     "config_version": "v1.0_moomoo_fees",
     "candidates_evaluated": 285,
     "candidates_valid": 285,
@@ -23,7 +23,7 @@
     "exclusions": [
       "MMC"
     ],
-    "rebuild_reason": "exclusion_change: added {'MMC'}"
+    "rebuild_reason": "scheduled_weekly_rebuild_timestamp_refresh"
   },
   "tickers": [
     "SPY",

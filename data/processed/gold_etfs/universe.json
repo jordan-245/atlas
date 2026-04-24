@@ -1,14 +1,21 @@
 {
-    "metadata": {
-        "built_at": "2026-04-14T00:00:00",
-        "config_version": "v1.0",
-        "candidates_evaluated": 4,
-        "final_count": 4,
-        "filters": {
-            "min_price": 1.0,
-            "min_median_daily_value": 1000000,
-            "top_n": 4
-        }
+  "metadata": {
+    "built_at": "2026-04-24T11:30:25.800200",
+    "config_version": "v1.0",
+    "candidates_evaluated": 4,
+    "final_count": 4,
+    "filters": {
+      "min_price": 1.0,
+      "min_median_daily_value": 1000000,
+      "top_n": 4
     },
-    "tickers": ["GLD", "SIL", "GDX", "GDXJ"]
+    "method": "static",
+    "rebuild_reason": "scheduled_weekly_rebuild"
+  },
+  "tickers": [
+    "GLD",
+    "IAU",
+    "GDX",
+    "GDXJ"
+  ]
 }

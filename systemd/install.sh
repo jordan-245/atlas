@@ -66,6 +66,7 @@ TIMERS_TO_ENABLE=(
     atlas-fred-health.timer
     unified-healthcheck.timer
     atlas-canary-check.timer
+    atlas-universe-rebuild.timer
 )
 
 changed=0
