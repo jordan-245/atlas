@@ -458,3 +458,31 @@ def mock_signal() -> Signal:
         rationale="RSI oversold test signal",
         features={"rsi": 28.0, "zscore": -2.5},
     )
+
+
+# ---------------------------------------------------------------------------
+# State-dir isolation — prevent ANY test from writing to brokers/state/live_*.json
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def _isolate_state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Redirect atlas_db._state_dir_override to a per-test tmp dir.
+
+    Background: db.atlas_db._assert_state_file_parity() appends missing tickers
+    to brokers/state/live_{universe}.json.  Any test that calls record_trade_entry()
+    with an existing state file will inject fake tickers into the live state.
+    This fixture short-circuits the write to a throw-away tmp directory.
+
+    Only test_state_file_sqlite_parity.py should opt-out (it explicitly needs
+    to test the parity mechanism and manages its own override).
+    """
+    try:
+        import db.atlas_db as _adb
+    except Exception:
+        yield
+        return
+
+    state_tmp = tmp_path / "broker_state"
+    state_tmp.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(_adb, "_state_dir_override", str(state_tmp))
+    yield
