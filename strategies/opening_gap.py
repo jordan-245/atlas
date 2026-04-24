@@ -243,6 +243,10 @@ class OpeningGap(BaseStrategy):
                     take_profit = None
 
                 # Position sizing
+                # P1-A: Dynamic sizing — override risk_pct per ticker
+                risk_pct = self._get_dynamic_risk_pct(
+                    atr=current_atr, entry_price=entry_price
+                )
                 try:
                     pos = calc_position_size(
                         equity=equity,

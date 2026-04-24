@@ -212,3 +212,59 @@ class DynamicSizer:
 
         shares = int(risk_amount / risk_per_share)
         return max(0, shares)
+
+
+# ---------------------------------------------------------------------------
+# Module-level convenience helper for live strategy use
+# ---------------------------------------------------------------------------
+
+# Cache DynamicSizer instances keyed by id(config) so we don't reconstruct
+# one on every ticker call within a single generate_signals pass.
+_sizer_cache: Dict[int, "DynamicSizer"] = {}
+
+
+def get_risk_pct_for_config(
+    config: dict,
+    atr: float = 0.0,
+    entry_price: float = 0.0,
+    confidence: float = 0.75,
+    equity_history: Optional[List[float]] = None,
+) -> float:
+    """Compute risk percentage using DynamicSizer when *config.dynamic_sizing.enabled*.
+
+    This is the shared helper used by all live strategies so they mirror the
+    backtest engine's sizing path exactly.  When ``dynamic_sizing.enabled`` is
+    ``False`` it falls back to the flat ``risk.max_risk_per_trade_pct`` value,
+    preserving full backwards-compatibility with the legacy flat-risk code path.
+
+    Args:
+        config:         Full strategy config dict (same object passed to the
+                        strategy constructor).
+        atr:            Current ATR value for the ticker.
+        entry_price:    Planned entry price per share.
+        confidence:     Signal confidence score (0–1).  Only actively used when
+                        ``dynamic_sizing.confidence_scaling.enabled`` is True.
+        equity_history: List of equity values (most recent last) for drawdown
+                        scaling.  Pass ``None`` (default) if not available.
+
+    Returns:
+        Risk percentage as a fraction (e.g. 0.005 = 0.5 %).
+    """
+    ds_cfg = config.get("dynamic_sizing", {})
+    if not ds_cfg.get("enabled", False):
+        # Toggle is off — fall back to flat risk pct (legacy path preserved)
+        return config.get("risk", {}).get("max_risk_per_trade_pct", 0.005)
+
+    # Retrieve or build a cached sizer for this config object.
+    cfg_id = id(config)
+    sizer = _sizer_cache.get(cfg_id)
+    if sizer is None:
+        sizer = DynamicSizer(config)
+        _sizer_cache[cfg_id] = sizer
+
+    return sizer.calculate_risk_pct(
+        confidence=confidence,
+        atr=atr,
+        price=entry_price,
+        equity_history=equity_history,
+    )

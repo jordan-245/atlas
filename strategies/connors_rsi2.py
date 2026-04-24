@@ -115,6 +115,7 @@ class ConnorsRSI2(BaseStrategy):
         """Scan all tickers for RSI(2) extreme oversold entry signals."""
         signals: List[Signal] = []
         held_tickers = self._get_held_tickers(existing_positions)
+        # Flat fallback — overridden per-ticker by _get_dynamic_risk_pct below
         risk_pct = self.risk_config.get("max_risk_per_trade_pct", 0.005)
         commission_per_trade = self.fees_config.get("commission_per_trade", 5.0)
         commission_pct = self.fees_config.get("commission_pct", 0.0008)
@@ -208,6 +209,8 @@ class ConnorsRSI2(BaseStrategy):
                     continue
 
                 risk_per_share = entry_price - stop_price
+                # P1-A: Dynamic sizing — override risk_pct per ticker
+                risk_pct = self._get_dynamic_risk_pct(atr=atr, entry_price=entry_price)
                 pos_result = calc_position_size(
                     equity=equity,
                     risk_pct=risk_pct,

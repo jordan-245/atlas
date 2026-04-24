@@ -206,6 +206,8 @@ class SectorRotation(BaseStrategy):
                 else:
                     take_profit = None
 
+                # P1-A: Dynamic sizing — override risk_pct per ticker
+                risk_pct = self._get_dynamic_risk_pct(atr=atr, entry_price=entry_price)
                 try:
                     pos = calc_position_size(
                         equity=equity, risk_pct=risk_pct,

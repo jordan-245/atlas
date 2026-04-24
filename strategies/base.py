@@ -127,6 +127,28 @@ class BaseStrategy(ABC):
         """Return the strategy name. Defaults to class name."""
         return self.__class__.__name__
 
+    def _get_dynamic_risk_pct(
+        self,
+        atr: float = 0.0,
+        entry_price: float = 0.0,
+        confidence: float = 0.75,
+        equity_history=None,
+    ) -> float:
+        """Return risk-per-trade percentage, using DynamicSizer when enabled.
+
+        Mirrors the backtest engine sizing path so live and backtest use the
+        same logic.  Gated by ``config.dynamic_sizing.enabled``.
+        Falls back to flat ``risk.max_risk_per_trade_pct`` when disabled.
+        """
+        from utils.dynamic_sizing import get_risk_pct_for_config
+        return get_risk_pct_for_config(
+            config=self.config,
+            atr=atr,
+            entry_price=entry_price,
+            confidence=confidence,
+            equity_history=equity_history,
+        )
+
     def precompute(self, data: Dict[str, pd.DataFrame]) -> None:
         """Pre-compute indicators as DataFrame columns. Override in subclasses.
 

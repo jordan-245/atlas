@@ -220,7 +220,10 @@ class MTFMomentum(BaseStrategy):
                 stop_price = entry_price - self.atr_stop_mult * current_atr
                 take_profit = entry_price + 3.0 * current_atr
 
-                risk_pct = self.risk_config.get("max_risk_per_trade_pct", 0.005)
+                # P1-A: Dynamic sizing — use DynamicSizer when volatility_scaling.enabled
+                risk_pct = self._get_dynamic_risk_pct(
+                    atr=current_atr, entry_price=entry_price
+                )
                 commission_per_trade = self.fees_config.get("commission_per_trade", 1.1)
                 commission_pct = self.fees_config.get("commission_pct", 0.001)
                 pos = calc_position_size(
