@@ -48,6 +48,14 @@ from utils.logging_config import setup_logging  # noqa: E402
 
 logger = logging.getLogger("atlas.sync_protective_orders")
 
+# PDT backoff: expiry-based check (wired C3 — covers pre-market same-day denials)
+from brokers.pdt_state import (  # noqa: E402
+    is_pdt_deferred,
+    set_pdt_deferred,
+    clear_expired as _clear_pdt_expired,
+    _rth_close_today,
+)
+
 # Markets supported by this script
 _MARKETS = ("asx", "sp500", "commodity_etfs", "sector_etfs")
 # Default broker per market (overridden by config)
@@ -783,12 +791,26 @@ def sync_market(
             _now_utc = datetime.utcnow()
             _pdt_skipped: list[str] = []
             _sync_positions: list = []
+            # Clear expired entries from the new expiry-based state at the start
+            # of each market cycle (no-op if no entries have expired).
+            try:
+                _clear_pdt_expired()
+            except Exception as _pdt_clr_exc:
+                logger.debug("PDT clear_expired (non-fatal): %s", _pdt_clr_exc)
+
             for _pos in my_market_positions:
-                if not _is_pdt_retry_window(_now_utc) and _pdt_should_skip(_pos.ticker, market_id, _pdt_state):
+                # Old check: retry-window based (keyed ticker::market_id)
+                _old_skip = (
+                    not _is_pdt_retry_window(_now_utc)
+                    and _pdt_should_skip(_pos.ticker, market_id, _pdt_state)
+                )
+                # New check: expiry-based (ticker-only key, covers ANY hour today)
+                _new_skip = is_pdt_deferred(_pos.ticker)
+                if _old_skip or _new_skip:
                     logger.info(
-                        "PDT skip %s (%s) — stop deferred during RTH; retry pre-market "
-                        "(before %02d:00 UTC)",
-                        _pos.ticker, market_id, _PDT_RETRY_BEFORE_UTC_HOUR,
+                        "pdt_skip: %s (%s) — PDT deferred until RTH close"
+                        " (old=%s new=%s)",
+                        _pos.ticker, market_id, _old_skip, _new_skip,
                     )
                     _pdt_skipped.append(_pos.ticker)
                 else:
@@ -861,6 +883,17 @@ def sync_market(
                             "PDT: recorded deferral for %s (%s), retry_count=%d",
                             _t, market_id, _pdt_state[_key]["retry_count"],
                         )
+                        # Also record in new expiry-based state (ticker-only key)
+                        try:
+                            set_pdt_deferred(_t, _rth_close_today())
+                            logger.info(
+                                "pdt_deferred: %s recorded in pdt_state.json until 21:00 UTC",
+                                _t,
+                            )
+                        except Exception as _pdt_new_exc:
+                            logger.debug(
+                                "pdt_state set_pdt_deferred (non-fatal): %s", _pdt_new_exc
+                            )
                     elif _key in _pdt_state and _sl not in ("error",):
                         _pdt_state.pop(_key)
                         _pdt_changed = True

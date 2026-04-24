@@ -37,6 +37,11 @@ from brokers.alpaca import mapper
 from brokers.alpaca.market_data import AlpacaMarketData
 from brokers.retry import with_retry
 from brokers.secrets import get_secret
+from brokers.pdt_state import (
+    is_pdt_deferred as _is_pdt_deferred_new,
+    set_pdt_deferred as _set_pdt_deferred_new,
+    _rth_close_today as _pdt_rth_close,
+)
 
 logger = logging.getLogger("atlas.broker.alpaca")
 
@@ -586,14 +591,37 @@ class AlpacaBroker(BrokerAdapter):
                 requested_price=price, message=str(e),
             )
 
-        try:
-            order = self._broker_call(self._trade_client.submit_order, order_data)
-        except Exception as e:
-            logger.error("submit_order failed for %s: %s", ticker, e, exc_info=True)
+        # ── PDT backoff: pre-check for SELL orders ────────────────────────────
+        # If the ticker was denied earlier today (40310100), block the submit
+        # immediately rather than burning another API round-trip and error log.
+        if side == OrderSide.SELL and _is_pdt_deferred_new(ticker):
+            logger.info(
+                "pdt_skip: %s — pre-check, PDT deferred until RTH close "
+                "(skipping submit_order)", ticker,
+            )
             return OrderResult(
                 success=False, ticker=ticker, side=side,
                 status=OrderStatus.FAILED, requested_qty=qty,
-                requested_price=price, message=str(e),
+                requested_price=price,
+                message=f"pdt_deferred: {_PDT_ERROR_CODE}",
+            )
+
+        try:
+            order = self._broker_call(self._trade_client.submit_order, order_data)
+        except Exception as e:
+            error_msg = str(e)
+            if _is_pdt_error(error_msg):
+                # Record deferral so next cycle skips the submit entirely.
+                _set_pdt_deferred_new(ticker, _pdt_rth_close())
+                logger.warning(
+                    "pdt_deferred: ticker=%s until=21:00 UTC (auto-recorded)", ticker,
+                )
+            else:
+                logger.error("submit_order failed for %s: %s", ticker, e, exc_info=True)
+            return OrderResult(
+                success=False, ticker=ticker, side=side,
+                status=OrderStatus.FAILED, requested_qty=qty,
+                requested_price=price, message=error_msg,
             )
 
         result = _order_to_result(order, ticker, side)
@@ -868,6 +896,22 @@ class AlpacaBroker(BrokerAdapter):
             ticker = pos.ticker
             ticker_result: dict = {}
             try:
+                # ── PDT backoff: pre-check ────────────────────────────────────────
+                # Skip any ticker that was PDT-denied earlier today so we don't
+                # hammer Alpaca with repeated 40310100 rejections every 15 min.
+                if _is_pdt_deferred_new(ticker):
+                    logger.info(
+                        "pdt_skip: %s — pre-check in sync_all_protective_orders, "
+                        "PDT deferred until RTH close", ticker,
+                    )
+                    pdt_deferred += 1
+                    ticker_result["sl_action"] = "pdt_deferred"
+                    ticker_result["tp_action"] = "pdt_deferred"
+                    ticker_result["action"] = "pdt_deferred"
+                    ticker_result["qty"] = pos.shares
+                    per_ticker[ticker] = ticker_result
+                    continue  # skip to next position
+
                 plan_entry = plan_by_ticker.get(ticker, {})
 
                 # ── Resolve stop price (needed for all paths) ──
@@ -1003,38 +1047,59 @@ class AlpacaBroker(BrokerAdapter):
                                     # Place new OCO with tightened stop
                                     # Alpaca OCO requires a LIMIT order as parent (TP leg),
                                     # with both take_profit and stop_loss parameters.
-                                    try:
-                                        request = LimitOrderRequest(
-                                            symbol=ticker,
-                                            qty=pos.shares,
-                                            side=AlpacaSide.SELL,
-                                            limit_price=take_profit,
-                                            order_class=OrderClass.OCO,
-                                            take_profit=TakeProfitRequest(limit_price=take_profit),
-                                            stop_loss=StopLossRequest(stop_price=round(ideal_stop, 2)),
-                                            time_in_force=TimeInForce.GTC,
-                                        )
-                                        order = self._broker_call(self._trade_client.submit_order, request)
-                                        
+                                    # PDT pre-check for tightened OCO
+                                    if _is_pdt_deferred_new(ticker):
                                         logger.info(
-                                            "sync_protective: tightened %s stop from $%.2f to $%.2f "
-                                            "(trailing stop ratchet, strategy=%s) → OCO id=%s",
-                                            ticker, existing_stop_price, ideal_stop, strategy_name, order.id,
+                                            "pdt_skip: %s — pre-check, skipping tightened OCO",
+                                            ticker,
                                         )
-                                        ticker_result["sl_action"] = "tightened"
-                                        ticker_result["sl_tightened_from"] = existing_stop_price
-                                        ticker_result["sl_tightened_to"] = round(ideal_stop, 2)
-                                        ticker_result["oco_order_id"] = str(order.id)
-                                        sl_placed += 1
-                                        tp_placed += 1
-                                    except Exception as oco_err:
-                                        logger.error(
-                                            "sync_protective: failed to place tightened OCO for %s: %s",
-                                            ticker, oco_err, exc_info=True,
-                                        )
-                                        ticker_result["sl_action"] = "error_tightening"
-                                        ticker_result["sl_error"] = str(oco_err)
-                                        errors += 1
+                                        pdt_deferred += 1
+                                        ticker_result["sl_action"] = "pdt_deferred"
+                                        ticker_result["tp_action"] = "pdt_deferred"
+                                    else:
+                                        try:
+                                            request = LimitOrderRequest(
+                                                symbol=ticker,
+                                                qty=pos.shares,
+                                                side=AlpacaSide.SELL,
+                                                limit_price=take_profit,
+                                                order_class=OrderClass.OCO,
+                                                take_profit=TakeProfitRequest(limit_price=take_profit),
+                                                stop_loss=StopLossRequest(stop_price=round(ideal_stop, 2)),
+                                                time_in_force=TimeInForce.GTC,
+                                            )
+                                            order = self._broker_call(self._trade_client.submit_order, request)
+
+                                            logger.info(
+                                                "sync_protective: tightened %s stop from $%.2f to $%.2f "
+                                                "(trailing stop ratchet, strategy=%s) → OCO id=%s",
+                                                ticker, existing_stop_price, ideal_stop, strategy_name, order.id,
+                                            )
+                                            ticker_result["sl_action"] = "tightened"
+                                            ticker_result["sl_tightened_from"] = existing_stop_price
+                                            ticker_result["sl_tightened_to"] = round(ideal_stop, 2)
+                                            ticker_result["oco_order_id"] = str(order.id)
+                                            sl_placed += 1
+                                            tp_placed += 1
+                                        except Exception as oco_err:
+                                            _oco_err_msg = str(oco_err)
+                                            if _is_pdt_error(_oco_err_msg):
+                                                _set_pdt_deferred_new(ticker, _pdt_rth_close())
+                                                logger.warning(
+                                                    "sync_protective: tightened OCO deferred for %s — PDT",
+                                                    ticker,
+                                                )
+                                                pdt_deferred += 1
+                                                ticker_result["sl_action"] = "pdt_deferred"
+                                                ticker_result["tp_action"] = "pdt_deferred"
+                                            else:
+                                                logger.error(
+                                                    "sync_protective: failed to place tightened OCO for %s: %s",
+                                                    ticker, oco_err, exc_info=True,
+                                                )
+                                                ticker_result["sl_action"] = "error_tightening"
+                                                ticker_result["sl_error"] = _oco_err_msg
+                                                errors += 1
                                 else:
                                     # Cancel failed — don't place new OCO
                                     logger.warning(
@@ -1135,6 +1200,8 @@ class AlpacaBroker(BrokerAdapter):
 
                             # Check if it's a PDT error
                             if _is_pdt_error(oco_error_msg):
+                                # Record deferral so next cycle's pre-check skips submit.
+                                _set_pdt_deferred_new(ticker, _pdt_rth_close())
                                 # OCO rejected due to PDT. The TP leg makes the
                                 # entire OCO look like a potential day trade.
                                 # Try placing JUST the SL as a fallback — a stop
