@@ -65,6 +65,12 @@ _HELD_STATE_FILE = PROJECT / "data" / "stops_held_state.json"
 # the operator is alerted at most once per calendar day.
 _HELD_MAX_RETRIES = 4
 
+# PDT (Pattern Day Trader) deferred-stop tracking
+_PDT_STATE_FILE = PROJECT / "data" / "pdt_deferred_state.json"
+# Retry PDT-deferred positions ONLY before this UTC hour (pre-market / after-hours window).
+# 00:00–13:59 UTC ≈ before US market open — same-day restriction has cleared overnight.
+_PDT_RETRY_BEFORE_UTC_HOUR = 14
+
 
 # ═══════════════════════════════════════════════════════════════
 # Config loading
@@ -200,6 +206,7 @@ def _handle_held_stops(
     send_telegram: bool = True,
     state_file: Path | None = None,
     now_iso: str | None = None,
+    state_tickers: "set[str] | None" = None,
 ) -> dict:
     """Detect stop orders stuck in 'held' status and resubmit on the second consecutive cycle.
 
@@ -257,6 +264,19 @@ def _handle_held_stops(
                 "raw": raw,
                 "status": order_status,
             }
+
+    # ── Scope to this market's tickers ──────────────────────────────────
+    # Without this filter, sp500 sync would also process held stops for
+    # commodity_etfs positions (and vice versa), causing duplicate operations
+    # and polluting the shared stops_held_state.json across markets.
+    if state_tickers is not None:
+        _before = len(currently_held)
+        currently_held = {t: v for t, v in currently_held.items() if t in state_tickers}
+        if _before != len(currently_held):
+            logger.debug(
+                "_handle_held_stops: filtered held stops %d→%d for %s by state_tickers",
+                _before, len(currently_held), market_id,
+            )
 
     if currently_held:
         logger.info(
@@ -425,7 +445,12 @@ def _handle_held_stops(
             errors.append(ticker)
 
     # Clean up state entries for tickers that are no longer held (resolved on their own)
-    resolved_keys = [k for k in list(state.keys()) if k.split("::")[0] not in currently_held]
+    # Only clean up entries for THIS market to avoid deleting other markets' held state.
+    # E.g. when sp500 sync runs, it must not wipe CCJ::commodity_etfs from the shared file.
+    resolved_keys = [
+        k for k in list(state.keys())
+        if k.endswith(f"::{market_id}") and k.split("::")[0] not in currently_held
+    ]
     for k in resolved_keys:
         logger.debug("_handle_held_stops: clearing resolved held state for %s", k)
         state.pop(k, None)
@@ -434,6 +459,54 @@ def _handle_held_stops(
         _save_held_state(state, state_file)
 
     return {"resubmitted": resubmitted, "newly_held": newly_held, "errors": errors}
+
+
+# ═══════════════════════════════════════════════════════════════
+# PDT (Pattern Day Trader) deferred-stop helpers
+# ═══════════════════════════════════════════════════════════════
+
+def _load_pdt_state(state_file: Path | None = None) -> dict:
+    """Load per-ticker PDT-deferral state from JSON file."""
+    path = state_file or _PDT_STATE_FILE
+    if path.exists():
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except Exception as exc:
+            logger.warning("Could not read PDT state file %s: %s", path, exc)
+    return {}
+
+
+def _save_pdt_state(state: dict, state_file: Path | None = None) -> None:
+    """Persist PDT-deferral state to JSON file."""
+    path = state_file or _PDT_STATE_FILE
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(state, f, indent=2)
+    except Exception as exc:
+        logger.warning("Could not save PDT state file %s: %s", path, exc)
+
+
+def _is_pdt_retry_window(now_utc: "datetime | None" = None) -> bool:
+    """Return True if we are in the pre-market/AH window where PDT stops can be retried.
+
+    PDT (Pattern Day Trader) rule on accounts < $25k prevents placing a stop-sell
+    on a position entered the same calendar day.  Outside US RTH (hour < 14 UTC)
+    the position is no longer 'same day' from Alpaca's perspective, so the stop
+    can be placed successfully.
+    """
+    t = now_utc or datetime.utcnow()
+    return t.hour < _PDT_RETRY_BEFORE_UTC_HOUR  # True = pre-market / AH (safe to retry)
+
+
+def _pdt_should_skip(ticker: str, market_id: str, pdt_state: dict) -> bool:
+    """Return True if *ticker* is recorded as PDT-deferred for *market_id*.
+
+    Call this only when NOT in the retry window (_is_pdt_retry_window() == False),
+    i.e. during RTH.  Avoids hammering Alpaca with repeat PDT rejections every 15 min.
+    """
+    return f"{ticker}::{market_id}" in pdt_state
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -496,11 +569,17 @@ def sync_market(
     # Merge state stops into the plan so sync_all_protective_orders
     # uses current levels instead of falling back to 5% below entry.
     state_path = PROJECT / "brokers" / "state" / f"live_{market_id}.json"
+    state_tickers: set[str] = set()  # tickers this market owns (for position scoping)
     try:
         if state_path.exists():
             import json as _json
             with open(state_path) as _sf:
                 _state = _json.load(_sf)
+            # Build state_tickers for per-market position scoping (P0-3 fix)
+            state_tickers = {
+                _sp.get("ticker", "") for _sp in _state.get("positions", [])
+                if _sp.get("ticker", "")
+            }
             _state_stops = {}
             for _sp in _state.get("positions", []):
                 _t = _sp.get("ticker", "")
@@ -655,6 +734,7 @@ def sync_market(
                 market_id,
                 dry_run=dry_run,
                 send_telegram=True,
+                state_tickers=state_tickers,  # P0-3: scope to this market only
             )
             if _held_result["resubmitted"]:
                 logger.info(
@@ -672,13 +752,65 @@ def sync_market(
         # ── Sync protective orders ────────────────────────────
 
         if broker_name == "alpaca":
-            # Alpaca broker handles everything internally —
-            # fetches positions + open orders, detects existing stops/TPs,
-            # places missing SL and TP orders.
-            positions = broker.get_positions()
-            if not positions:
+            # ── Filter broker positions to this market's state-file tickers ────
+            # ROOT CAUSE of P0-1 duplicate inserts: sp500 AND commodity_etfs syncs
+            # both fetched all 7 broker positions and called sync_all_protective_orders
+            # on the same tickers simultaneously → race → duplicate stops/errors.
+            # Fix: only process positions whose ticker is in THIS market's state file.
+            _raw_positions = broker.get_positions()
+            if state_tickers:
+                my_market_positions = [p for p in _raw_positions if p.ticker in state_tickers]
+            else:
+                # Empty or missing state file → no positions to process (safe default).
+                my_market_positions = []
+            logger.info(
+                "%s: %d state-file tickers, %d matching broker positions (of %d total)",
+                market_id.upper(), len(state_tickers), len(my_market_positions), len(_raw_positions),
+            )
+
+            if not my_market_positions:
                 logger.info("No live positions in %s — nothing to protect", market_id)
                 result["counts"] = {"positions_checked": 0, "orphans_cancelled": _orphans_cancelled}
+                return result
+
+            # ── PDT backoff: skip tickers deferred during RTH (P1-13) ────────
+            # PDT rule on <$25k accounts rejects stop-sells placed on same-day entries.
+            # Rather than hammering Alpaca every 15 min and getting 741 error lines,
+            # we skip PDT-deferred tickers during RTH and only retry pre-market
+            # (00:00–13:59 UTC), when the 'same day' restriction has cleared.
+            _pdt_state = _load_pdt_state()
+            _now_utc = datetime.utcnow()
+            _pdt_skipped: list[str] = []
+            _sync_positions: list = []
+            for _pos in my_market_positions:
+                if not _is_pdt_retry_window(_now_utc) and _pdt_should_skip(_pos.ticker, market_id, _pdt_state):
+                    logger.info(
+                        "PDT skip %s (%s) — stop deferred during RTH; retry pre-market "
+                        "(before %02d:00 UTC)",
+                        _pos.ticker, market_id, _PDT_RETRY_BEFORE_UTC_HOUR,
+                    )
+                    _pdt_skipped.append(_pos.ticker)
+                else:
+                    _sync_positions.append(_pos)
+            if _pdt_skipped:
+                logger.info(
+                    "%s: %d PDT-deferred ticker(s) skipped (RTH): %s",
+                    market_id.upper(), len(_pdt_skipped), _pdt_skipped,
+                )
+
+            positions = _sync_positions
+            if not positions:
+                logger.info(
+                    "All %s in-scope positions are PDT-deferred — nothing to sync this cycle",
+                    market_id.upper(),
+                )
+                result["counts"] = {
+                    "positions_checked": len(my_market_positions),
+                    "pdt_deferred": len(_pdt_skipped),
+                    "sl_placed": 0, "tp_placed": 0, "sl_already_exists": 0,
+                    "tp_already_exists": 0, "sl_skipped": 0, "tp_skipped": 0,
+                    "errors": 0, "orphans_cancelled": _orphans_cancelled,
+                }
                 return result
 
             logger.info("%d live positions in %s", len(positions), market_id)
@@ -705,6 +837,40 @@ def sync_market(
             }
             # Convert per_ticker → results with summary strings
             per_ticker = sync_result.get("per_ticker", {})
+
+            # ── Update PDT deferred state ─────────────────────────────────────
+            # Record newly PDT-deferred tickers so next RTH cycle skips them;
+            # clear entries whose stop was successfully placed this cycle.
+            try:
+                _pdt_now_iso = _now_utc.isoformat()
+                _pdt_changed = False
+                for _t, _td in per_ticker.items():
+                    _sl = _td.get("sl_action") or _td.get("action", "")
+                    _key = f"{_t}::{market_id}"
+                    if _sl == "pdt_deferred":
+                        _prev = _pdt_state.get(_key, {})
+                        _pdt_state[_key] = {
+                            "first_seen": _prev.get("first_seen", _pdt_now_iso),
+                            "last_retry": _pdt_now_iso,
+                            "retry_count": _prev.get("retry_count", 0) + 1,
+                            "market_id": market_id,
+                        }
+                        _pdt_changed = True
+                        logger.info(
+                            "PDT: recorded deferral for %s (%s), retry_count=%d",
+                            _t, market_id, _pdt_state[_key]["retry_count"],
+                        )
+                    elif _key in _pdt_state and _sl not in ("error",):
+                        _pdt_state.pop(_key)
+                        _pdt_changed = True
+                        logger.info(
+                            "PDT: cleared deferral for %s (%s) — stop placed", _t, market_id,
+                        )
+                if _pdt_changed and not dry_run:
+                    _save_pdt_state(_pdt_state)
+            except Exception as _pdt_upd_exc:
+                logger.warning("PDT state update failed (non-fatal): %s", _pdt_upd_exc)
+
             for ticker, tdata in per_ticker.items():
                 sl_action = tdata.get("sl_action") or tdata.get("action", "unknown")
                 tp_action = tdata.get("tp_action", "")
