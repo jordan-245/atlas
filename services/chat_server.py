@@ -2334,7 +2334,8 @@ async def websocket_chat(ws: WebSocket) -> None:  # noqa: C901
                     continue
                 content = data.get("content", "").strip()
                 images = data.get("images")  # [{data, mime}, ...]
-                if not content and not images:
+                attachments = data.get("attachments")  # [{name, data, mime}, ...]
+                if not content and not images and not attachments:
                     continue
 
                 session_id = data.get("session_id")
@@ -2389,7 +2390,7 @@ async def websocket_chat(ws: WebSocket) -> None:  # noqa: C901
                 _generating = True
                 full_text = ""
                 try:
-                    async for event in mgr.send_message(content, images=images):
+                    async for event in mgr.send_message(content, images=images, attachments=attachments):
                         await ws.send_json(event.to_dict())
                         if event.type == "text_delta":
                             full_text += event.data.get("delta", "")

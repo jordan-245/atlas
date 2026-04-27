@@ -61,6 +61,152 @@ def _load_system_prompt() -> str:
 _SYSTEM_PROMPT = _load_system_prompt()
 
 
+# ── Attachment materialisation ───────────────────────────────────────────────
+
+# Cap conversion size to keep prompts sane.  Excel sheets larger than this
+# are truncated with a clear marker so Claude knows the data was clipped.
+_MAX_ROWS_PER_SHEET = 500
+_MAX_COLS_PER_SHEET = 60
+_MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024  # 25 MB raw upload cap
+
+_SPREADSHEET_EXTS = {".xlsx", ".xlsm", ".xls", ".xlsb", ".ods"}
+_TEXT_EXTS = {".csv", ".tsv", ".txt", ".md", ".json", ".log"}
+
+
+def _safe_name(name: str) -> str:
+    """Strip the user-supplied filename to a safe basename for temp prefixes."""
+    import re as _re
+    base = Path(name or "file").name
+    base = _re.sub(r"[^A-Za-z0-9._-]", "_", base)
+    return base[:80] or "file"
+
+
+def _xlsx_to_markdown(xlsx_path: Path, original_name: str) -> str:
+    """Convert an Excel workbook into a compact markdown document.
+
+    Each sheet becomes a section.  Large sheets are truncated to
+    ``_MAX_ROWS_PER_SHEET`` × ``_MAX_COLS_PER_SHEET`` with an explicit
+    marker so Claude knows there is more data not shown.
+    """
+    import pandas as pd  # local import — keeps module-load time tight
+
+    try:
+        sheets = pd.read_excel(xlsx_path, sheet_name=None, engine=None)
+    except Exception as exc:
+        return f"# {original_name}\n\n*Could not parse Excel file: {exc}*\n"
+
+    parts: list[str] = [f"# Excel file: {original_name}"]
+    if not sheets:
+        parts.append("\n*(workbook contains no sheets)*\n")
+        return "\n".join(parts)
+
+    parts.append(f"Sheets: {', '.join(sheets.keys())}\n")
+    for sheet_name, df in sheets.items():
+        total_rows, total_cols = df.shape
+        truncated = False
+        if total_cols > _MAX_COLS_PER_SHEET:
+            df = df.iloc[:, :_MAX_COLS_PER_SHEET]
+            truncated = True
+        if total_rows > _MAX_ROWS_PER_SHEET:
+            df = df.head(_MAX_ROWS_PER_SHEET)
+            truncated = True
+
+        parts.append(f"## Sheet: {sheet_name} ({total_rows} rows × {total_cols} cols)")
+        if df.empty:
+            parts.append("*(empty sheet)*\n")
+            continue
+        try:
+            parts.append(df.to_markdown(index=False))
+        except Exception:
+            # to_markdown() needs `tabulate`; fall back to CSV format
+            parts.append("```csv")
+            parts.append(df.to_csv(index=False).rstrip())
+            parts.append("```")
+        if truncated:
+            parts.append(
+                f"\n*(truncated to first {_MAX_ROWS_PER_SHEET} rows × "
+                f"{_MAX_COLS_PER_SHEET} cols — original was {total_rows} × {total_cols})*"
+            )
+        parts.append("")
+    return "\n".join(parts)
+
+
+def _materialise_attachments(attachments: list[dict]) -> list[Path]:
+    """Decode chat attachments to temp files Pi can read with @file syntax.
+
+    * Excel (xlsx/xls/...) → converted to markdown text file
+    * CSV/TSV/TXT → written through unchanged (with .txt suffix so Pi treats
+      it as text)
+    * Anything else → written through with original extension; Claude may or
+      may not be able to read it, but at least we don't silently drop it.
+    """
+    import base64 as b64mod
+    import tempfile
+
+    paths: list[Path] = []
+    for idx, att in enumerate(attachments):
+        raw_b64 = att.get("data", "")
+        name = att.get("name", f"attachment_{idx}")
+        if not raw_b64:
+            continue
+        try:
+            raw_bytes = b64mod.b64decode(raw_b64)
+        except Exception as exc:
+            logger.warning("Could not decode attachment %s: %s", name, exc)
+            continue
+        if len(raw_bytes) > _MAX_ATTACHMENT_BYTES:
+            logger.warning(
+                "Attachment %s exceeds %d bytes; skipping",
+                name, _MAX_ATTACHMENT_BYTES,
+            )
+            continue
+
+        ext = Path(name).suffix.lower()
+        safe = _safe_name(name)
+
+        if ext in _SPREADSHEET_EXTS:
+            # Write the raw workbook to a temp file, then convert to markdown.
+            src = Path(tempfile.mktemp(suffix=ext, prefix=f"atlas_xlsx_src_{idx}_"))
+            try:
+                src.write_bytes(raw_bytes)
+                md_text = _xlsx_to_markdown(src, name)
+            finally:
+                try:
+                    src.unlink(missing_ok=True)
+                except Exception:
+                    pass
+            out = Path(tempfile.mktemp(
+                suffix=".md",
+                prefix=f"atlas_xlsx_{idx}_{safe.rsplit('.', 1)[0]}_",
+            ))
+            out.write_text(md_text, encoding="utf-8")
+            paths.append(out)
+            continue
+
+        if ext in _TEXT_EXTS or not ext:
+            out = Path(tempfile.mktemp(
+                suffix=ext or ".txt",
+                prefix=f"atlas_doc_{idx}_{safe.rsplit('.', 1)[0]}_",
+            ))
+            try:
+                # Decode as utf-8 with fallback so binary garbage doesn't kill us
+                out.write_text(raw_bytes.decode("utf-8", errors="replace"), encoding="utf-8")
+            except Exception as exc:
+                logger.warning("Could not write text attachment %s: %s", name, exc)
+                continue
+            paths.append(out)
+            continue
+
+        # Unknown type — write raw and let Claude attempt to read it.
+        out = Path(tempfile.mktemp(
+            suffix=ext, prefix=f"atlas_doc_{idx}_{safe.rsplit('.', 1)[0]}_",
+        ))
+        out.write_bytes(raw_bytes)
+        paths.append(out)
+
+    return paths
+
+
 # ── Event model ──────────────────────────────────────────────────────────────
 
 class PiEvent:
@@ -112,6 +258,7 @@ class PiSessionManager:
 
     async def send_message(
         self, content: str, images: list[dict] | None = None,
+        attachments: list[dict] | None = None,
     ) -> AsyncGenerator[PiEvent, None]:
         """Spawn Pi with *content* as the prompt and yield streaming events.
 
@@ -127,6 +274,11 @@ class PiSessionManager:
             Optional list of ``{"data": "<base64>", "mime": "image/png"}``
             dicts.  Each image is saved to a temp file and passed to Pi as
             an ``@/path/to/file`` argument.
+        attachments : list[dict] | None
+            Optional list of ``{"name": "file.xlsx", "data": "<base64>",
+            "mime": "..."}`` dicts for spreadsheet/text documents.
+            Excel files are converted to markdown server-side (Claude
+            cannot read binary xlsx).  CSV/TSV/TXT files pass through.
         """
         SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -152,9 +304,16 @@ class PiSessionManager:
                 except Exception as exc:
                     logger.warning("Failed to decode attached image %d: %s", idx, exc)
 
+        # Materialise document attachments (xlsx, csv, tsv, txt)
+        temp_doc_paths: list[Path] = []
+        if attachments:
+            temp_doc_paths = _materialise_attachments(attachments)
+
         cmd = self._build_cmd()
         # Attach images as @file references (Pi reads them as message attachments)
         for p in temp_image_paths:
+            cmd.append(f"@{p}")
+        for p in temp_doc_paths:
             cmd.append(f"@{p}")
         # Append the user message as the final positional argument
         cmd.append(content)
@@ -269,6 +428,13 @@ class PiSessionManager:
                     p.unlink(missing_ok=True)
                 except Exception as e:
                     logger.debug("pi_session temp file cleanup: %s", e)
+
+            # Clean up temp doc files
+            for p in temp_doc_paths:
+                try:
+                    p.unlink(missing_ok=True)
+                except Exception as e:
+                    logger.debug("pi_session temp doc cleanup: %s", e)
 
             done = PiEvent("done", {"full_text": self._current_response})
             await self._broadcast(done)
