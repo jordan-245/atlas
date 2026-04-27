@@ -8,6 +8,7 @@ import { ChartTooltip } from '../shared/ChartTooltip'
 import { fmtNum, fmtPct, fmtDateShort, fmtRelativeTime } from '../../lib/format'
 import type { StrategyDetail, Experiment, BrainParam, Discovery, UniverseInfo, LeaderboardEntry, DailyCount } from '../../api/research-types'
 import { CoverageMatrix } from './CoverageMatrix'
+import { PendingPromotionsWidget } from './PendingPromotionsWidget'
 
 // ── Keep Rate Ring SVG ──────────────────────────────────────────
 function KeepRateRing({ rate, size = 40 }: { rate: number; size?: number }) {
@@ -634,6 +635,10 @@ export function ResearchTab() {
 
   return (
     <div className="space-y-4 md:space-y-6 stagger">
+      <div className="animate-in">
+        <PendingPromotionsWidget />
+      </div>
+
       {engine && (
         <div className="animate-in">
           <EngineHero engine={engine} />
