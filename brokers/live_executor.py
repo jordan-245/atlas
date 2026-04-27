@@ -798,6 +798,70 @@ class LiveExecutor:
         except Exception as e:
             logger.debug("Entry spread capture failed (non-blocking): %s", e)
 
+        # ── Pre-submit leverage gate ─────────────────────────────────────────
+        # Refuses new entries that would push total portfolio leverage above
+        # the configured cap (risk.leverage).  Non-fatal: if broker calls fail
+        # we log a warning and let the order proceed rather than blocking on a
+        # transient API error.
+        try:
+            _lever_cap = self.config.get("risk", {}).get("leverage", 1.0)
+            _lev_acct = self._broker.get_account_info()
+            if _lev_acct and _lev_acct.equity > 0:
+                _lev_positions = self._broker.get_positions()
+                _cur_mv = sum(
+                    p.market_value for p in _lev_positions
+                    if p.market_value > 0
+                )
+                _prosp_mv = qty * _order_price
+                _prosp_leverage = (_cur_mv + _prosp_mv) / _lev_acct.equity
+                logger.debug(
+                    "Leverage gate: %s cur_mv=%.0f order_mv=%.0f "
+                    "equity=%.0f prosp=%.3fx cap=%.1fx",
+                    ticker, _cur_mv, _prosp_mv, _lev_acct.equity,
+                    _prosp_leverage, _lever_cap,
+                )
+                if _prosp_leverage > _lever_cap * 1.05:
+                    _lev_err = (
+                        f"Leverage gate: {ticker} would push leverage to "
+                        f"{_prosp_leverage:.2f}x (cap={_lever_cap}x, "
+                        f"current_mv=${_cur_mv:,.0f}, "
+                        f"order_mv=${_prosp_mv:,.0f}, "
+                        f"equity=${_lev_acct.equity:,.0f})"
+                    )
+                    logger.error("ENTRY BLOCKED — %s", _lev_err)
+                    _journal_entry("leverage_gate_blocked", {
+                        "ticker": ticker,
+                        "prospective_leverage": round(_prosp_leverage, 3),
+                        "cap": _lever_cap,
+                        "current_mv": round(_cur_mv, 2),
+                        "order_mv": round(_prosp_mv, 2),
+                        "equity": round(_lev_acct.equity, 2),
+                    })
+                    try:
+                        from utils.telegram import send_message, tg_escape as _tge
+                        send_message(
+                            f"\U0001f6ab <b>LEVERAGE GATE BLOCKED</b> {_tge(ticker)}\n"
+                            f"Prospective: {_prosp_leverage:.2f}x &gt; cap {_lever_cap}x\n"
+                            f"Current MV: ${_cur_mv:,.0f} | Order MV: ${_prosp_mv:,.0f}"
+                            f" | Equity: ${_lev_acct.equity:,.0f}"
+                        )
+                    except Exception:
+                        pass
+                    return {
+                        "ticker": ticker, "side": side_label,
+                        "qty": qty, "price": _order_price,
+                        "success": False,
+                        "errors": [_lev_err],
+                        "blocked": True,
+                        "reason": "leverage_gate",
+                        "dry_run": False,
+                    }
+        except Exception as _lev_exc:
+            logger.warning(
+                "Leverage gate check failed (non-blocking, proceeding): %s",
+                _lev_exc,
+            )
+
         # Live execution — LIMIT order at (refined) entry price
         _submit_time = datetime.now().isoformat()
         order_result = self._broker.place_order(
