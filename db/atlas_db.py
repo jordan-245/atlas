@@ -1171,9 +1171,69 @@ def record_overlay_decision(
     reasoning: Optional[str] = None,
     confidence: Optional[float] = None,
     data_sources: Optional[Dict] = None,
+    dedup_window_seconds: int = 300,
 ) -> int:
-    """Insert an overlay decision. Returns the new id."""
+    """Insert an overlay decision and return its id.
+
+    Idempotency guard
+    -----------------
+    Before inserting, the function queries ``overlay_decisions`` for any row
+    that satisfies ALL of:
+
+    * ``regime_state`` matches the candidate
+    * ``action`` matches the candidate
+    * ``timestamp`` is within ``dedup_window_seconds`` (default 300 s / 5 min)
+      of the candidate's timestamp
+
+    If such a row exists, its id is returned and no new row is written.  This
+    prevents triple-write duplication when multiple market cron entries
+    (sp500 / commodity_etfs / sector_etfs) call the overlay concurrently in
+    the same premarket window.
+
+    The check is non-fatal: if timestamp parsing or the SELECT fails for any
+    reason, execution falls through to the normal INSERT.
+    """
+    import logging as _logging
+    from datetime import timedelta, timezone as _tz
+
+    _log = _logging.getLogger(__name__)
+
     with get_db() as db:
+        # -- Dedup guard ----------------------------------------------------
+        try:
+            candidate_dt = datetime.fromisoformat(timestamp)
+            if candidate_dt.tzinfo is None:
+                candidate_dt = candidate_dt.replace(tzinfo=_tz.utc)
+            window_start = (candidate_dt - timedelta(seconds=dedup_window_seconds)).isoformat()
+            window_end = (candidate_dt + timedelta(seconds=dedup_window_seconds)).isoformat()
+            existing = db.execute(
+                """
+                SELECT id, timestamp
+                FROM overlay_decisions
+                WHERE regime_state = ?
+                  AND action = ?
+                  AND timestamp >= ?
+                  AND timestamp <= ?
+                ORDER BY id ASC
+                LIMIT 1
+                """,
+                (regime_state, action, window_start, window_end),
+            ).fetchone()
+            if existing is not None:
+                _log.info(
+                    "overlay: dedup hit -- returning existing id=%s from %s, "
+                    "suppressed duplicate action=%s regime=%s",
+                    existing["id"], existing["timestamp"], action, regime_state,
+                )
+                return existing["id"]
+        except Exception as _dedup_err:
+            # Non-fatal: dedup check failed; fall through to normal INSERT.
+            _log.warning(
+                "overlay: dedup check failed (%s) -- proceeding with insert",
+                _dedup_err,
+            )
+        # -- End dedup guard ------------------------------------------------
+
         cursor = db.execute(
             """
             INSERT INTO overlay_decisions
