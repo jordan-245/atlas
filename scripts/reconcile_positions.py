@@ -15,7 +15,7 @@ Usage:
     python scripts/reconcile_positions.py [options]
 
     Options:
-      --market {asx,sp500}       Market to reconcile (default: sp500)
+      --market {asx,sp500,commodity_etfs,sector_etfs}       Market to reconcile (default: sp500)
       --quiet                    Only output on discrepancy (for cron)
       --fix                      Auto-correct internal state from broker
       --no-telegram              Suppress Telegram notification
@@ -57,7 +57,7 @@ def _health_log(level, message, detail=None):
 
 
 # Markets supported
-_MARKETS = ("asx", "sp500", "commodity_etfs")
+_MARKETS = ("asx", "sp500", "commodity_etfs", "sector_etfs")
 _DEFAULT_BROKER = {
     "sp500": "alpaca",
     "commodity_etfs": "alpaca",

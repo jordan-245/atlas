@@ -51,18 +51,20 @@ class TestSectorEtfsLiveEnabled:
             "config/active/sector_etfs.json."
         )
 
-    def test_trading_mode_is_passive(self, sector_etfs_config: dict) -> None:
-        """trading.mode must remain 'passive' — do not auto-approve new signals.
+    def test_trading_mode_is_live(self, sector_etfs_config: dict) -> None:
+        """trading.mode must be 'live' — 3 active positions (XLI, XLK, XLY) at broker.
 
-        Passive mode means the system generates plans but requires manual
-        approval before execution.  This guard prevents accidental promotion
-        to 'live' mode before the sector strategy is properly validated.
+        Updated 2026-04-27 (audit-fix-5): sector_etfs was confirmed actively
+        trading with $3,984 capital deployed.  Mode promoted from 'passive' to
+        'live' to match reality.  This guard prevents accidental reversion to
+        'passive' which would break execute_approved.py order submission.
         """
         mode = sector_etfs_config["trading"]["mode"]
-        assert mode == "passive", (
-            f"sector_etfs trading.mode changed to {mode!r}!  "
-            "Expected 'passive'.  Changing mode to 'live' would enable "
-            "automatic order submission without manual approval."
+        assert mode == "live", (
+            f"sector_etfs trading.mode is {mode!r}!  "
+            "Expected 'live'.  XLI, XLK, XLY are LIVE positions at Alpaca — "
+            "passive mode would block execute_approved.py from submitting orders. "
+            "Restore to 'live' in config/active/sector_etfs.json."
         )
 
     def test_config_file_parses_as_valid_json(self) -> None:

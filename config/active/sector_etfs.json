@@ -1,5 +1,5 @@
 {
-  "version": "v1.0.1",
+  "version": "v1.0.2",
   "project": "Atlas",
   "market": "sector_etfs",
   "description": "Sector ETFs v1.0 — SPDR sector rotation, passive (Sharpe 0.14, needs research loop tuning before live)",
@@ -24,7 +24,7 @@
     }
   },
   "trading": {
-    "mode": "passive",
+    "mode": "live",
     "broker": "alpaca",
     "live_enabled": true,
     "holding_period_min": 2,
@@ -41,7 +41,7 @@
     }
   },
   "alpaca": {
-    "paper": true,
+    "paper": false,
     "data_feed": "iex",
     "_credentials": "Managed via ~/.atlas-secrets.json (ALPACA_API_KEY, ALPACA_SECRET_KEY)"
   },
