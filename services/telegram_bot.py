@@ -969,15 +969,22 @@ def send_plan_for_approval(
     entries = plan.get("proposed_entries", [])
     exits = plan.get("proposed_exits", [])
 
+    # Suppress notification entirely when there's nothing to act on.
+    # User asked for ONE message per real event; empty plans for 2 of 3
+    # markets daily was the dominant spam source.
+    if not entries and not exits:
+        logger.info(
+            "send_plan_for_approval: %s plan empty (0 entries, 0 exits) — suppressing Telegram",
+            market_id,
+        )
+        return True  # Treat as success — nothing to send is the correct outcome
+
     # Load config to check auto_approve
     from utils.config import get_active_config
     config = get_active_config(market_id)
     auto_approve = config.get("trading", {}).get("auto_approve", False)
 
-    if not entries and not exits:
-        msg_text += "\n\n💤 No trades today — holding all positions."
-        keyboard = None
-    elif auto_approve:
+    if auto_approve:
         # Auto-approve: change plan status and send info-only (no buttons)
         from brokers.plan import TradePlanGenerator
         plan_gen = TradePlanGenerator(None, config)

@@ -205,16 +205,26 @@ def main():
 
 def _notify_execution(market_id: str, trade_date: str, report: dict):
     """Send Telegram summary of executed orders."""
+    ok_entries = report.get("successful_entries", 0)
+    ok_exits = report.get("successful_exits", 0)
+    total_entries = report.get("total_entries", 0)
+    total_exits = report.get("total_exits", 0)
+    n_errors = max(0, total_entries - ok_entries) + max(0, total_exits - ok_exits)
+
+    # Suppress when nothing executed AND no errors
+    if ok_entries == 0 and ok_exits == 0 and n_errors == 0:
+        log.info(
+            "_notify_execution: %s %s nothing executed (0/0) and no errors — skipping Telegram",
+            market_id, trade_date,
+        )
+        return
+
     try:
         from utils.telegram import send_message, tg_escape as _tge
-        ok_e = report.get("successful_entries", 0)
-        tot_e = report.get("total_entries", 0)
-        ok_x = report.get("successful_exits", 0)
-        tot_x = report.get("total_exits", 0)
 
         lines = [
             f"🚀 <b>Orders Submitted</b> ({market_id.upper()} {trade_date})",
-            f"  Entries: {ok_e}/{tot_e} | Exits: {ok_x}/{tot_x}",
+            f"  Entries: {ok_entries}/{total_entries} | Exits: {ok_exits}/{total_exits}",
             "",
         ]
 
@@ -244,6 +254,13 @@ def _notify_auto_approve(
     n_exits: int,
 ) -> None:
     """Send Telegram notification when a plan is auto-approved (best-effort)."""
+    # Suppress when there's nothing to auto-approve about
+    if n_entries == 0 and n_exits == 0:
+        log.info(
+            "_notify_auto_approve: %s %s empty plan (0 entries, 0 exits) — skipping Telegram",
+            market_id, trade_date,
+        )
+        return
     try:
         from utils.telegram import send_message, tg_escape as _tge
         lines = [

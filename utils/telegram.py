@@ -750,6 +750,20 @@ def send_postclose_summary(market_id: str = "sp500") -> bool:
         if t.get("exit_date", "") == today
     ]
 
+    # Determine if anything actionable happened today
+    eod_summary = _read_eod_summary(today)
+    has_closed = bool(closed_today)
+    has_stop_exit = bool(eod_summary and eod_summary.get("stop_exits", 0))
+    has_tp_exit = bool(eod_summary and eod_summary.get("tp_exits", 0))
+    has_halt = bool(eod_summary and eod_summary.get("halted", False))
+
+    if not (has_closed or has_stop_exit or has_tp_exit or has_halt):
+        logger.info(
+            "send_postclose_summary: %s no activity (no closed trades, no stop/TP exits, no halt) — suppressing Telegram",
+            market_id,
+        )
+        return True
+
     if closed_today:
         total_realized = sum(t.get("pnl", 0) for t in closed_today)
         lines.append(f"<b>Trades Closed Today ({len(closed_today)}):</b>")
@@ -770,8 +784,7 @@ def send_postclose_summary(market_id: str = "sp500") -> bool:
         lines.append(f"  Total realized: <b>{_fmt_pnl(total_realized)}</b>")
         lines.append("")
 
-    # EOD settlement status
-    eod_summary = _read_eod_summary(today)
+    # EOD settlement status (eod_summary already loaded above for early-return check)
     if eod_summary:
         stop_exits = eod_summary.get("stop_exits", 0)
         tp_exits = eod_summary.get("tp_exits", 0)
@@ -785,10 +798,6 @@ def send_postclose_summary(market_id: str = "sp500") -> bool:
             status_parts.append("⛔ TRADING HALTED")
         if status_parts:
             lines.append("<b>Settlement:</b> " + " | ".join(status_parts))
-        elif not closed_today:
-            lines.append("✅ No exits triggered. All positions held.")
-    elif not closed_today:
-        lines.append("✅ No exits triggered.")
 
     return send_message("\n".join(lines))
 
