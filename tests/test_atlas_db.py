@@ -217,9 +217,14 @@ class TestTradeLifecycle:
         assert len(atlas_db_module.get_open_positions()) == 3
 
     def test_get_closed_trades_filter_by_strategy(self):
+        # Use distinct tickers per strategy to avoid the closed-trade UNIQUE
+        # constraint (ticker, DATE(entry_date), DATE(exit_date)) WHERE status='closed'.
+        # Two separate positions can't share a ticker on the same entry/exit day.
+        ticker_map = {"mean_reversion": "AAPL", "momentum_breakout": "MSFT"}
         for strategy in ["mean_reversion", "momentum_breakout"]:
+            ticker = ticker_map[strategy]
             atlas_db_module.record_trade_entry(
-                ticker="AAPL",
+                ticker=ticker,
                 strategy=strategy,
                 universe="sp500",
                 entry_price=150.0,
@@ -229,15 +234,19 @@ class TestTradeLifecycle:
                 confidence=0.75,
                 regime_state="bull_risk_on",
             )
-            atlas_db_module.record_trade_exit("AAPL", strategy, 165.0, "target")
+            atlas_db_module.record_trade_exit(ticker, strategy, 165.0, "target")
         mr = atlas_db_module.get_closed_trades(strategy="mean_reversion")
         assert all(t["strategy"] == "mean_reversion" for t in mr)
         assert len(mr) >= 1
 
     def test_get_closed_trades_filter_by_universe(self):
+        # Use distinct tickers per universe to avoid the closed-trade UNIQUE
+        # constraint (ticker, DATE(entry_date), DATE(exit_date)) WHERE status='closed'.
+        ticker_map = {"sp500": "XLK", "sector_etfs": "QQQ"}
         for universe in ["sp500", "sector_etfs"]:
+            ticker = ticker_map[universe]
             atlas_db_module.record_trade_entry(
-                ticker="XLK",
+                ticker=ticker,
                 strategy="sector_rotation",
                 universe=universe,
                 entry_price=50.0,
@@ -247,7 +256,7 @@ class TestTradeLifecycle:
                 confidence=0.70,
                 regime_state="bull_risk_on",
             )
-            atlas_db_module.record_trade_exit("XLK", "sector_rotation", 54.0, "target")
+            atlas_db_module.record_trade_exit(ticker, "sector_rotation", 54.0, "target")
         sp500_trades = atlas_db_module.get_closed_trades(universe="sp500")
         assert all(t["universe"] == "sp500" for t in sp500_trades)
 
@@ -297,9 +306,16 @@ class TestTradeLifecycle:
         assert summary["profit_factor"] > 0
 
     def test_performance_summary_by_strategy_grouping(self):
-        for strategy in ["mean_reversion", "mean_reversion", "momentum_breakout"]:
+        # Use distinct tickers per trade to avoid the closed-trade UNIQUE
+        # constraint (ticker, DATE(entry_date), DATE(exit_date)) WHERE status='closed'.
+        trade_specs = [
+            ("TST1", "mean_reversion"),
+            ("TST2", "mean_reversion"),
+            ("TST3", "momentum_breakout"),
+        ]
+        for ticker, strategy in trade_specs:
             atlas_db_module.record_trade_entry(
-                ticker="TEST",
+                ticker=ticker,
                 strategy=strategy,
                 universe="sp500",
                 entry_price=100.0,
@@ -309,7 +325,7 @@ class TestTradeLifecycle:
                 confidence=0.72,
                 regime_state="bull_risk_on",
             )
-            atlas_db_module.record_trade_exit("TEST", strategy, 110.0, "target")
+            atlas_db_module.record_trade_exit(ticker, strategy, 110.0, "target")
         summary = atlas_db_module.performance_summary()
         assert "mean_reversion" in summary["by_strategy"]
         assert "momentum_breakout" in summary["by_strategy"]

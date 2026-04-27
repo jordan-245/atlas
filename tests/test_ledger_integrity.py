@@ -143,18 +143,53 @@ class TestNoDuplicatePerTicker:
             ).fetchall()
         assert dup == []
 
-    def test_duplicate_open_is_detectable(self):
-        """Two rows for same ticker are detectable."""
-        _insert_open("AMD", "momentum_breakout", stop_price=260.0)
-        _insert_open("AMD", "reconciled", stop_price=255.0)
+    def test_duplicate_open_is_blocked_by_unique_constraint(self):
+        """UNIQUE index on (ticker, universe) WHERE status='open' prevents
+        duplicate open rows.
+
+        Updated 2026-04-27 (audit-fix-6): the original test assumed duplicate
+        open rows COULD be inserted (to then detect them), but
+        idx_trades_unique_open (added 2026-04-22) correctly BLOCKS them.
+        This test documents the corrected invariant: only 1 open row per
+        (ticker, universe) can ever exist.  record_trade_entry swallows the
+        IntegrityError and returns None rather than raising.
+        """
+        # Use record_trade_entry directly so we can inspect the return value.
+        from db.atlas_db import record_trade_entry as _rte
+
+        first_id = _rte(
+            ticker="AMD", strategy="momentum_breakout", universe="sp500",
+            entry_price=286.0, shares=1, stop_price=260.0,
+            take_profit=None, confidence=0.5, regime_state=None,
+        )
+        assert first_id is not None, "First open insert should succeed and return an id"
+
+        # Second insert for SAME (ticker, universe) → UNIQUE constraint fires;
+        # record_trade_entry must return None without raising.
+        second_id = _rte(
+            ticker="AMD", strategy="reconciled", universe="sp500",
+            entry_price=286.0, shares=1, stop_price=255.0,
+            take_profit=None, confidence=0.0, regime_state=None,
+        )
+        assert second_id is None, (
+            "Second open insert for same (ticker, universe) should be blocked — "
+            f"record_trade_entry must return None, got {second_id!r}"
+        )
+
+        # Exactly 1 open AMD row — no duplicate was created.
+        with _adb.get_db() as db:
+            count = db.execute(
+                "SELECT COUNT(*) FROM trades WHERE ticker='AMD' AND exit_date IS NULL"
+            ).fetchone()[0]
+        assert count == 1, f"Expected 1 open AMD row, got {count}"
+
+        # No duplicate groups in the open ledger.
         with _adb.get_db() as db:
             dup = db.execute(
                 "SELECT ticker, COUNT(*) as cnt FROM trades WHERE exit_date IS NULL "
                 "GROUP BY ticker HAVING cnt > 1"
             ).fetchall()
-        assert len(dup) == 1
-        assert dup[0]["ticker"] == "AMD"
-
+        assert dup == [], f"Expected no dup groups, got {list(dup)}"
 
 class TestReconcilePositionsDedupGuard:
     """Tests that reconcile_positions.py dual-write block is idempotent."""

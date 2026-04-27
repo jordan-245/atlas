@@ -147,6 +147,9 @@ CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status);
 CREATE INDEX IF NOT EXISTS idx_trades_strategy ON trades(strategy);
 CREATE INDEX IF NOT EXISTS idx_trades_dates ON trades(entry_date, exit_date);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_unique_open ON trades(ticker, universe) WHERE status='open';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_no_dup_closed
+  ON trades(ticker, DATE(entry_date), DATE(exit_date))
+  WHERE status = 'closed';
 
 CREATE TABLE IF NOT EXISTS plans (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
