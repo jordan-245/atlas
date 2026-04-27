@@ -67,4 +67,12 @@ if [ "$DO_LLM" = "1" ]; then
 fi
 
 echo "$(date -Iseconds) [$UNIVERSE] research window finished" | tee -a "$LOGFILE"
+
+# Sanity check: warn if log is suspiciously small (silent failure indicator)
+LOG_SIZE=$(stat -c%s "$LOGFILE" 2>/dev/null || echo 0)
+if [ "$LOG_SIZE" -lt 500 ]; then
+    echo "$(date -Iseconds) [$UNIVERSE] WARN: log file is tiny (${LOG_SIZE} bytes) — possible silent failure" | tee -a "$LOGFILE"
+    python3 -c "from utils.telegram import send_message; send_message('⚠️ research_window: $UNIVERSE produced near-empty log (${LOG_SIZE}b) — investigate')" 2>/dev/null || true
+fi
+
 exit 0
