@@ -475,26 +475,37 @@ def check_logging(project: Path) -> list:
     """Logging: data stores, journal sizes, execution log."""
     results = []
 
-    # Decision journal
-    dj_path = project / "journal" / "decision_journal.json"
-    if dj_path.exists():
-        dj = _load_json(dj_path) or []
+    # Decision journal — SQLite is source of truth (Wave D1: JSON file retired 2026-04-28)
+    try:
+        import sqlite3 as _sqlite3
+        _db_path = project / "data" / "atlas.db"
+        _conn = _sqlite3.connect(str(_db_path))
+        _conn.row_factory = _sqlite3.Row
+        _sig_count = _conn.execute("SELECT COUNT(*) FROM signals").fetchone()[0]
         results.append({"check": "decision_journal", "verdict": "ok",
-                        "message": f"{len(dj)} signal entries"})
+                        "message": f"{_sig_count} signal entries (SQLite)"})
         # Check field completeness of latest entry
-        if dj:
-            last = dj[-1]
-            expected = {"timestamp", "ticker", "strategy", "confidence", "features", "action", "market_id"}
-            missing = expected - set(last.keys())
-            has_market = bool(last.get("market_id"))
-            if missing:
-                results.append({"check": "dj_fields", "verdict": "warn",
-                                "message": f"Latest entry missing: {missing}"})
-            elif not has_market:
-                results.append({"check": "dj_market_id", "verdict": "warn",
-                                "message": "Latest entry has empty market_id — old format"})
-    else:
-        results.append({"check": "decision_journal", "verdict": "warn", "message": "No decision journal"})
+        if _sig_count > 0:
+            _last = _conn.execute(
+                "SELECT timestamp, ticker, strategy, confidence, features, action, market_id "
+                "FROM signals ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            if _last is not None:
+                # SQLite NULL is reflected as None — flag missing fields the same way the JSON
+                # version did (presence-only check, not non-empty-value).
+                _expected = {"timestamp", "ticker", "strategy", "confidence", "features", "action", "market_id"}
+                _missing = {k for k in _expected if _last[k] is None}
+                _has_market = bool(_last["market_id"])
+                if _missing:
+                    results.append({"check": "dj_fields", "verdict": "warn",
+                                    "message": f"Latest entry missing: {_missing}"})
+                elif not _has_market:
+                    results.append({"check": "dj_market_id", "verdict": "warn",
+                                    "message": "Latest entry has empty market_id — old format"})
+        _conn.close()
+    except Exception as _dj_exc:
+        results.append({"check": "decision_journal", "verdict": "error",
+                        "message": f"SQLite signals query failed: {_dj_exc}"})
 
     # Trades DB — SQLite is source of truth (Issue 4: trade_ledger.json deprecated as consumer)
     try:

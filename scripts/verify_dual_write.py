@@ -808,8 +808,8 @@ def main() -> None:
     print(_hr())
 
     checks = [
-        ("trades",          check_trades),
-        ("signals",         check_signals),
+        # ("trades",          check_trades),    # Wave D1 (2026-04-28): JSON retired; SQLite is source of truth
+        # ("signals",         check_signals),   # Wave D1 (2026-04-28): JSON retired; SQLite is source of truth
         ("plans",           check_plans),
         ("ohlcv",           check_ohlcv),
         ("ohlcv_universes", check_ohlcv_universes),

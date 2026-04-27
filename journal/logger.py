@@ -49,9 +49,11 @@ class DecisionJournal:
         return []
 
     def _save(self):
-        JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
-        with open(self.FILE, "w") as f:
-            json.dump(self.entries, f, indent=2, default=str)
+        # Wave D1 (2026-04-28): JSON write retired. SQLite signals table is
+        # source of truth. self.entries remains in-memory for backward-compat
+        # callers of get_entries()/summary() within a single process; nothing
+        # is persisted via JSON. Historical file at journal/legacy/<TS>/.
+        return
 
     def record_signal(self, signal, action: str, reason: str = "",
                       config_version: str = "", market_id: str = ""):
@@ -186,9 +188,12 @@ class TradeLedger:
         return []
 
     def _save(self):
-        JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
-        with open(self.FILE, "w") as f:
-            json.dump(self.trades, f, indent=2, default=str)
+        # Wave D1 (2026-04-28): JSON write retired. SQLite trades table is
+        # source of truth. self.trades remains in-memory for backward-compat
+        # callers of get_closed_trades()/performance_summary() within a single
+        # process; nothing is persisted via JSON. Historical file at
+        # journal/legacy/<TS>/.
+        return
 
     def record_entry(self, fill_record: dict) -> "int | None":
         """Record an entry fill.

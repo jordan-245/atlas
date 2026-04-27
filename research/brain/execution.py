@@ -1,8 +1,8 @@
 """Atlas Research Brain — Execution Intelligence
 
 Reads live execution telemetry (logs/live_executions.jsonl, logs/portfolio_snapshots.jsonl)
-and trade history from SQLite (primary, Issue 4 migration) with journal/trade_ledger.json
-as a read-only fallback only.  Writes structured analysis to the research brain.
+and trade history from SQLite (source of truth — Wave D1, 2026-04-28).  Writes structured
+analysis to the research brain.
 
 Designed to be called periodically (daily/weekly) by the director or cron,
 NOT during live order execution.
@@ -25,8 +25,6 @@ logger = logging.getLogger("atlas.brain.execution")
 
 ATLAS_ROOT = Path(__file__).resolve().parent.parent.parent
 EXECUTION_LOG = ATLAS_ROOT / "logs" / "live_executions.jsonl"
-# LEGACY — used only as fallback if SQLite is unavailable (Issue 4 migration)
-TRADE_LEDGER = ATLAS_ROOT / "journal" / "trade_ledger.json"
 PORTFOLIO_SNAPSHOTS = ATLAS_ROOT / "logs" / "portfolio_snapshots.jsonl"
 BRAIN_DIR = ATLAS_ROOT / "research" / "brain" / "execution"
 
@@ -45,15 +43,6 @@ def _read_jsonl(path: Path) -> list:
             continue
     return entries
 
-
-def _read_json(path: Path) -> list:
-    """Read JSON array file."""
-    if not path.exists():
-        return []
-    try:
-        return json.loads(path.read_text())
-    except (json.JSONDecodeError, Exception):
-        return []
 
 
 def _write_brain_md(filename: str, content: str):
@@ -367,8 +356,7 @@ def weekly_review() -> dict:
     stops = analyze_stops(days=7)
     port = analyze_portfolio_track(days=7)
 
-    # Read recent trade activity from SQLite (source of truth — Issue 4 migration).
-    # Falls back to JSON ledger if SQLite is unreachable so we don't break during cutover.
+    # Read recent trade activity from SQLite — source of truth (Wave D1, 2026-04-28).
     cutoff = (datetime.now() - timedelta(days=7)).isoformat()
     recent_trade_count = 0
     try:
@@ -386,13 +374,8 @@ def weekly_review() -> dict:
                 {"cutoff": cutoff},
             ).fetchone()[0]
     except Exception as _e:
-        logger.warning(
-            "SQLite read failed in weekly_review; falling back to JSON ledger: %s", _e
-        )
-        _fallback = _read_json(TRADE_LEDGER)
-        recent_trade_count = len(
-            [t for t in _fallback if t.get("recorded_at", "") >= cutoff]
-        )
+        logger.error("SQLite read failed in weekly_review: %s", _e)
+        recent_trade_count = 0
 
     result = {
         "week_ending": date.today().isoformat(),
