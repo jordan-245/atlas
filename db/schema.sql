@@ -136,7 +136,12 @@ CREATE TABLE IF NOT EXISTS trades (
     updated_at      TEXT    DEFAULT (datetime('now')),
     stop_order_id   TEXT    DEFAULT '',
     tp_order_id     TEXT    DEFAULT '',
-    CHECK (exit_date IS NULL OR exit_date >= entry_date)
+    CHECK (exit_date IS NULL OR exit_date >= entry_date),
+    CHECK (
+        stop_price IS NULL
+        OR (direction = 'long'  AND stop_price < entry_price)
+        OR (direction = 'short' AND stop_price > entry_price)
+    )
 );
 CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status);
 CREATE INDEX IF NOT EXISTS idx_trades_strategy ON trades(strategy);

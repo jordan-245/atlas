@@ -348,9 +348,10 @@ def reconcile_positions(
                     if not _strategy or _strategy == "unknown":
                         _strategy = "reconciled"
 
-                    # Guard 3: skip if stop_price is zero or missing
-                    _stop_price = float(cp.get("stop_price") or 0)
-                    if _stop_price <= 0:
+                    # Guard 3: stop_price validation — skip zeros; convert inverted to NULL.
+                    _stop_price_raw = float(cp.get("stop_price") or 0)
+                    _entry_price_for_check = float(cp.get("entry_price") or 0)
+                    if _stop_price_raw <= 0:
                         logger.warning(
                             "reconcile_positions: skipping SQLite dual-write for %s — "
                             "stop_price=0 (no reliable stop data). "
@@ -358,6 +359,33 @@ def reconcile_positions(
                             _ticker,
                         )
                         continue
+                    # Direction sanity-check: for longs, stop must be below entry.
+                    # A trailing stop above entry is valid operationally but must not
+                    # be stored as stop_price; write NULL so DB CHECK is satisfied.
+                    _stop_price: float | None
+                    if (
+                        _entry_price_for_check > 0
+                        and _stop_price_raw >= _entry_price_for_check
+                    ):
+                        logger.warning(
+                            "reconcile_positions: refusing inverted stop for %s: "
+                            "entry=%.4f stop=%.4f — writing NULL. "
+                            "stop_order_id tracks the broker trailing stop.",
+                            _ticker, _entry_price_for_check, _stop_price_raw,
+                        )
+                        try:
+                            from utils.telegram import send_message as _rp_tg_send
+                            _rp_tg_send(
+                                f"⚠ Backfill refused inverted stop: {_ticker} "
+                                f"entry={_entry_price_for_check:.4f} stop={_stop_price_raw:.4f}"
+                            )
+                        except Exception as _rp_tg_exc:
+                            logger.debug(
+                                "reconcile_positions: telegram send failed: %s", _rp_tg_exc
+                            )
+                        _stop_price = None
+                    else:
+                        _stop_price = _stop_price_raw
 
                     existing = _open_rows.get(_ticker)
                     if existing:
@@ -366,8 +394,11 @@ def reconcile_positions(
                         _ex_strategy = existing["strategy"]
                         _updates: list[str] = []
                         _params: list = []
-                        # Update stop_price if we have a better value
-                        if _stop_price > 0 and _stop_price != float(existing.get("stop_price") or 0):
+                        # Update stop_price if we have a better value; None = write NULL (inverted stop cleared)
+                        if _stop_price is None:
+                            # Inverted stop detected: clear to NULL in DB
+                            _updates.append("stop_price = NULL")
+                        elif _stop_price > 0 and _stop_price != float(existing.get("stop_price") or 0):
                             _updates.append("stop_price = ?")
                             _params.append(_stop_price)
                         # Upgrade strategy if existing is poison

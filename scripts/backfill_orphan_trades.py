@@ -211,9 +211,35 @@ def _do_insert(
 
     stop_price_raw = pos.get("stop_price")
     if stop_price_raw is None or float(stop_price_raw) == 0.0:
-        stop_price = round(entry_price * 0.95, 4)
+        stop_price: float | None = round(entry_price * 0.95, 4)
     else:
         stop_price = float(stop_price_raw)
+
+    # Direction sanity-check: for long positions, stop must be BELOW entry.
+    # A trailing stop that has moved above entry (profit-locking) must not be
+    # stored as stop_price; write NULL so the DB CHECK constraint is satisfied.
+    # The stop_order_id column tracks the actual broker order.
+    _direction_insert = "long"  # backfill_orphan_trades only inserts longs
+    if (
+        _direction_insert == "long"
+        and stop_price is not None
+        and entry_price > 0
+        and stop_price >= entry_price
+    ):
+        logger.warning(
+            "Refusing inverted stop for %s: entry=%.4f stop=%.4f "
+            "— writing NULL. stop_order_id tracks the broker trailing stop.",
+            ticker, entry_price, stop_price,
+        )
+        try:
+            from utils.telegram import send_message as _tg_send
+            _tg_send(
+                f"⚠ Backfill refused inverted stop: {ticker} "
+                f"entry={entry_price:.4f} stop={stop_price:.4f}"
+            )
+        except Exception as _tg_exc:
+            logger.debug("backfill_orphan_trades: telegram send failed: %s", _tg_exc)
+        stop_price = None
 
     # Prefer broker JSON entry_date to preserve historical timing
     entry_date: str = pos.get("entry_date") or datetime.now().isoformat()

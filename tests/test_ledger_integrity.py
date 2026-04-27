@@ -32,9 +32,15 @@ from db.atlas_db import record_trade_entry, get_open_positions, init_db
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 def _insert_open(ticker: str, strategy: str, stop_price: float,
-                 universe: str = "sp500", entry_price: float = 100.0,
+                 universe: str = "sp500", entry_price: float | None = None,
                  shares: int = 1) -> int:
-    """Insert one open trade row; returns new row id."""
+    """Insert one open trade row; returns new row id.
+
+    entry_price defaults to stop_price * 1.10 (10% above stop) so it
+    always satisfies the long-stop CHECK constraint.
+    """
+    if entry_price is None:
+        entry_price = round(stop_price * 1.10, 4)
     record_trade_entry(
         ticker=ticker,
         strategy=strategy,

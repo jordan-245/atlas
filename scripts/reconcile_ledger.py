@@ -259,6 +259,34 @@ def reconcile_ledger(market_id: str, dry_run: bool = False, broker=None) -> dict
                     stats["errors"].append(f"{ticker}: no broker stop (skipped INSERT)")
                     continue
 
+                # Direction sanity-check: for long positions, stop must be BELOW entry.
+                # A trailing stop that has moved above entry (profit-locking) is valid
+                # operationally but must not be stored as stop_price — write NULL instead.
+                # The DB CHECK constraint (stop_price < entry for longs) will reject it
+                # otherwise. The stop_order_id already tracks the actual broker order.
+                _direction_backfill = "long"  # reconcile_ledger only backfills longs
+                _stop_to_write: float | None = _broker_stop
+                if (
+                    _direction_backfill == "long"
+                    and _broker_stop > 0
+                    and _broker_stop >= entry_price
+                ):
+                    log.warning(
+                        "reconcile_ledger: refusing inverted stop for %s: "
+                        "entry=%.4f stop=%.4f — writing NULL. "
+                        "stop_order_id will track the broker trailing stop.",
+                        ticker, entry_price, _broker_stop,
+                    )
+                    try:
+                        from utils.telegram import send_message as _tg_send
+                        _tg_send(
+                            f"⚠ Backfill refused inverted stop: {ticker} "
+                            f"entry={entry_price:.4f} stop={_broker_stop:.4f}"
+                        )
+                    except Exception as _tg_exc:
+                        log.debug("reconcile_ledger: telegram send failed: %s", _tg_exc)
+                    _stop_to_write = None
+
                 _backfill_strategy = _lookup_strategy(ticker, market_id, state_positions)
                 from universe.membership import derive_universe
                 _derived_universe = derive_universe(ticker, market_id)
@@ -304,7 +332,7 @@ def reconcile_ledger(market_id: str, dry_run: bool = False, broker=None) -> dict
                     universe=_derived_universe or market_id,
                     entry_price=entry_price,
                     shares=shares,
-                    stop_price=_broker_stop,
+                    stop_price=_stop_to_write,
                     take_profit=None,
                     confidence=0.0,
                     regime_state=None,
@@ -312,11 +340,11 @@ def reconcile_ledger(market_id: str, dry_run: bool = False, broker=None) -> dict
                 )
                 stats["backfilled"].append(ticker)
                 log.info(
-                    "Backfilled ledger entry for %s: %d shares @ $%.2f stop=%.4f",
+                    "Backfilled ledger entry for %s: %d shares @ $%.2f stop=%s",
                     ticker,
                     shares,
                     entry_price,
-                    _broker_stop,
+                    f"{_stop_to_write:.4f}" if _stop_to_write is not None else "NULL",
                 )
             except Exception as exc:
                 log.error("Failed to backfill %s: %s", ticker, exc)
