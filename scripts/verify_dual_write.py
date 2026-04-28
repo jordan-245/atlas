@@ -724,6 +724,197 @@ def check_equity() -> bool:
     return passed
 
 
+
+# ═════════════════════════════════════════════════════════════════════════════
+# CHECK 6 — Market State (halt / HWM)
+# ═════════════════════════════════════════════════════════════════════════════
+def check_market_state() -> bool:
+    """
+    Compare brokers/state/live_*.json halt/HWM against market_state table.
+
+    Pass criteria (per market):
+    - market_state row exists
+    - halted flag matches (bool)
+    - halt_reason matches (string or None)
+    - daily_high_water matches within ±$0.01
+    """
+    print("\n  6. Market State (broker halt/HWM)")
+
+    from db import atlas_db
+
+    state_files = sorted(BROKER_STATE_DIR.glob("live_*.json"))
+    if not state_files:
+        print(f"     {WARN}no live_*.json files found in {BROKER_STATE_DIR}")
+        _result(False, "no state files")
+        return False
+
+    all_ok = True
+    for state_file in state_files:
+        market_id = state_file.stem.removeprefix("live_")
+
+        data, err = _load(state_file)
+        if err:
+            print(f"     {BAD} {market_id}: {err}")
+            all_ok = False
+            continue
+
+        j_halted     = bool(data.get("halted", False))
+        j_halt_reason = data.get("halt_reason") or None
+        j_hwm        = data.get("daily_high_water")
+
+        try:
+            with atlas_db.get_db() as db:
+                row = db.execute(
+                    "SELECT halted, halt_reason, daily_high_water "
+                    "FROM market_state WHERE market_id=?",
+                    (market_id,),
+                ).fetchone()
+        except Exception as exc:
+            print(f"     {BAD} {market_id}: SQLite error — {exc}")
+            all_ok = False
+            continue
+
+        if row is None:
+            print(f"     {BAD} {market_id}: missing from market_state table")
+            all_ok = False
+            continue
+
+        s_halted      = bool(row["halted"])
+        s_halt_reason = row["halt_reason"]
+        s_hwm         = row["daily_high_water"]
+
+        halted_ok = s_halted == j_halted
+        reason_ok = s_halt_reason == j_halt_reason
+        if s_hwm is not None and j_hwm is not None:
+            hwm_ok = abs(float(s_hwm) - float(j_hwm)) <= 0.01
+        else:
+            hwm_ok = s_hwm == j_hwm  # both None or one None
+
+        mkt_ok = halted_ok and reason_ok and hwm_ok
+        if mkt_ok:
+            print(f"     {OK} {market_id}: halted={s_halted}, hwm={s_hwm}")
+        else:
+            if not halted_ok:
+                print(
+                    f"     {BAD} {market_id}: halted mismatch "
+                    f"(json={j_halted}, sqlite={s_halted})"
+                )
+            if not reason_ok:
+                print(
+                    f"     {BAD} {market_id}: halt_reason mismatch "
+                    f"(json={j_halt_reason!r}, sqlite={s_halt_reason!r})"
+                )
+            if not hwm_ok:
+                print(
+                    f"     {BAD} {market_id}: daily_high_water mismatch "
+                    f"(json={j_hwm}, sqlite={s_hwm})"
+                )
+        if not mkt_ok:
+            all_ok = False
+
+    _result(all_ok)
+    return all_ok
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# CHECK 7 — Equity History
+# ═════════════════════════════════════════════════════════════════════════════
+def check_equity_history(N: int = 7) -> bool:
+    """
+    Compare last N equity_history entries per market (JSON vs SQLite).
+
+    Pass criteria (per market):
+    - Every date in JSON last-N appears in equity_history table
+    - equity values match within ±$0.01
+    """
+    print(f"\n  7. Equity History (last {N} entries per market)")
+
+    from db import atlas_db
+
+    state_files = sorted(BROKER_STATE_DIR.glob("live_*.json"))
+    if not state_files:
+        print(f"     {WARN}no live_*.json files found")
+        _result(False, "no state files")
+        return False
+
+    all_ok = True
+    markets_checked = 0
+
+    for state_file in state_files:
+        market_id = state_file.stem.removeprefix("live_")
+
+        data, err = _load(state_file)
+        if err:
+            print(f"     {BAD} {market_id}: {err}")
+            all_ok = False
+            continue
+
+        equity_history = data.get("equity_history", [])
+        if not equity_history:
+            print(f"     {WARN} {market_id}: no equity_history in JSON — skip")
+            continue
+
+        # Last N entries sorted by date
+        json_last_n = sorted(equity_history, key=lambda x: x.get("date", ""))[-N:]
+
+        try:
+            with atlas_db.get_db() as db:
+                rows = db.execute(
+                    """SELECT date, equity, pnl FROM equity_history
+                       WHERE market_id=? ORDER BY date DESC LIMIT ?""",
+                    (market_id, N),
+                ).fetchall()
+        except Exception as exc:
+            print(f"     {BAD} {market_id}: SQLite error — {exc}")
+            all_ok = False
+            continue
+
+        if not rows:
+            print(f"     {BAD} {market_id}: no rows in equity_history table")
+            all_ok = False
+            continue
+
+        # Build lookup by date
+        sqlite_by_date = {r["date"]: r for r in rows}
+
+        mkt_ok = True
+        for entry in json_last_n:
+            j_date   = entry.get("date", "")
+            j_equity = float(entry.get("equity", 0))
+
+            if j_date not in sqlite_by_date:
+                print(
+                    f"     {BAD} {market_id}: date {j_date} "
+                    f"missing from SQLite equity_history"
+                )
+                mkt_ok = False
+                continue
+
+            s_equity = float(sqlite_by_date[j_date]["equity"])
+            if abs(s_equity - j_equity) > 0.01:
+                print(
+                    f"     {BAD} {market_id}: equity mismatch on {j_date} "
+                    f"(json={j_equity}, sqlite={s_equity})"
+                )
+                mkt_ok = False
+
+        if mkt_ok:
+            print(
+                f"     {OK} {market_id}: "
+                f"last {min(len(json_last_n), len(rows))} entries match"
+            )
+        if not mkt_ok:
+            all_ok = False
+        markets_checked += 1
+
+    if markets_checked == 0:
+        _result(False, "no markets with equity_history data")
+        return False
+
+    _result(all_ok)
+    return all_ok
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # History
 # ═════════════════════════════════════════════════════════════════════════════
@@ -814,6 +1005,8 @@ def main() -> None:
         ("ohlcv",           check_ohlcv),
         ("ohlcv_universes", check_ohlcv_universes),
         ("equity",          check_equity),
+        ("market_state",    check_market_state),    # Wave D2 (2026-04-28)
+        ("equity_history",  check_equity_history),  # Wave D2 (2026-04-28)
     ]
 
     results: Dict[str, bool] = {}

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
@@ -153,6 +153,69 @@ class LivePortfolio:
         }
         with open(path, "w") as f:
             json.dump(state, f, indent=2)
+
+        # ── Dual-write to SQLite (feature-flagged) ─────────────────────────
+        if self.config.get("dual_write_market_state", True):
+            try:
+                from db.atlas_db import get_db
+                with get_db() as db:
+                    # UPSERT market_state
+                    db.execute(
+                        """
+                        INSERT INTO market_state
+                            (market_id, halted, halt_reason, halted_at, mode,
+                             daily_high_water, hwm_date, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                        ON CONFLICT(market_id) DO UPDATE SET
+                          halted           = excluded.halted,
+                          halt_reason      = excluded.halt_reason,
+                          halted_at        = excluded.halted_at,
+                          mode             = excluded.mode,
+                          daily_high_water = excluded.daily_high_water,
+                          hwm_date         = excluded.hwm_date,
+                          updated_at       = datetime('now')
+                        """,
+                        (
+                            self.market_id,
+                            int(bool(self.halted)),
+                            self.halt_reason or None,
+                            datetime.now().isoformat() if self.halted else None,
+                            "live",
+                            self.daily_high_water,
+                            date.today().isoformat() if self.daily_high_water else None,
+                        ),
+                    )
+                    # Append latest equity_history entry (INSERT OR IGNORE for idempotence)
+                    if self.equity_history:
+                        latest = self.equity_history[-1]
+                        db.execute(
+                            """
+                            INSERT OR IGNORE INTO equity_history
+                                (market_id, date, equity, pnl)
+                            VALUES (?, ?, ?, ?)
+                            """,
+                            (
+                                self.market_id,
+                                latest.get("date"),
+                                latest.get("equity"),
+                                latest.get("pnl"),
+                            ),
+                        )
+            except Exception as _dw_exc:
+                logger.error(
+                    "dual_write_market_state FAILED for %s: %s",
+                    self.market_id, _dw_exc,
+                )
+                # Telegram-loud notification (best-effort)
+                try:
+                    from utils.telegram import send_message
+                    send_message(
+                        f"⚠️ dual_write_market_state failed for "
+                        f"{self.market_id}: {_dw_exc}"
+                    )
+                except Exception:
+                    pass
+                # DO NOT re-raise — JSON write must succeed even if SQLite fails
 
     # ── Broker connection ──────────────────────────────────────
 

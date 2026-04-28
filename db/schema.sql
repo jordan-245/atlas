@@ -380,3 +380,29 @@ CREATE TABLE IF NOT EXISTS treasury_curve (
     updated_at          TEXT    DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_treasury_curve_date ON treasury_curve(date);
+
+-- ═══════════════════════════════════════════════════════════
+-- BROKER STATE (Wave D2 — 2026-04-28)
+-- JSON→SQLite dual-write target. JSON remains source of truth
+-- until 5 consecutive daily PASSes on verify_dual_write.py.
+-- ═══════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS market_state (
+  market_id         TEXT    PRIMARY KEY,
+  halted            INTEGER NOT NULL DEFAULT 0 CHECK (halted IN (0,1)),
+  halt_reason       TEXT,
+  halted_at         TEXT,
+  mode              TEXT    NOT NULL DEFAULT 'paper' CHECK (mode IN ('live','paper','passive')),
+  daily_high_water  REAL,
+  hwm_date          TEXT,
+  updated_at        TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS equity_history (
+  market_id  TEXT NOT NULL,
+  date       TEXT NOT NULL,
+  equity     REAL NOT NULL,
+  pnl        REAL,
+  PRIMARY KEY (market_id, date)
+);
+CREATE INDEX IF NOT EXISTS idx_equity_history_market_date ON equity_history(market_id, date);
