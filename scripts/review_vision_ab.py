@@ -82,12 +82,27 @@ def _build_report(entries: list[dict], days: int) -> str:
     flag_tickers: dict[str, set] = defaultdict(set)
 
     unique_vision_signal_counts: list[int] = []  # per cycle: # tickers vision-unique
+    adjust_div_count: int = 0
+    adjust_div_cycles: list[str] = []
 
     for entry in entries:
         td = entry.get("text_decision", {})
         vd = entry.get("vision_decision")
         avoid = set(td.get("tickers_to_avoid") or [])
         text_adjust = bool(td.get("adjust", False))
+        vision_adjust: bool | None = (
+            bool(vd.get("adjust", False)) if vd is not None else None
+        )
+        ticker_div_count = len(entry.get("divergence_flags") or [])
+        adjust_div = vision_adjust is not None and text_adjust != vision_adjust
+        if adjust_div:
+            adjust_div_count += 1
+            ts_str = (entry.get("timestamp") or "")[:16].replace("T", " ")
+            adjust_div_cycles.append(
+                f"  [{ts_str}] adjust_div=True "
+                f"(text={text_adjust} vision={vision_adjust}) "
+                f"ticker_divs={ticker_div_count}"
+            )
 
         # Per-cycle: tickers where vision saw bear but text did not
         vision_unique_count = 0
@@ -141,6 +156,20 @@ def _build_report(entries: list[dict], days: int) -> str:
         lines.append(f"Cycles with vision response: {vision_ok} ({pct:.0f}%)")
     else:
         lines.append("Cycles with vision response: 0")
+    lines.append("")
+
+    # Adjust divergence summary (additive)
+    total_ticker_divs = sum(flag_counts.values())
+    if total_cycles:
+        adj_pct = 100 * adjust_div_count / total_cycles
+        lines.append(
+            f"Adjust divergences: {adjust_div_count}/{total_cycles} ({adj_pct:.1f}%)"
+            f" | ticker tighten_rec divergences: {total_ticker_divs}"
+        )
+    else:
+        lines.append("Adjust divergences: 0/0 | ticker tighten_rec divergences: 0")
+    for cyc_line in adjust_div_cycles:
+        lines.append(cyc_line)
     lines.append("")
 
     # Per-ticker agreement
