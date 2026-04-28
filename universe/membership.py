@@ -37,19 +37,57 @@ def _build_membership() -> dict[str, set[str]]:
     return mp
 
 
+def _live_verify_membership(ticker: str, hint: str) -> bool:
+    """Live re-check whether *ticker* is a member of universe *hint*.
+
+    Bypasses the module cache so we catch new additions or rebuilds since
+    cache-build time.  Looks up via:
+      - static universes: scans UNIVERSES[hint]['tickers']
+      - dynamic sp500: calls universe.builder.get_universe_tickers('sp500')
+                       (which reads data/processed/sp500/universe.json)
+
+    Returns True only on confirmed membership.  Raises on infrastructure
+    failure (file missing, unknown universe) so the caller can decide
+    whether to log+return None vs propagate.
+    """
+    from universe.definitions import UNIVERSES
+    if hint not in UNIVERSES:
+        # Hint isn't even a real universe name — can't verify.
+        return False
+    udef = UNIVERSES[hint]
+    method = udef.get("method", "")
+    if method == "static":
+        return ticker in set(udef.get("tickers", []))
+    if method == "sp500_constituents" or hint == "sp500":
+        # Dynamic — consult the builder.
+        from universe.builder import get_universe_tickers
+        return ticker in set(get_universe_tickers("sp500"))
+    # Unknown method — be conservative.
+    return False
+
+
 def derive_universe(ticker: str, hint: Optional[str] = None) -> Optional[str]:
     """Return the canonical universe for *ticker*.
 
     Resolution:
-    1. If ticker belongs to exactly ONE universe → return it.
+    1. If ticker belongs to exactly ONE universe → return it (hint ignored).
     2. If ticker belongs to MULTIPLE universes AND *hint* is one of them → return hint.
-    3. If ticker belongs to MULTIPLE universes AND hint is not a match → return hint if it's
-       non-empty and looks valid, else the first membership alphabetically (stable).
-    4. If ticker is NOT in any known universe → return hint if provided (to preserve legacy
-       market_id), else None. Logs a WARN.
+    3. If ticker belongs to MULTIPLE universes AND hint is a valid universe name →
+       log WARN (hint disagrees with memberships) and return hint.
+    4. If ticker belongs to MULTIPLE universes AND hint is invalid/None →
+       return first membership alphabetically (stable).
+    5. If ticker is NOT in any cached universe → perform an explicit live
+       re-check against the hint's source-of-truth:
+         - static universes: UNIVERSES[hint]['tickers']
+         - dynamic sp500:   get_universe_tickers('sp500')
+       Returns hint ONLY on confirmed membership.  Returns None otherwise
+       (caller logs and writes NULL to SQLite — never a blind plausible guess).
 
-    Returns None when the caller should leave `universe` NULL in SQLite and log.
-    NEVER silently returns 'sp500' as a fallback.
+    KEY INVARIANT: NEVER returns a hint blindly.  When the ticker is not in
+    any cached universe, the function performs an explicit live re-check against
+    the hint's source-of-truth (static UNIVERSES dict OR the dynamic sp500
+    builder).  Only returns hint after confirmed membership.  Returns None when
+    verification fails or hint disagrees — caller logs and writes NULL.
     """
     if not ticker:
         return hint or None
@@ -71,12 +109,38 @@ def derive_universe(ticker: str, hint: Optional[str] = None) -> Optional[str]:
             )
             return hint
         return sorted(memberships)[0]
-    # Not in any known universe
+    # Not in any cached universe — try live verification against the hint.
+    # This handles two scenarios:
+    #   (a) cache was built before the dynamic builder for `hint` had data
+    #       (e.g., data/processed/<hint>/universe.json was missing or stale),
+    #   (b) the ticker is a NEW addition since cache was built.
+    if hint:
+        try:
+            verified = _live_verify_membership(ticker, hint)
+        except Exception as exc:
+            logger.warning(
+                "derive_universe: live verify FAILED for %s hint=%s: %s "
+                "— refusing blind hint fallback, returning None",
+                ticker, hint, exc,
+            )
+            return None
+        if verified:
+            logger.info(
+                "derive_universe: %s confirmed in %s via live verification "
+                "(was missing from cache)", ticker, hint,
+            )
+            return hint
+        logger.warning(
+            "derive_universe: %s NOT a member of hint=%s (live-verified) "
+            "— returning None instead of blind hint fallback",
+            ticker, hint,
+        )
+        return None
     logger.warning(
-        "derive_universe: %s has NO known universe membership (hint=%s) — using hint or None",
-        ticker, hint,
+        "derive_universe: %s has NO known universe membership and no hint — None",
+        ticker,
     )
-    return hint or None
+    return None
 
 
 def clear_cache() -> None:
