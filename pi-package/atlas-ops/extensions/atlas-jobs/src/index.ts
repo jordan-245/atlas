@@ -168,11 +168,15 @@ function buildPythonScriptInvocation(scriptPath: string, scriptArgs: string[]) {
 
 function buildCliInvocation(subcommand: string, params?: RunArgs, extraFlags?: string[]) {
   const args = { ...(params ?? {}) };
-  const cliArgs = ["scripts/cli.py", subcommand];
+  // -m/--market is a GLOBAL flag in scripts/cli.py argparse (defined on top-level
+  // parser BEFORE add_subparsers), so it MUST come BEFORE the subcommand.
+  // Subcommand-specific flags (--date, --days) come AFTER.
+  const cliArgs = ["scripts/cli.py"];
   const market = consumeArg<string>(args, "market");
   if (market !== undefined) {
     cliArgs.push("-m", String(market));
   }
+  cliArgs.push(subcommand);
   const date = consumeArg<string>(args, "date");
   if (date !== undefined) {
     cliArgs.push("--date", String(date));
