@@ -47,4 +47,20 @@ if [ -n "$staged_sh" ]; then
     fi
 fi
 
+# ── Python syntax check on staged .py files ─────────────────
+staged_py=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.py$' || true)
+if [ -n "$staged_py" ]; then
+    py_failed=0
+    while IFS= read -r f; do
+        if [ -f "$f" ] && ! python3 -m py_compile "$f" 2>&1; then
+            echo -e "${RED}🚫 BLOCKED: python3 -m py_compile syntax error in $f${NC}" >&2
+            py_failed=1
+        fi
+    done <<< "$staged_py"
+    if [ "$py_failed" -eq 1 ]; then
+        echo "Fix Python syntax errors before committing." >&2
+        exit 1
+    fi
+fi
+
 exit 0
