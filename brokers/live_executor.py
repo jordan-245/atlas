@@ -1101,6 +1101,20 @@ class LiveExecutor:
                 _lev_exc,
             )
 
+        # RCA #2A: Ensure atomic bracket placement — never split SL/TP placement.
+        # If signal has stop but no TP, compute a 2:1 R/R fallback so bracket fires atomically.
+        # This closes the race window where sync_protective_orders would later add a standalone
+        # TP after the stop-only OTO entry order fills.
+        _atomic_take_profit = take_profit
+        if stop_price and stop_price > 0 and (not _atomic_take_profit or _atomic_take_profit <= 0):
+            _risk_per_share = abs(_order_price - stop_price)
+            _atomic_take_profit = round(_order_price + 2.0 * _risk_per_share, 2)
+            logger.info(
+                "RCA #2A: synthesized 2:1 R/R take_profit %.2f for %s (entry=%.2f stop=%.2f) "
+                "to ensure atomic bracket placement",
+                _atomic_take_profit, ticker, _order_price, stop_price,
+            )
+
         # Live execution — LIMIT order at (refined) entry price
         # Uses self.place_order() for the per-call kill-switch TOCTOU guard.
         _submit_time = datetime.now().isoformat()
@@ -1112,7 +1126,7 @@ class LiveExecutor:
             order_type=OrderType.LIMIT,
             remark=f"atlas_entry_{strategy}_{trade_date}"[:64],
             stop_loss_price=stop_price if stop_price and stop_price > 0 else None,
-            take_profit_price=take_profit if take_profit and take_profit > 0 else None,
+            take_profit_price=_atomic_take_profit if _atomic_take_profit and _atomic_take_profit > 0 else None,
         )
 
         # Poll for fill — LIMIT orders submitted pre-market return
