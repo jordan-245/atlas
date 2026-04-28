@@ -236,3 +236,45 @@ Reconciled against git log since 2026-04-17. Major work:
 ---
 
 *Last reconciled: 2026-04-27 (Phase 2-4 + audit-fix sweep close).  Prior counters were folklore — do not reinstate.*
+
+---
+
+## ✅ DONE — Wave B audit fixes (commits 195968e4..a445662b, 2026-04-28)
+
+- [x] **#255 — B4 adjust_divergence tracking** — overlay vision A/B review now
+      tracks top-level adjust divergences (text=True vs vision=False). Real-data
+      smoke: 5/195 cycles (2.6%) had adjust-level divergences in last 7 days.
+      `scripts/review_vision_ab.py` +29 lines additive, 5 new tests.
+      Commit `30615d96` (2026-04-28).
+
+- [x] **#259 — B2 zero-byte autoresearch logs** — 5 zero-byte files were
+      logrotate stubs; real content in *.log-20260417 archives (3788 experiments
+      on Apr 15). Already addressed by 1deedcf5 + 0e42f652. Audit report filed
+      at `research/reports/B2_zero_byte_logs_20260415.md`.
+      Commit `a445662b` (2026-04-28).
+
+- [x] **#265 — B3 Tiingo authority flip** — `config/price_arbiter.json`
+      `authority_on_mismatch`: alpaca → tiingo. Wave 1 flip (7ad48f37) never
+      landed in working tree. NFLX was marked at $97 (real $107.79, 11.12%
+      spread). Atlas-dashboard restarted to clear in-memory halt set. 3 new
+      guard tests. Commit `a445662b` (2026-04-28).
+
+- [x] **#A8 — B1 max_gross_exposure_pct cap (1.75)** — new
+      `risk/gross_exposure_guard.py`; wired into `live_executor._execute_entry`
+      after W6 cross-universe guard; `max_gross_exposure_pct: 1.75` added to
+      risk block in all 6 active universe configs. Apr 27 simulation (174% MV +
+      UNG → 200%) correctly REJECTED. 15 tests.
+      Commit `280de055` (2026-04-28).
+
+## ⚠️ DEFERRED — Wave B items requiring follow-up
+
+- [ ] **#258 — B5 SPY text-vs-vision audit** — literal text/vision entry
+      pairing not found in current logs (may be in pre-Apr-17 archives).
+      Structural finding: `overlay/sources/chart_intel.py:_build_summary`
+      hard-codes "Broadly bullish" from SMA alone, no OBV/volume-profile/
+      divergence indicators. Audit report filed at
+      `research/reports/B5_spy_text_vs_vision_audit.md`.
+  - 2026-04-28 refined: literal pairing not in current logs (may be in pre-Apr-17 archives). Structural finding: overlay/sources/chart_intel.py:_build_summary hard-codes "Broadly bullish" from SMA alone, no OBV/volume-profile/divergence. Spec follow-up to add (a) OBV slope, (b) multi-month resistance anchor, (c) price-volume divergence, (d) suppression guard. See research/reports/B5_spy_text_vs_vision_audit.md.
+
+- [ ] **#260 — Caddy basicauth credential rotation** — needs user coordination
+      for credential rotation. Deferred. Documented in Wave 1 hardening.
