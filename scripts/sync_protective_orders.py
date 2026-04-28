@@ -36,7 +36,9 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
+import time
 from datetime import date, datetime
 from pathlib import Path
 
@@ -205,6 +207,82 @@ def _maybe_alert_stuck(
     except Exception as tg_exc:
         logger.warning("_maybe_alert_stuck: Telegram alert failed (non-fatal): %s", tg_exc)
     return True
+
+
+def _wait_for_cancel_confirm(
+    broker,
+    order_id: str,
+    timeout_sec: float | None = None,
+    poll_interval_sec: float = 0.25,
+) -> bool:
+    """Poll broker until a cancel is confirmed or timeout elapses.
+
+    Addresses the Alpaca 40310000 "insufficient qty" race: after calling
+    ``broker.cancel_order(order_id)`` the cancellation may still be in
+    ``pending_cancel`` state at Alpaca's side.  If a replacement order is
+    placed immediately, Alpaca rejects it because the old order still
+    "holds" the position quantity.  Polling until the status is terminal
+    eliminates the race.
+
+    Args:
+        broker:            Connected broker instance (needs ``get_order_status``).
+        order_id:          The order ID that was just cancelled.
+        timeout_sec:       Max seconds to wait.  Defaults to the value of
+                           ``ATLAS_SYNC_PROTECTIVE_CANCEL_TIMEOUT_SEC`` env var
+                           (default 5.0).  Pass explicitly in tests to avoid
+                           reading the env var.
+        poll_interval_sec: Seconds between polls (default 0.25 s = 250 ms).
+
+    Returns:
+        True   — cancel confirmed: status is CANCELLED (covers canceled/expired/
+                 replaced/stopped) or FAILED (covers rejected/suspended).
+        False  — order FILLED before cancel settled (race lost; position may
+                 have exited) OR timeout elapsed without confirmation.
+    """
+    from brokers.base import OrderStatus  # lazy import — avoids circular deps
+
+    if timeout_sec is None:
+        timeout_sec = float(
+            os.environ.get("ATLAS_SYNC_PROTECTIVE_CANCEL_TIMEOUT_SEC", "5.0")
+        )
+
+    deadline = time.monotonic() + timeout_sec
+    while time.monotonic() < deadline:
+        try:
+            result = broker.get_order_status(order_id)
+        except Exception as poll_exc:
+            logger.warning(
+                "_wait_for_cancel_confirm: get_order_status(%s) failed: %s — retrying",
+                order_id, poll_exc,
+            )
+            time.sleep(poll_interval_sec)
+            continue
+
+        status = result.status
+        if status in (OrderStatus.CANCELLED, OrderStatus.FAILED):
+            logger.debug(
+                "_wait_for_cancel_confirm: order %s confirmed terminal (status=%s)",
+                order_id, status.value,
+            )
+            return True
+        if status == OrderStatus.FILLED:
+            logger.warning(
+                "_wait_for_cancel_confirm: order %s FILLED before cancel confirmed "
+                "— race lost (position may have exited before stop was cancelled)",
+                order_id,
+            )
+            return False
+
+        # PENDING / SUBMITTED / UNKNOWN — still settling; wait and retry
+        time.sleep(poll_interval_sec)
+
+    logger.error(
+        "_wait_for_cancel_confirm: order %s did not reach terminal status within "
+        "%.1fs — skipping placement this cycle to avoid 40310 race "
+        "(will retry next cron pass)",
+        order_id, timeout_sec,
+    )
+    return False
 
 
 def _handle_held_stops(
@@ -422,6 +500,27 @@ def _handle_held_stops(
                 "_handle_held_stops: successfully cancelled held stop for %s (id=%s)",
                 ticker, order_id,
             )
+            # Phase 2B: wait for cancel to fully settle at the broker before returning.
+            # Without this, sync_all_protective_orders (called immediately after this
+            # function) sees no stop for the position → tries to place one → Alpaca
+            # 40310000 "insufficient qty" because the cancel is still in
+            # pending_cancel state and the shares are allocated against the old order.
+            # Env override: ATLAS_SYNC_PROTECTIVE_CANCEL_TIMEOUT_SEC (default 5.0 s).
+            if not _wait_for_cancel_confirm(broker, order_id):
+                logger.error(
+                    "_handle_held_stops: cancel confirmation failed for %s "
+                    "(order_id=%s) — skipping resubmit this cycle to avoid "
+                    "40310 race (will retry next cron pass)",
+                    ticker, order_id,
+                )
+                _maybe_alert_stuck(
+                    ticker, market_id,
+                    reason="cancel_confirm_timeout",
+                    state=state, key=key,
+                    send_telegram=send_telegram, permanent=False, now_iso=_now,
+                )
+                errors.append(ticker)
+                continue  # NOT added to resubmitted — sync won't race-place this cycle
             resubmitted.append(ticker)
             # IMPORTANT: do NOT pop entry from state anymore — retry_count must
             # persist across cycles to enforce the cap. Cleanup happens only
