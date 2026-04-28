@@ -129,6 +129,14 @@ session — none are quick fixes.
       ✅ Closed 2026-04-27 — overlay→plan→executor end-to-end trace completed
       (audit-fix-1 batch). Cron currently runs --mode log_only; flag flip
       would activate live.
+      ✅ M3 shadow-complete 2026-04-28 (commit e87497f2 — meta-fix-3).
+      Schema (overlay_shadow_log), unified resolution (plan.overlay_context
+      → overlay_decisions JOIN), mode-gated application, EOD evaluator,
+      daily JSON report, 14 new tests + 11 P1-B fixes. **Enforce-flip
+      prerequisite**: ≥1 week of shadow data review per market before
+      flipping `overlay.shadow_mode: false` in config/active/{market}.json.
+      Both modes now share the same resolution path so the flip is a
+      one-line config change (no code drift).
 - [ ] **#216 — Phase 5 coverage gap.** Research matrix has stale
       `research_best` rows; population requires a dedicated compute window,
       not a code change. Blocks #219.
