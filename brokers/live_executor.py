@@ -416,6 +416,48 @@ class LiveExecutor:
         _journal_entry("disconnected", {})
         logger.info("LiveExecutor disconnected")
 
+    # ── Kill-switch-gated order submission ────────────────────
+
+    def place_order(self, **kwargs) -> "OrderResult | None":
+        """Submit a single order with per-call kill-switch gate.
+
+        Thin wrapper around ``self._broker.place_order(**kwargs)`` that
+        re-checks the kill switch immediately before every broker call.
+        This closes the TOCTOU gap between batch start (where
+        ``_execute_entry`` does its top-of-method check) and the actual
+        broker submission — the switch could be tripped by EOD drawdown
+        between those two points.
+
+        Returns:
+            OrderResult on success / broker failure.
+            OrderResult(success=False) if the kill switch is active.
+            OrderResult(success=False) if no broker is connected.
+        """
+        from brokers import kill_switch as _ks
+        if _ks.is_halted():
+            _reason = _ks.halt_reason()
+            _symbol = kwargs.get("ticker", "?")
+            logger.error(
+                "place_order ABORTED: kill_switch halted (%s) for %s",
+                _reason, _symbol,
+            )
+            return OrderResult(
+                success=False,
+                ticker=_symbol,
+                message=f"kill_switch active: {_reason}",
+                status=OrderStatus.FAILED,
+            )
+        if not self._broker:
+            _symbol = kwargs.get("ticker", "?")
+            logger.error("place_order: no broker connected — cannot submit %s", _symbol)
+            return OrderResult(
+                success=False,
+                ticker=_symbol,
+                message="no broker connected",
+                status=OrderStatus.FAILED,
+            )
+        return self._broker.place_order(**kwargs)
+
     # ── Execution ──────────────────────────────────────────────
 
     def execute_plan(self, plan: dict, trade_date: str) -> dict:
@@ -863,8 +905,9 @@ class LiveExecutor:
             )
 
         # Live execution — LIMIT order at (refined) entry price
+        # Uses self.place_order() for the per-call kill-switch TOCTOU guard.
         _submit_time = datetime.now().isoformat()
-        order_result = self._broker.place_order(
+        order_result = self.place_order(
             ticker=ticker,
             side=order_side,
             qty=qty,

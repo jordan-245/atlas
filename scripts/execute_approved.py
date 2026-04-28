@@ -25,6 +25,32 @@ from utils.logging_config import setup_logging
 log = setup_logging("execute_approved", extra_log_file="execute_approved")
 
 
+def _is_market_halted(market_id: str) -> tuple[bool, str, str]:
+    """Query market_state.halted for *market_id*.
+
+    Returns (halted, reason, halted_at).  If the DB query fails, returns
+    (False, "", "") — fail-open so a DB hiccup doesn't permanently block
+    order execution (the kill_switch HALT file is the hard gate for that).
+
+    Uses db.atlas_db.get_db() so the test-isolation fixture (_db_path_override)
+    is respected during automated tests.
+    """
+    try:
+        from db.atlas_db import get_db
+        with get_db() as _db:
+            _row = _db.execute(
+                "SELECT halted, halt_reason, halted_at FROM market_state "
+                "WHERE market_id = ?",
+                (market_id,),
+            ).fetchone()
+        if _row and int(_row[0]) == 1:
+            return True, _row[1] or "unknown", _row[2] or "unknown"
+        return False, "", ""
+    except Exception as _e:
+        log.warning("Halt state DB query failed (fail-open): %s", _e)
+        return False, "", ""
+
+
 def main():
     parser = argparse.ArgumentParser(description="Execute approved plan")
     parser.add_argument("-m", "--market", default="sp500")
@@ -153,6 +179,27 @@ def main():
         plan = dict(plan)   # shallow copy — do not mutate stored plan
         plan["proposed_entries"] = filtered_entries
         entries = filtered_entries
+
+    # ── Halt gate: check market_state.halted before submitting any orders ──
+    _halted, _halt_reason, _halted_at = _is_market_halted(market_id)
+    if _halted:
+        log.error(
+            "EXECUTE_APPROVED ABORTED: market %s is halted "
+            "(reason=%s, halted_at=%s) — no orders submitted",
+            market_id, _halt_reason, _halted_at,
+        )
+        try:
+            from utils.telegram import send_message, tg_escape as _tge
+            send_message(
+                "⛔ <b>EXECUTE_APPROVED ABORTED</b>: market "
+                + "<b>" + _tge(market_id) + "</b> is halted\n"
+                + "Reason: " + _tge(_halt_reason) + "\n"
+                + "Halted at: " + _tge(_halted_at) + "\n\n"
+                + "No orders submitted. Resume trading when safe."
+            )
+        except Exception as _tg_exc:
+            log.warning("Halt-abort Telegram notification failed: %s", _tg_exc)
+        sys.exit(2)
 
     # ── Execute via LiveExecutor ─────────────────────────────
     from brokers.live_executor import LiveExecutor

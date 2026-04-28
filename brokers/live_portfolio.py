@@ -789,6 +789,26 @@ class LivePortfolio:
             self.halted = True
             self.halt_reason = f"Daily drawdown {dd:.2%} >= {self.max_daily_dd:.2%}"
             logger.warning("HALT: %s", self.halt_reason)
+            # Write kill_switch HALT file (belt-and-suspenders — also gates execute_approved)
+            try:
+                from brokers import kill_switch as _ks
+                _ks.halt(f"daily_drawdown {dd:.2%} on {self.market_id}")
+                logger.info("kill_switch HALT file written for %s", self.market_id)
+            except Exception as _ks_exc:
+                logger.warning(
+                    "kill_switch.halt() failed during drawdown halt: %s", _ks_exc
+                )
+                try:
+                    from utils.telegram import send_message as _tg_send
+                    _tg_send(
+                        f"⚠️ Drawdown HALT engaged but kill_switch file write FAILED: "
+                        f"{_ks_exc}. market_state + JSON halt persists."
+                    )
+                except Exception as _tg_err:
+                    logger.debug(
+                        "Telegram notification failed during drawdown halt (non-fatal): %s",
+                        _tg_err,
+                    )
             return True, dd
         return False, dd
 
