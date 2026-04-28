@@ -3,36 +3,47 @@
   "mode": "live",
   "positions": [
     {
-      "ticker": "AMD",
+      "ticker": "ADI",
       "strategy": "momentum_breakout",
-      "entry_date": "2026-04-24",
-      "entry_price": 278.25,
+      "entry_date": "2026-04-28",
+      "entry_price": 403.88,
       "shares": 2,
-      "stop_price": 294.8,
+      "stop_price": 383.7699,
       "order_id": "",
-      "stop_order_id": "c218e806-521f-4e22-b7ee-f532ca920d40",
+      "stop_order_id": "af9f454c-0ead-4b27-93a4-bc1173abfea8",
       "tp_order_id": ""
     },
     {
       "ticker": "AVGO",
       "strategy": "momentum_breakout",
-      "entry_date": "2026-04-24",
+      "entry_date": "2026-04-28",
       "entry_price": 422.57,
       "shares": 1,
-      "stop_price": 403.56,
+      "stop_price": 407.66,
       "order_id": "",
-      "stop_order_id": "a4cf81e2-b65b-4246-9f8f-ffb317f720eb",
+      "stop_order_id": "324230c5-843d-4cbf-837e-ca0eef6bb48f",
       "tp_order_id": ""
     },
     {
-      "ticker": "ON",
+      "ticker": "CAT",
       "strategy": "momentum_breakout",
-      "entry_date": "2026-04-24",
-      "entry_price": 85.51,
-      "shares": 4,
-      "stop_price": 94.905,
+      "entry_date": "2026-04-28",
+      "entry_price": 835.24,
+      "shares": 1,
+      "stop_price": 799.47,
       "order_id": "",
-      "stop_order_id": "d6ca936e-b63a-4027-931e-7eb612e61bb9",
+      "stop_order_id": "d77ffda9-24de-4ebc-a7df-4a5d31cf1c8d",
+      "tp_order_id": ""
+    },
+    {
+      "ticker": "FCX",
+      "strategy": "connors_rsi2",
+      "entry_date": "2026-04-28",
+      "entry_price": 61.48,
+      "shares": 5,
+      "stop_price": 58.34,
+      "order_id": "",
+      "stop_order_id": "fc1d7117-fa54-4ad7-9432-e338ccb0184d",
       "tp_order_id": ""
     }
   ],
@@ -1896,10 +1907,132 @@
           "holding_days": -1
         }
       ]
+    },
+    {
+      "date": "2026-04-24",
+      "equity": 5429.05,
+      "cash": -4062.64,
+      "positions_value": 9491.69,
+      "num_positions": 5,
+      "total_realized_pnl": 293.46,
+      "total_closed_trades": 28,
+      "positions": [
+        {
+          "ticker": "ADI",
+          "strategy": "momentum_breakout",
+          "shares": 2,
+          "entry_price": 403.88,
+          "current_price": 399.57,
+          "unrealized_pnl": -8.62,
+          "mae": -1.07,
+          "mfe": 0.0,
+          "holding_days": -1
+        },
+        {
+          "ticker": "AMD",
+          "strategy": "momentum_breakout",
+          "shares": 2,
+          "entry_price": 278.25,
+          "current_price": 347.81,
+          "unrealized_pnl": 139.12,
+          "mae": 0.0,
+          "mfe": 25.0,
+          "holding_days": -1
+        },
+        {
+          "ticker": "AVGO",
+          "strategy": "momentum_breakout",
+          "shares": 1,
+          "entry_price": 422.57,
+          "current_price": 422.76,
+          "unrealized_pnl": 0.19,
+          "mae": 0.0,
+          "mfe": 0.04,
+          "holding_days": -1
+        },
+        {
+          "ticker": "CAT",
+          "strategy": "momentum_breakout",
+          "shares": 1,
+          "entry_price": 835.24,
+          "current_price": 830.43,
+          "unrealized_pnl": -4.81,
+          "mae": -0.58,
+          "mfe": 0.0,
+          "holding_days": -1
+        },
+        {
+          "ticker": "FCX",
+          "strategy": "connors_rsi2",
+          "shares": 5,
+          "entry_price": 61.48,
+          "current_price": 61.065,
+          "unrealized_pnl": -2.07,
+          "mae": -0.68,
+          "mfe": 0.0,
+          "holding_days": -1
+        }
+      ]
+    },
+    {
+      "date": "2026-04-27",
+      "equity": 5267.3,
+      "cash": -2752.65,
+      "positions_value": 8019.95,
+      "num_positions": 4,
+      "total_realized_pnl": 293.46,
+      "total_closed_trades": 28,
+      "positions": [
+        {
+          "ticker": "ADI",
+          "strategy": "momentum_breakout",
+          "shares": 2,
+          "entry_price": 403.88,
+          "current_price": 392.59,
+          "unrealized_pnl": -22.58,
+          "mae": -2.8,
+          "mfe": 0.0,
+          "holding_days": -1
+        },
+        {
+          "ticker": "AVGO",
+          "strategy": "momentum_breakout",
+          "shares": 1,
+          "entry_price": 422.57,
+          "current_price": 418.2,
+          "unrealized_pnl": -4.37,
+          "mae": -1.03,
+          "mfe": 0.0,
+          "holding_days": -1
+        },
+        {
+          "ticker": "CAT",
+          "strategy": "momentum_breakout",
+          "shares": 1,
+          "entry_price": 835.24,
+          "current_price": 828.79,
+          "unrealized_pnl": -6.45,
+          "mae": -0.77,
+          "mfe": 0.0,
+          "holding_days": -1
+        },
+        {
+          "ticker": "FCX",
+          "strategy": "connors_rsi2",
+          "shares": 5,
+          "entry_price": 61.48,
+          "current_price": 60.57,
+          "unrealized_pnl": -4.55,
+          "mae": -1.48,
+          "mfe": 0.0,
+          "holding_days": -1
+        }
+      ]
     }
   ],
-  "daily_high_water": 5405.86,
+  "daily_high_water": 5228.42,
   "halted": false,
   "halt_reason": "",
-  "last_saved": "2026-04-24T08:00:40.541679"
+  "last_saved": "2026-04-28T08:00:51.894004",
+  "daily_high_water_date": "2026-04-28"
 }
