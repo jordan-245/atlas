@@ -1,0 +1,33 @@
+# Atlas pre-commit hooks
+# Install: pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: \.md$
+      - id: end-of-file-fixer
+        exclude: \.md$
+      - id: check-yaml
+      - id: check-json
+        exclude: "tests/|data/"
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+      - id: debug-statements
+
+  - repo: local
+    hooks:
+      - id: lint-bare-except
+        name: AST lint - no new bare-except
+        entry: python3 scripts/lint_bare_except.py --check
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: lint-pi-system-prompt
+        name: AST lint - all pi/claude calls have --system-prompt
+        entry: python3 scripts/lint_pi_system_prompt.py --check
+        language: system
+        pass_filenames: false
+        always_run: true
