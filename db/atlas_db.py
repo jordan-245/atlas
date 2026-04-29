@@ -2607,3 +2607,186 @@ def get_broker_orders(
             "get_broker_orders failed: %s (non-fatal)", exc
         )
         return []
+
+
+# ── Position Protective Orders ─────────────────────────────────────────────────
+# Single canonical row per open position tracking stop+TP order IDs from broker
+# truth. Added phase A.1 — 2026-04-29.
+
+
+def get_protective_record(market_id: str, ticker: str) -> Optional[Dict[str, Any]]:
+    """Fetch the active protective record for a position. Returns None if missing.
+
+    Only returns rows with status='active'. Closed/detached records are ignored.
+    """
+    try:
+        with get_db() as db:
+            row = db.execute(
+                "SELECT * FROM position_protective_orders "
+                "WHERE market_id=? AND ticker=? AND status='active'",
+                (market_id, ticker),
+            ).fetchone()
+            return dict(row) if row else None
+    except Exception as exc:
+        _logging.getLogger(__name__).warning(
+            "get_protective_record(%s, %s) failed: %s", market_id, ticker, exc
+        )
+        return None
+
+
+def upsert_protective_record(
+    market_id: str,
+    ticker: str,
+    trade_id: Optional[int],
+    position_qty: float,
+    stop_order_id: Optional[str] = None,
+    stop_price: Optional[float] = None,
+    tp_order_id: Optional[str] = None,
+    tp_price: Optional[float] = None,
+    oco_class: Optional[str] = None,
+) -> None:
+    """Insert or update protective record. Always sets last_synced_at=now and status='active'.
+
+    Uses INSERT OR REPLACE so a second call with new IDs replaces the previous row
+    atomically. The PRIMARY KEY is (market_id, ticker) so each position has at
+    most one canonical row.
+    """
+    now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    with get_db() as db:
+        db.execute(
+            """
+            INSERT INTO position_protective_orders
+                (market_id, ticker, trade_id, position_qty,
+                 stop_order_id, stop_price,
+                 tp_order_id, tp_price,
+                 oco_class, last_synced_at, status)
+            VALUES (?,?,?,?,?,?,?,?,?,?,'active')
+            ON CONFLICT(market_id, ticker) DO UPDATE SET
+                trade_id       = excluded.trade_id,
+                position_qty   = excluded.position_qty,
+                stop_order_id  = excluded.stop_order_id,
+                stop_price     = excluded.stop_price,
+                tp_order_id    = excluded.tp_order_id,
+                tp_price       = excluded.tp_price,
+                oco_class      = excluded.oco_class,
+                last_synced_at = excluded.last_synced_at,
+                status         = 'active'
+            """,
+            (
+                market_id, ticker, trade_id, float(position_qty),
+                stop_order_id, float(stop_price) if stop_price is not None else None,
+                tp_order_id, float(tp_price) if tp_price is not None else None,
+                oco_class, now,
+            ),
+        )
+
+
+def close_protective_record(market_id: str, ticker: str) -> None:
+    """Mark protective record as 'closed' when position exits. Idempotent.
+
+    No-op if the row does not exist or is already closed.
+    """
+    try:
+        with get_db() as db:
+            db.execute(
+                "UPDATE position_protective_orders "
+                "SET status='closed', last_synced_at=? "
+                "WHERE market_id=? AND ticker=?",
+                (datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"), market_id, ticker),
+            )
+    except Exception as exc:
+        _logging.getLogger(__name__).warning(
+            "close_protective_record(%s, %s) failed: %s", market_id, ticker, exc
+        )
+
+
+def list_active_protective_records(
+    market_id: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """List all status='active' records. Optionally filter by market."""
+    try:
+        with get_db() as db:
+            if market_id:
+                rows = db.execute(
+                    "SELECT * FROM position_protective_orders "
+                    "WHERE status='active' AND market_id=? "
+                    "ORDER BY market_id, ticker",
+                    (market_id,),
+                ).fetchall()
+            else:
+                rows = db.execute(
+                    "SELECT * FROM position_protective_orders "
+                    "WHERE status='active' "
+                    "ORDER BY market_id, ticker",
+                ).fetchall()
+            return [dict(r) for r in rows]
+    except Exception as exc:
+        _logging.getLogger(__name__).warning(
+            "list_active_protective_records failed: %s", exc
+        )
+        return []
+
+
+def list_protective_gaps(
+    market_id: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Return open trades from `trades` table that have NO active protective record.
+
+    Used by healthcheck to detect uncovered positions — open trades where Atlas
+    has no broker-confirmed stop or TP order on file.
+
+    Returns:
+        List of dicts with keys: trade_id, ticker, market_id (universe), entry_date, days_open.
+    """
+    try:
+        with get_db() as db:
+            if market_id:
+                rows = db.execute(
+                    """
+                    SELECT
+                        t.id            AS trade_id,
+                        t.ticker        AS ticker,
+                        t.universe      AS market_id,
+                        t.entry_date    AS entry_date,
+                        CAST(julianday('now') - julianday(t.entry_date) AS INTEGER) AS days_open
+                    FROM trades t
+                    WHERE t.status = 'open'
+                      AND t.superseded = 0
+                      AND t.universe = ?
+                      AND NOT EXISTS (
+                          SELECT 1 FROM position_protective_orders p
+                          WHERE p.market_id = t.universe
+                            AND p.ticker    = t.ticker
+                            AND p.status    = 'active'
+                      )
+                    ORDER BY t.entry_date
+                    """,
+                    (market_id,),
+                ).fetchall()
+            else:
+                rows = db.execute(
+                    """
+                    SELECT
+                        t.id            AS trade_id,
+                        t.ticker        AS ticker,
+                        t.universe      AS market_id,
+                        t.entry_date    AS entry_date,
+                        CAST(julianday('now') - julianday(t.entry_date) AS INTEGER) AS days_open
+                    FROM trades t
+                    WHERE t.status = 'open'
+                      AND t.superseded = 0
+                      AND NOT EXISTS (
+                          SELECT 1 FROM position_protective_orders p
+                          WHERE p.market_id = t.universe
+                            AND p.ticker    = t.ticker
+                            AND p.status    = 'active'
+                      )
+                    ORDER BY t.entry_date
+                    """,
+                ).fetchall()
+            return [dict(r) for r in rows]
+    except Exception as exc:
+        _logging.getLogger(__name__).warning(
+            "list_protective_gaps failed: %s", exc
+        )
+        return []

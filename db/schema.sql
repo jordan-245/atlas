@@ -474,3 +474,25 @@ CREATE INDEX IF NOT EXISTS idx_broker_orders_symbol ON broker_orders(symbol);
 CREATE INDEX IF NOT EXISTS idx_broker_orders_status ON broker_orders(status);
 CREATE INDEX IF NOT EXISTS idx_broker_orders_submitted_at ON broker_orders(submitted_at);
 CREATE INDEX IF NOT EXISTS idx_broker_orders_parent_id ON broker_orders(parent_id);
+
+-- ── Position Protective Orders ────────────────────────────────────────────────
+-- Single canonical row per open position tracking stop+TP order IDs from broker
+-- truth. Eliminates multi-writer drift on trades.stop_order_id.
+-- Phase A.1 — 2026-04-29
+CREATE TABLE IF NOT EXISTS position_protective_orders (
+    market_id       TEXT NOT NULL,
+    ticker          TEXT NOT NULL,
+    trade_id        INTEGER,               -- FK to trades.id (nullable for legacy)
+    position_qty    REAL NOT NULL,
+    stop_order_id   TEXT,                  -- Alpaca order_id of stop
+    stop_price      REAL,                  -- The stop trigger price
+    tp_order_id     TEXT,                  -- Alpaca order_id of TP limit
+    tp_price        REAL,                  -- The TP limit price
+    oco_class       TEXT,                  -- 'oco' | 'bracket' | NULL (independent)
+    last_synced_at  TEXT NOT NULL,         -- ISO timestamp of last sync from broker truth
+    status          TEXT NOT NULL DEFAULT 'active',  -- 'active' | 'closed' | 'detached'
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (market_id, ticker)
+);
+CREATE INDEX IF NOT EXISTS idx_protective_status   ON position_protective_orders(status);
+CREATE INDEX IF NOT EXISTS idx_protective_trade_id ON position_protective_orders(trade_id);
