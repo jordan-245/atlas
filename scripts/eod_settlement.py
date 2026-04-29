@@ -103,6 +103,7 @@ def check_stop_losses(portfolio, prices, lows, trade_date, dry_run):
     the broker handles those, and reconcile_stops() syncs them to live state.
     """
     exits = []
+    _fill_fallback_count = 0
     for pos in list(portfolio.positions):
         if pos.ticker not in prices:
             continue
@@ -156,10 +157,27 @@ def check_stop_losses(portfolio, prices, lows, trade_date, dry_run):
                         )
                         if sell_result.success:
                             broker_sell_ok = True
-                            # Use fill price from broker if available
-                            if sell_result.fill_price and sell_result.fill_price > 0:
+                            # Priority 1: broker_orders canonical fill (B.3 oracle)
+                            _p1_fill = None
+                            try:
+                                from db import atlas_db as _adb
+                                _p1_fill = _adb.get_fill_price(sell_result.order_id)
+                            except Exception:
+                                pass
+                            if _p1_fill and _p1_fill > 0:
+                                actual_exit_price = _p1_fill
+                                log.info(f"[fill-price P1] {pos.ticker}: broker_orders fill ${_p1_fill:.4f} order_id={sell_result.order_id}")
+                            elif sell_result.fill_price and sell_result.fill_price > 0:
+                                # Priority 2: immediate broker API fill price
                                 actual_exit_price = sell_result.fill_price
-                            log.info(f"Broker sell confirmed for {pos.ticker}: order_id={sell_result.order_id}, price=${actual_exit_price:.4f}")
+                                log.info(f"Broker sell confirmed for {pos.ticker}: order_id={sell_result.order_id}, price=${actual_exit_price:.4f}")
+                            else:
+                                # Priority 3 (degraded): stop_price as fill estimate
+                                _fill_fallback_count += 1
+                                log.warning(
+                                    f"[fill-price] eod_settlement using stop_price as fill price "
+                                    f"(broker_orders empty for order_id={sell_result.order_id}) ticker={pos.ticker}"
+                                )
                         else:
                             log.error(f"Broker sell FAILED for {pos.ticker}: {sell_result.message} — NOT marking as closed internally")
                     except Exception as _broker_err:
@@ -198,7 +216,7 @@ def check_stop_losses(portfolio, prices, lows, trade_date, dry_run):
                 exits.append({"ticker": pos.ticker, "type": "stop_loss",
                               "intraday_low": intraday_low, "stop_price": pos.stop_price,
                               "exit_price": exit_price, "dry_run": True})
-    return exits
+    return exits, _fill_fallback_count
 
 
 def check_take_profits(portfolio, prices, highs, trade_date, dry_run):
@@ -209,6 +227,7 @@ def check_take_profits(portfolio, prices, highs, trade_date, dry_run):
     price (simulating a limit order fill at the TP level).
     """
     exits = []
+    _fill_fallback_count = 0
     for pos in list(portfolio.positions):
         if not pos.take_profit or pos.ticker not in prices:
             continue
@@ -258,10 +277,27 @@ def check_take_profits(portfolio, prices, highs, trade_date, dry_run):
                         )
                         if sell_result.success:
                             broker_sell_ok = True
-                            # Use fill price from broker if available
-                            if sell_result.fill_price and sell_result.fill_price > 0:
+                            # Priority 1: broker_orders canonical fill (B.3 oracle)
+                            _p1_fill = None
+                            try:
+                                from db import atlas_db as _adb
+                                _p1_fill = _adb.get_fill_price(sell_result.order_id)
+                            except Exception:
+                                pass
+                            if _p1_fill and _p1_fill > 0:
+                                actual_exit_price = _p1_fill
+                                log.info(f"[fill-price P1] {pos.ticker}: broker_orders fill ${_p1_fill:.4f} order_id={sell_result.order_id}")
+                            elif sell_result.fill_price and sell_result.fill_price > 0:
+                                # Priority 2: immediate broker API fill price
                                 actual_exit_price = sell_result.fill_price
-                            log.info(f"Broker sell confirmed for {pos.ticker}: order_id={sell_result.order_id}, price=${actual_exit_price:.4f}")
+                                log.info(f"Broker sell confirmed for {pos.ticker}: order_id={sell_result.order_id}, price=${actual_exit_price:.4f}")
+                            else:
+                                # Priority 3 (degraded): take_profit price as fill estimate
+                                _fill_fallback_count += 1
+                                log.warning(
+                                    f"[fill-price] eod_settlement using take_profit as fill price "
+                                    f"(broker_orders empty for order_id={sell_result.order_id}) ticker={pos.ticker}"
+                                )
                         else:
                             log.error(f"Broker sell FAILED for {pos.ticker}: {sell_result.message} — NOT marking as closed internally")
                     except Exception as _broker_err:
@@ -300,7 +336,7 @@ def check_take_profits(portfolio, prices, highs, trade_date, dry_run):
                 exits.append({"ticker": pos.ticker, "type": "take_profit",
                               "intraday_high": intraday_high, "take_profit": pos.take_profit,
                               "exit_price": exit_price, "dry_run": True})
-    return exits
+    return exits, _fill_fallback_count
 
 
 def generate_eod_report(portfolio, prices, trade_date, stop_exits, tp_exits):
@@ -600,11 +636,19 @@ def main():
 
     # Check stop-losses
     log.info("Checking stop-losses...")
-    stop_exits = check_stop_losses(portfolio, prices, lows, trade_date, args.dry_run)
+    stop_exits, _stop_fill_fallbacks = check_stop_losses(portfolio, prices, lows, trade_date, args.dry_run)
 
     # Check take-profits
     log.info("Checking take-profits...")
-    tp_exits = check_take_profits(portfolio, prices, highs, trade_date, args.dry_run)
+    tp_exits, _tp_fill_fallbacks = check_take_profits(portfolio, prices, highs, trade_date, args.dry_run)
+
+    _total_fill_fallbacks = _stop_fill_fallbacks + _tp_fill_fallbacks
+    if _total_fill_fallbacks:
+        log.warning(
+            "EOD: %d fill-price fallback(s) — stop/TP price used instead of "
+            "broker-confirmed fill (run sync_broker_orders.py daily to minimise)",
+            _total_fill_fallbacks,
+        )
 
     # Check daily drawdown
     halted, dd = portfolio.check_daily_drawdown(prices)
@@ -684,6 +728,7 @@ def main():
         "position_details": position_snapshot,
         "stop_exits": len(stop_exits),
         "tp_exits": len(tp_exits),
+        "fill_price_fallbacks": _total_fill_fallbacks,
         "signal_exits": len([t for t in today_closed if t.get("exit_reason") == "signal_exit"]),
         "realized_pnl_today": realized_today,
         "closed_trades_today": today_closed,

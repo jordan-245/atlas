@@ -2664,6 +2664,50 @@ def get_broker_orders(
         return []
 
 
+
+# ── Canonical fill-price oracle (Phase B.3) ───────────────────────────────────
+
+def get_fill_price(order_id: str, *, after: Optional[str] = None) -> Optional[float]:
+    """Return the broker-confirmed fill price for a specific order_id.
+
+    Reads from broker_orders table (Priority 1 — authoritative oracle).
+    Returns None if order_id not in broker_orders OR not yet filled.
+
+    If `after` is provided (ISO timestamp), only returns fill if
+    broker_orders.filled_at >= after — prevents stale fill reuse for
+    re-entered tickers.
+
+    NEVER infers from Position.avg_entry_price or trade.entry_price * X.
+    Caller is responsible for handling None (treat as missing fill, not breakeven).
+
+    Added: Phase B.3 (2026-04-29).
+    """
+    if not order_id:
+        return None
+    try:
+        with get_db() as db:
+            row = db.execute(
+                "SELECT fill_price, filled_at, status FROM broker_orders WHERE order_id = ?",
+                (order_id,),
+            ).fetchone()
+        if not row:
+            return None
+        if row["status"] != "filled":
+            return None
+        if row["fill_price"] is None:
+            return None
+        if after is not None and row["filled_at"] is not None:
+            if row["filled_at"] < after:
+                return None
+        return float(row["fill_price"])
+    except Exception as exc:
+        _logging.getLogger(__name__).debug(
+            "get_fill_price(%s): %s (non-fatal)", order_id, exc
+        )
+        return None
+
+
+
 # ── Position Protective Orders ─────────────────────────────────────────────────
 # Single canonical row per open position tracking stop+TP order IDs from broker
 # truth. Added phase A.1 — 2026-04-29.

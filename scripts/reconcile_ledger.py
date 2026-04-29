@@ -214,25 +214,53 @@ def reconcile_ledger(market_id: str, dry_run: bool = False, broker=None) -> dict
 
             try:
                 fill = buy_fills.get(ticker)
-                # Priority 1: broker_orders local cache (source-of-truth fill price)
-                # This eliminates phantom-price inference bugs (CHTR pattern).
-                _cached_fill = atlas_db.get_broker_fill_price(ticker, side="buy")
+                # Priority 1a: get_fill_price(order_id) — exact match, most authoritative
+                _fill_order_id: str | None = getattr(fill, "order_id", None) if fill else None
+                _cached_fill: float | None = None
+                if _fill_order_id:
+                    _cached_fill = atlas_db.get_fill_price(_fill_order_id)
+                # Priority 1b: symbol-based broker_orders scan (broader, less precise)
+                if _cached_fill is None:
+                    _cached_fill = atlas_db.get_broker_fill_price(ticker, side="buy")
                 if _cached_fill and _cached_fill > 0:
                     entry_price = _cached_fill
                     log.info(
-                        "reconcile_ledger: used broker_orders fill price for %s: $%.4f "
-                        "(vs inferred $%.4f)",
-                        ticker, _cached_fill,
-                        (fill.fill_price if fill and fill.fill_price else bp.entry_price),
+                        "reconcile_ledger: [P1] broker_orders fill for %s: $%.4f "
+                        "(order_id=%s)",
+                        ticker, _cached_fill, _fill_order_id or "symbol-scan",
                     )
                 else:
-                    # Priority 2: live order history fill (from this session's fetch)
-                    # Priority 3: broker position avg_entry_price (inference fallback)
-                    entry_price = (
+                    # Priority 2: inferred — live order history fill or broker position avg_entry
+                    # Emit WARNING: these are NOT broker-confirmed prices.
+                    _inferred = (
                         fill.fill_price
                         if fill and fill.fill_price and fill.fill_price > 0
                         else bp.entry_price
                     )
+                    if _inferred and _inferred > 0:
+                        entry_price = _inferred
+                        log.warning(
+                            "[fill-price] using inferred price for ticker=%s order_id=%s, "
+                            "broker_orders empty",
+                            ticker, _fill_order_id or "n/a",
+                        )
+                    else:
+                        # Priority 3: no price at all — skip INSERT, alert (do NOT fabricate)
+                        log.error(
+                            "[fill-price] ticker=%s: no fill price from broker_orders or "
+                            "inference (P3 skip) — run sync_broker_orders.py to populate",
+                            ticker,
+                        )
+                        try:
+                            from utils.telegram import send_message as _tg_p3
+                            _tg_p3(
+                                f"🚨 [fill-price P3] reconcile_ledger: {ticker} has no fill "
+                                f"price. Run sync_broker_orders.py to populate broker_orders."
+                            )
+                        except Exception:
+                            pass
+                        stats["errors"].append(f"{ticker}: no fill price (P3 skip)")
+                        continue
                 shares = (
                     int(fill.raw.get("filled_qty", bp.shares))
                     if (fill and hasattr(fill, "raw") and fill.raw.get("filled_qty"))
@@ -382,24 +410,60 @@ def reconcile_ledger(market_id: str, dry_run: bool = False, broker=None) -> dict
 
             try:
                 fill = sell_fills.get(ticker)
-                # Priority 1: broker_orders local cache (source-of-truth fill price)
-                _cached_sell = atlas_db.get_broker_fill_price(ticker, side="sell")
+                # Priority 1a: get_fill_price(stop_order_id) — exact match on stop order
+                _stop_oid: str | None = trade.get("stop_order_id")
+                _cached_sell: float | None = None
+                if _stop_oid:
+                    _cached_sell = atlas_db.get_fill_price(_stop_oid)
+                # Priority 1b: get_fill_price(sell fill order_id)
+                if _cached_sell is None:
+                    _sell_fill_oid: str | None = getattr(fill, "order_id", None) if fill else None
+                    if _sell_fill_oid:
+                        _cached_sell = atlas_db.get_fill_price(_sell_fill_oid)
+                # Priority 1c: symbol-based broker_orders scan
+                if _cached_sell is None:
+                    _cached_sell = atlas_db.get_broker_fill_price(ticker, side="sell")
                 if _cached_sell and _cached_sell > 0:
                     exit_price = _cached_sell
                     log.info(
-                        "reconcile_ledger: used broker_orders sell fill for %s: $%.4f",
-                        ticker, _cached_sell,
+                        "reconcile_ledger: [P1] broker_orders sell fill for %s: $%.4f "
+                        "(stop_order_id=%s)",
+                        ticker, _cached_sell, _stop_oid or "n/a",
                     )
                     exit_reason = "reconcile_fill_cached"
                 else:
-                    # Priority 2: live order history fill
-                    # Priority 3: entry price as last resort (inference fallback)
-                    exit_price = (
+                    # Priority 2: inferred — live fill or entry_price (last resort)
+                    # Emit WARNING: these are NOT broker-confirmed prices.
+                    _inferred_exit = (
                         fill.fill_price
                         if fill and fill.fill_price and fill.fill_price > 0
                         else float(trade.get("entry_price", 0) or 0)
                     )
-                    exit_reason = "reconcile_fill" if fill else "reconcile_phantom"
+                    if _inferred_exit and _inferred_exit > 0:
+                        exit_price = _inferred_exit
+                        exit_reason = "reconcile_fill" if fill else "reconcile_phantom"
+                        log.warning(
+                            "[fill-price] using inferred exit price for ticker=%s "
+                            "stop_order_id=%s, broker_orders empty",
+                            ticker, _stop_oid or "n/a",
+                        )
+                    else:
+                        # Priority 3: no exit price — skip close, alert (do NOT fabricate)
+                        log.error(
+                            "[fill-price] ticker=%s: no exit price from broker_orders or "
+                            "inference (P3 skip) — phantom stays open until next reconcile",
+                            ticker,
+                        )
+                        try:
+                            from utils.telegram import send_message as _tg_p3
+                            _tg_p3(
+                                f"🚨 [fill-price P3] reconcile_ledger: {ticker} has no exit "
+                                f"price. Phantom stays open — run sync_broker_orders.py."
+                            )
+                        except Exception:
+                            pass
+                        stats["errors"].append(f"{ticker}: no exit price (P3 skip, stays open)")
+                        continue
 
                 atlas_db.record_trade_exit(
                     ticker=ticker,

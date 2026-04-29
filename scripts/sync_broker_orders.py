@@ -42,7 +42,7 @@ log = setup_logging("sync_broker_orders", extra_log_file="sync_broker_orders")
 
 # ── Constants ────────────────────────────────────────────────────────────────
 _SERVICE_NAME = "sync_broker_orders"
-_DEFAULT_DAYS = 7
+_DEFAULT_DAYS = 30
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
