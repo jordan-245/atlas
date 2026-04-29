@@ -78,9 +78,9 @@ phase:
 monitor:
   rth_interval_minutes: 5              # During US RTH (09:30–16:00 ET), poll every 5 min
   off_hours_interval_minutes: 15       # Outside RTH, every 15 min
-  dry_run: true                        # Phase 1: log decisions, take NO action
+  dry_run: false                       # Phase 2: ASSIST mode active — flag fixes for human review, no auto-merge
   batch_size: 50                       # Errors processed per cycle
-  market_hours_skip_classifier: false  # Phase 1: classify but don't act
+  market_hours_skip_classifier: false  # Phase 2: classify AND dispatch ASSIST fixes (no auto-merge)
   promotion_window_pause: true         # Pause during research/promoter.py runs
 
 verify:
