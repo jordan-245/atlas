@@ -656,6 +656,51 @@ def _isolate_live_portfolio_state(
     yield
 
 
+# ---------------------------------------------------------------------------
+# scripts.reconcile_positions state-file isolation
+# Prevents ANY test from triggering save_internal_state() writes to
+# brokers/state/live_*.json. Same root cause class as
+# brokers.live_portfolio._STATE_DIR (commit 4ea328fa).
+# Discovered 2026-04-30: test_reconcile_positions_fix_idempotent wrote
+# positions=[] to live_sp500.json, wiping CAT/FCX/MU.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session", autouse=True)
+def _isolate_reconcile_positions_state_dir_session(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """Session-scope: redirect scripts.reconcile_positions._STATE_DIR to tmp."""
+    try:
+        import scripts.reconcile_positions as _rp
+    except Exception:
+        yield
+        return
+
+    from _pytest.monkeypatch import MonkeyPatch
+    mp = MonkeyPatch()
+    session_state_dir = tmp_path_factory.mktemp("reconcile_positions_state_session")
+    mp.setattr(_rp, "_STATE_DIR", session_state_dir)
+    yield
+    mp.undo()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_reconcile_positions_state_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Function-scope: each test gets a fresh reconcile_positions state dir."""
+    try:
+        import scripts.reconcile_positions as _rp
+    except Exception:
+        yield
+        return
+
+    state_dir = tmp_path / "rp_state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(_rp, "_STATE_DIR", state_dir)
+    yield
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _zz_verify_no_state_file_pollution() -> None:
     """Session-end: assert brokers/state/live_*.json files were NOT modified.

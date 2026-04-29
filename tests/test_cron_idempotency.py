@@ -190,13 +190,28 @@ def test_reconcile_positions_idempotent(
 def test_reconcile_positions_fix_idempotent(
     _isolate_prod_db: None,
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """reconcile_positions --fix applied twice produces the same final state.
 
     With broker returning no positions and internal state empty, --fix is a
     no-op both times. The DB state must be identical after each run.
+
+    NOTE: _load_script() creates a FRESH module via importlib, bypassing
+    sys.modules.  The conftest autouse fixture patches
+    scripts.reconcile_positions._STATE_DIR (the sys.modules instance) but
+    cannot reach the fresh module returned here.  We must monkeypatch
+    mod._STATE_DIR directly to prevent save_internal_state() from writing
+    to the production brokers/state/live_sp500.json.
+    (Root cause of 2026-04-30 CAT/FCX/MU wipeout — Task #295)
     """
     mod = _load_script("reconcile_positions")
+
+    # Isolate state-file writes — must be done on the fresh module instance
+    # BEFORE any reconcile_positions() call.
+    rp_state_dir = tmp_path / "rp_state"
+    rp_state_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(mod, "_STATE_DIR", rp_state_dir)
 
     mock_broker = _make_broker(positions=[])
     monkeypatch.setattr("brokers.registry.get_live_broker", lambda _: mock_broker)

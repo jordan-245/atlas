@@ -64,6 +64,19 @@ _DEFAULT_BROKER = {
 }
 
 
+# Module-level constant — tests can monkeypatch this to redirect writes.
+# Mirrors the pattern used in brokers.live_portfolio._STATE_DIR (commit 4ea328fa).
+_STATE_DIR: Path = PROJECT / "brokers" / "state"
+
+
+def _state_path(market_id: str) -> Path:
+    """Return path to the live state file for a market.
+
+    Goes through module-level _STATE_DIR so tests can redirect via monkeypatch.
+    """
+    return _STATE_DIR / f"live_{market_id}.json"
+
+
 # ═══════════════════════════════════════════════════════════════
 # Config / State Loading
 # ═══════════════════════════════════════════════════════════════
@@ -79,7 +92,7 @@ def load_config(market_id: str) -> dict:
 
 def load_internal_state(market_id: str) -> dict:
     """Load internal position state from brokers/state/live_{market}.json."""
-    path = PROJECT / "brokers" / "state" / f"live_{market_id}.json"
+    path = _state_path(market_id)
     if not path.exists():
         logger.warning("Internal state file not found: %s", path)
         return {"positions": []}
@@ -89,7 +102,7 @@ def load_internal_state(market_id: str) -> dict:
 
 def save_internal_state(market_id: str, state: dict) -> None:
     """Save updated internal state to brokers/state/live_{market}.json."""
-    path = PROJECT / "brokers" / "state" / f"live_{market_id}.json"
+    path = _state_path(market_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     
     # Update last_saved timestamp
@@ -189,7 +202,7 @@ def reconcile_positions(
         for _other_market in _MARKETS:
             if _other_market == market_id:
                 continue
-            _other_path = PROJECT / "brokers" / "state" / f"live_{_other_market}.json"
+            _other_path = _state_path(_other_market)
             if _other_path.exists():
                 try:
                     import json as _json

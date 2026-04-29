@@ -5,13 +5,11 @@
     {
       "ticker": "GLD",
       "strategy": "momentum_breakout",
-      "entry_date": "2026-04-29",
+      "entry_date": "2026-04-30",
       "entry_price": 442.8,
       "shares": 2,
-      "stop_price": 418.105,
-      "order_id": "",
-      "stop_order_id": "70b8e824-e8c3-4092-81f6-47fcbabeb7ad",
-      "tp_order_id": ""
+      "stop_price": 397.0305,
+      "order_id": ""
     }
   ],
   "closed_trades": [],
@@ -565,11 +563,33 @@
           "holding_days": -1
         }
       ]
+    },
+    {
+      "date": "2026-04-29",
+      "equity": 950.22,
+      "cash": 647.89,
+      "positions_value": 302.33,
+      "num_positions": 1,
+      "total_realized_pnl": 0,
+      "total_closed_trades": 0,
+      "positions": [
+        {
+          "ticker": "GLD",
+          "strategy": "momentum_breakout",
+          "shares": 2,
+          "entry_price": 442.8,
+          "current_price": 417.41,
+          "unrealized_pnl": -50.78,
+          "mae": -5.73,
+          "mfe": 0.0,
+          "holding_days": -1
+        }
+      ]
     }
   ],
-  "daily_high_water": 5189.06,
-  "daily_high_water_date": "2026-04-29",
+  "daily_high_water": 990.4198762228104,
+  "daily_high_water_date": "2026-04-30",
   "halted": false,
   "halt_reason": "",
-  "last_saved": "2026-04-29T08:01:07.660591"
+  "last_saved": "2026-04-30T09:36:12.995503"
 }

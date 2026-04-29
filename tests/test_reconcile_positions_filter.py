@@ -107,6 +107,7 @@ class TestUniverseStateFilter:
 
         # Patch get_universe_tickers to return sp500 tickers
         with patch("scripts.reconcile_positions.PROJECT", tmp_path), \
+             patch("scripts.reconcile_positions._STATE_DIR", tmp_path / "brokers" / "state"), \
              patch("brokers.registry.get_live_broker", return_value=mock_broker), \
              patch("universe.builder.get_universe_tickers", return_value=sp500_tickers):
 
@@ -149,6 +150,7 @@ class TestUniverseStateFilter:
         mock_broker = _make_mock_broker(broker_positions)
 
         with patch("scripts.reconcile_positions.PROJECT", tmp_path), \
+             patch("scripts.reconcile_positions._STATE_DIR", tmp_path / "brokers" / "state"), \
              patch("brokers.registry.get_live_broker", return_value=mock_broker), \
              patch("universe.builder.get_universe_tickers", return_value=universe_tickers):
 
@@ -247,6 +249,7 @@ class TestCrossMarketExclusion:
         commodity_etfs_universe = ["FCX", "GLD", "UNG"]
 
         with patch("scripts.reconcile_positions.PROJECT", tmp_path), \
+             patch("scripts.reconcile_positions._STATE_DIR", tmp_path / "brokers" / "state"), \
              patch("brokers.registry.get_live_broker", return_value=mock_broker), \
              patch("universe.builder.get_universe_tickers", return_value=commodity_etfs_universe):
 
@@ -266,13 +269,22 @@ class TestCrossMarketExclusion:
         # broker_count = 2 (GLD + UNG; FCX excluded)
         assert result["summary"]["broker_count"] == 2
 
-    def test_state_file_ticker_always_wins_over_other_market(self, tmp_path):
-        """State-file tickers are always in scope, even if another market also has them.
+    def test_other_market_wins_over_state_file_for_duplicate_tickers(self, tmp_path):
+        """When a ticker appears in BOTH markets' state files, other_market_tickers wins.
 
-        If a ticker somehow appears in BOTH markets' state files (duplicate state),
-        the current market's state takes precedence and the position IS tracked.
+        The algorithm is: _allow = (universe | state_tickers) - other_market_tickers.
+        The subtraction step means that other_market_tickers ALWAYS takes priority —
+        even over state_tickers of the current market.
+
+        Rationale: prevents erroneously cross-market tickers from persisting in the
+        wrong market's scope forever via state_tickers.  See code comment at line ~224.
+
+        NOTE: This test was originally (incorrectly) named
+        test_state_file_ticker_always_wins_over_other_market and asserted the OPPOSITE.
+        The code intentionally implements other_market priority.  Fixed 2026-04-30
+        to match the actual algorithm (Task #295, pre-existing test bug).
         """
-        # Both sp500 and commodity_etfs track FCX (degenerate case)
+        # Both sp500 and commodity_etfs track FCX (degenerate case — duplicate state)
         _make_state_file(tmp_path, "sp500",          ["FCX", "AMD"])
         _make_state_file(tmp_path, "commodity_etfs", ["FCX", "GLD"])
         _make_config(tmp_path, "sp500")
@@ -283,9 +295,10 @@ class TestCrossMarketExclusion:
         ]
         mock_broker = _make_mock_broker(broker_positions)
 
-        sp500_universe = ["AMD"]  # FCX not in sp500 universe, but in sp500 state
+        sp500_universe = ["AMD"]  # FCX not in sp500 universe, but is in sp500 state
 
         with patch("scripts.reconcile_positions.PROJECT", tmp_path), \
+             patch("scripts.reconcile_positions._STATE_DIR", tmp_path / "brokers" / "state"), \
              patch("brokers.registry.get_live_broker", return_value=mock_broker), \
              patch("universe.builder.get_universe_tickers", return_value=sp500_universe):
 
@@ -293,14 +306,19 @@ class TestCrossMarketExclusion:
 
             result = reconcile_positions(market_id="sp500", fix=False, dry_run=False)
 
-        # FCX is in sp500 state (explicit ownership) — must be in scope regardless
-        # of cross-market exclusion logic
         phantom_tickers = {d["ticker"] for d in result["discrepancies"] if d["type"] == "PHANTOM"}
         untracked_tickers = {d["ticker"] for d in result["discrepancies"] if d["type"] == "UNTRACKED"}
 
-        # FCX is in sp500 state and on broker → no PHANTOM, no UNTRACKED for FCX
-        assert "FCX" not in phantom_tickers,   "FCX is in broker — should not be PHANTOM"
-        assert "FCX" not in untracked_tickers, "FCX is in sp500 state — should not be UNTRACKED"
+        # other_market_tickers wins: FCX is in commodity_etfs state → excluded from sp500 _allow.
+        # FCX is in sp500's internal state but NOT in broker_map → PHANTOM for sp500.
+        assert "FCX" in phantom_tickers, (
+            "FCX should be PHANTOM: it's in sp500 internal state, but excluded from "
+            "sp500's broker_map scope because commodity_etfs also tracks it "
+            "(other_market_tickers priority rule)."
+        )
+        # AMD is only in sp500 → in scope, no discrepancy
+        assert "AMD" not in untracked_tickers, "AMD is in sp500 state and broker — should not be UNTRACKED"
 
-        # broker_count should include FCX (via state_tickers override)
-        assert result["summary"]["broker_count"] == 2
+        # broker_count = 1 (only AMD in scope; FCX excluded by other_market priority)
+        assert result["summary"]["broker_count"] == 1, \
+            f"Expected broker_count=1 (AMD only; FCX excluded), got {result['summary']['broker_count']}"

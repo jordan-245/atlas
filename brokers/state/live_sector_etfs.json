@@ -5,23 +5,12 @@
     {
       "ticker": "XLI",
       "strategy": "momentum_breakout",
-      "entry_date": "2026-04-29",
+      "entry_date": "2026-04-30",
       "entry_price": 173.97,
       "shares": 9,
-      "stop_price": 168.77,
+      "stop_price": 166.97,
       "order_id": "",
-      "stop_order_id": "8fd9810f-40c7-44f4-a13d-8278c287c1e2",
-      "tp_order_id": ""
-    },
-    {
-      "ticker": "XLY",
-      "strategy": "momentum_breakout",
-      "entry_date": "2026-04-29",
-      "entry_price": 116.44,
-      "shares": 10,
-      "stop_price": 116.03,
-      "order_id": "",
-      "stop_order_id": "eed37010-c312-4212-9994-8e35eb1931fa",
+      "stop_order_id": "3c2105c9-d760-4dbf-b1a4-4e7495ed0d2d",
       "tp_order_id": ""
     }
   ],
@@ -147,11 +136,33 @@
           "holding_days": -1
         }
       ]
+    },
+    {
+      "date": "2026-04-29",
+      "equity": 3179.64,
+      "cash": 647.89,
+      "positions_value": 2531.75,
+      "num_positions": 1,
+      "total_realized_pnl": 0,
+      "total_closed_trades": 0,
+      "positions": [
+        {
+          "ticker": "XLI",
+          "strategy": "momentum_breakout",
+          "shares": 9,
+          "entry_price": 173.97,
+          "current_price": 169.93,
+          "unrealized_pnl": -36.36,
+          "mae": -2.32,
+          "mfe": 0.0,
+          "holding_days": -1
+        }
+      ]
     }
   ],
-  "daily_high_water": 5189.06,
-  "daily_high_water_date": "2026-04-29",
+  "daily_high_water": 2028.8736847163082,
+  "daily_high_water_date": "2026-04-30",
   "halted": false,
   "halt_reason": "",
-  "last_saved": "2026-04-29T08:00:43.338041"
+  "last_saved": "2026-04-30T08:01:05.808623"
 }
