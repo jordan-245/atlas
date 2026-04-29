@@ -137,3 +137,56 @@ Fee drag at low equity destroys strategy performance metrics. The same strategy 
 
 ### 18. cli_paper_run → live-run execution path: use LiveExecutor, not broker.sell()
 The old `cmd_live_run` called `broker.sell()` directly, bypassing `LiveExecutor._execute_exit()` which handles cancelling protective orders (SL/TP) before selling. This caused Alpaca "insufficient qty" rejections when stop-loss orders held shares. **Fix (2026-03-26):** Rewrote `cmd_live_run` to route through `LiveExecutor.execute_plan()`. Also fixed: `pythonExecutable()` defaulted to `"python"` (not found on system, only `python3`), and `cli_paper_run` mapped to non-existent `paper-run` command instead of `live-run --auto`. All live execution MUST go through `LiveExecutor` — never call `broker.sell()` directly for exits.
+
+---
+
+## Session 2026-04-29 — Phase B.4 + Phase C planning
+
+### 36. position_protective_orders ledger is the fix for multi-writer drift
+Single canonical row per open position (market_id+ticker PK) with broker-verified
+stop_order_id + tp_order_id. Any code that places or cancels a protective order
+writes through this ledger → drift class eliminated at source.
+
+### 37. broker_orders as fill-price oracle: three-tier priority chain
+Priority: broker_orders > inferred from position avg_entry + WARNING > NULL + ERROR + Telegram.
+Never fabricate a fill price. If broker_orders is absent, log WARNING and record NULL,
+then alert Telegram — silent fabrication caused CHTR phantom-price bug class.
+
+### 38. Shadow mode for reconcile cutover
+Ship new `core/reconcile.py` alongside old scripts. Alert on divergence (Telegram, 6h throttle).
+Cutover only after 7 consecutive clean days. This pattern validates the new code against
+production traffic before switching the live path — without any downtime window.
+
+### 39. AST lint with grandfather baseline blocks new offenders cleanly
+839 existing bare-excepts are grandfathered in `baseline.txt`.
+Any NEW bare-except added after the baseline is caught in CI with exit 1.
+Doesn't require fixing all 839 today; just enforces "don't add more."
+
+### 40. "Days since X happened" healthcheck catches silent feature failures
+A `days_since_last_signal_write` check catches a 10-day write gap immediately.
+A `days_since_research_experiment` catches a 37-day research block the morning after.
+Pattern: for any background process whose failure is invisible to traders, add a
+DB-query-based staleness check to healthcheck_pipelines.py.
+
+### 41. TP-coverage healthcheck: 5-min debounce + state file = fail-loud
+Without debounce: alerts fire on every cron cycle during the 30s after entry fill
+while the TP order is being placed. With 5-min debounce + state file tracking
+first_missing_at, the alert fires only after a genuine gap — and second run is
+idempotent (state file already has the timestamp).
+
+### 42. CHECK constraints + JSON drift detector = SQLite canonical, JSON observed
+Add CHECK on `state`, `stop_price` direction, exit/entry date ordering to trades.
+JSON state files are observed output, not canonical storage — any drift from
+SQLite is a bug. The `verify_dual_write.py` canary detects this automatically.
+
+### 43. Per-instance warning throttle: `self._warned = False` flag
+`sync_protective_orders._handle_held_stops` was firing 30+/15min Telegram storms.
+Fix: instance-level flag reset at the start of each cron invocation; flag set on
+first WARNING; subsequent WARNINGs within the same cron instance are suppressed.
+Rule: any code that can fire alerts from a loop needs per-invocation throttling.
+
+### 44. Phase 0 broker verification before any DB-only fix
+"TP-naked CAT" looked like a missing DB tp_order_id. Actually: orphan TP order
+existed at broker, linked to a different DB row. DB-only fix would have created
+duplicate TP orders. ALWAYS verify broker state with `broker.get_open_orders()`
+before any DB reconciliation action.

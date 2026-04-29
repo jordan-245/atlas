@@ -278,3 +278,53 @@ Reconciled against git log since 2026-04-17. Major work:
 
 - [ ] **#260 — Caddy basicauth credential rotation** — needs user coordination
       for credential rotation. Deferred. Documented in Wave 1 hardening.
+
+---
+
+## Phase C — Architectural simplification (planned 2026-04-29; ship after Phase B cutover)
+
+Status: PLANNED. Each task has a design doc; implementation deferred until pre-requisites land.
+
+### C.1 — Trade state machine (formal, DB-enforced)
+- [ ] Read docs/phase-c-trade-state-machine.md
+- [ ] Migration: add `state` column to `trades`, default NULL
+- [ ] Backfill existing trades into states (PROPOSED/SUBMITTED/FILLED/PROTECTED/CLOSED/SETTLED)
+- [ ] Shadow-write phase (parallel writes to `state` column, no enforcement yet)
+- [ ] CHECK constraint enforcement (table-recreation pattern)
+- [ ] Refactor all 12 write paths to call `db.transition_trade(trade_id, to_state)`
+- [ ] Pre-req: Phase B.2 cutover (7-day shadow validation complete)
+- Estimate: 2-3 weeks
+
+### C.2 — Per-market broker sub-accounts
+- [ ] User decision required: (a) per-market sub-accounts (4-6 weeks), or (b) keep single account with strict virtual ledger (1 week, already partially done)
+- [ ] If (a): operational lead-time for Alpaca sub-account provisioning
+- [ ] If (b): membership disjointness check at config load + runtime universe verification
+- Recommend default: (b) — already 90% in place via universe.membership module
+- Pre-req: user approval
+
+### C.3 — Single orchestrator timer
+- [ ] Read docs/phase-c-orchestrator-timer.md
+- [ ] Build `core/orchestrator.py` skeleton (per-market DAG: sync_broker_orders → reconcile → sync_protective → healthz)
+- [ ] Write `systemd/atlas-orchestrator.{service,timer}` (OnCalendar=*:0/15)
+- [ ] Run alongside existing cron in shadow mode (7-day diff alerts)
+- [ ] Cut over: prune crontab from 49 → 8 entries
+- [ ] Delete shadow mode code
+- Estimate: 1-2 weeks
+
+### C.4 — God file decomposition
+- [ ] Read docs/phase-c-god-file-decomposition.md
+- [ ] Run `pydeps` import graph on all 3 god files; document cycles
+- [ ] Extract `core/types.py` with shared dataclasses to break import cycles
+- [ ] db/atlas_db.py → `db/{connection,trades,equity,signals,broker_orders,misc}.py` (start here — lowest risk)
+- [ ] services/chat_server.py → `services/app.py` + `services/api/*.py` + `services/ws/chat.py`
+- [ ] brokers/live_executor.py → `executor/{entry,exit,protective,reconcile,pdt,leverage}.py` (last — highest risk)
+- [ ] Re-export shims preserve old import paths during transition
+- [ ] Full regression suite must pass before merge of each split
+- Pre-req: C.1 (state machine) + B.2 cutover
+- Estimate: 4 weeks (all 3 files); 5 days (db only, minimum viable)
+
+### Latent items surfaced during this audit
+- [ ] Bare-except conversion: 839 grandfathered offenders (lint script blocks new ones; convert oldest paths first)
+- [ ] OCO bracket migration for existing positions: CAT/GLD/XLI/XLY have INDEPENDENT stop+TP orders, not OCO-linked. Phase B atomic-bracket-by-default applies to NEW entries; existing 4 positions need a controlled cancel+place to migrate. Risky pre-market work; recommend user-approved one-off.
+- [ ] FCX universe-disjointness: still in BOTH markets/etf_markets.py and markets/sp500.py. Recommend startup-time disjointness check.
+- [ ] reconcile_sqlite_to_broker.py missing inverted-stop and no-zero-stop guards (validation Quick Win 7).
