@@ -618,6 +618,168 @@ async def cmd_unhalt(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("ℹ️ No halt is active.")
 
 
+
+async def cmd_halt_remediation(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Handle /halt_remediation — suspend auto-remediation via L2 kill-switch.
+
+    Creates data/AUTO_REMEDIATION_HALT with reason + metadata.
+    All auto-remediation systemd units with ConditionPathExists=! will refuse to start.
+
+    Usage:
+        /halt_remediation                 — halt with reason 'manual'
+        /halt_remediation detected loop   — halt with custom reason
+    """
+    if not _authorized(update.effective_chat.id):
+        await update.message.reply_text("⛔ Not authorized")
+        return
+
+    try:
+        from core.remediation_kill_switch import halt as ks_halt
+
+        reason = " ".join(ctx.args) if ctx.args else "manual"
+        username = update.effective_user.username or "unknown"
+        halt_path = ks_halt(
+            reason,
+            source=f"telegram:{username}",
+        )
+        await update.message.reply_text(
+            f"🛑 <b>Auto-remediation HALTED</b>\n\n"
+            f"Halt file: <code>{_esc(str(halt_path))}</code>\n"
+            f"Reason: <code>{_esc(reason)}</code>\n"
+            f"By: {_esc(username)}\n\n"
+            f"systemd units with <code>ConditionPathExists=!</code> will refuse to start.\n\n"
+            f"Use /resume_remediation to clear.",
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        logger.exception("cmd_halt_remediation error")
+        await update.message.reply_text(f"❌ Failed to create halt file: {_esc(str(e))}", parse_mode="HTML")
+
+
+async def cmd_resume_remediation(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Handle /resume_remediation — clear the L2 AUTO_REMEDIATION_HALT file.
+
+    Does NOT clear data/HALT (trading kill-switch — use /unhalt for that).
+    """
+    if not _authorized(update.effective_chat.id):
+        await update.message.reply_text("⛔ Not authorized")
+        return
+
+    try:
+        from core.remediation_kill_switch import resume as ks_resume
+
+        cleared = ks_resume()
+        if cleared:
+            msg = "✅ <b>Auto-remediation RESUMED</b>\n\nHalt file removed. systemd units may now start."
+        else:
+            msg = "ℹ️ Auto-remediation was already running (no halt file found)."
+        await update.message.reply_text(msg, parse_mode="HTML")
+    except Exception as e:
+        logger.exception("cmd_resume_remediation error")
+        await update.message.reply_text(f"❌ Error: {_esc(str(e))}", parse_mode="HTML")
+
+
+async def cmd_approve_fix(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Handle /approve_fix <fix_id> — approve a pending ASSIST-mode fix.
+
+    Sets review_verdict='APPROVE' on the fix_attempts row so the automation
+    pipeline can proceed past the human-review gate.
+
+    Note: the fix_attempts.status CHECK constraint does not include 'approved'.
+    Approval is recorded via review_verdict='APPROVE' + notes; the automation
+    polls for this to continue the merge pipeline.
+
+    Usage:
+        /approve_fix 42
+    """
+    if not _authorized(update.effective_chat.id):
+        await update.message.reply_text("⛔ Not authorized")
+        return
+
+    if not ctx.args:
+        await update.message.reply_text(
+            "Usage: <code>/approve_fix &lt;fix_id&gt;</code>\n\n"
+            "Example: <code>/approve_fix 42</code>",
+            parse_mode="HTML",
+        )
+        return
+
+    fix_id_str = ctx.args[0]
+    try:
+        fix_id = int(fix_id_str)
+    except ValueError:
+        await update.message.reply_text(f"❌ fix_id must be an integer, got: <code>{_esc(fix_id_str)}</code>", parse_mode="HTML")
+        return
+
+    import sqlite3 as _sqlite3
+
+    db_path = str(PROJECT_ROOT / "data" / "atlas.db")
+    username = update.effective_user.username or "unknown"
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    _TERMINAL_STATUSES = ("merged", "reverted", "failed", "escalated", "aborted")
+
+    try:
+        with _sqlite3.connect(db_path, timeout=10) as conn:
+            conn.row_factory = _sqlite3.Row
+            row = conn.execute(
+                "SELECT id, status, review_verdict, classification, notes FROM fix_attempts WHERE id = ?",
+                (fix_id,),
+            ).fetchone()
+
+            if not row:
+                await update.message.reply_text(
+                    f"❌ Fix <code>{fix_id}</code> not found in fix_attempts",
+                    parse_mode="HTML",
+                )
+                return
+
+            current_status = row["status"]
+            current_verdict = row["review_verdict"]
+
+            if current_status in _TERMINAL_STATUSES:
+                await update.message.reply_text(
+                    f"ℹ️ Fix <code>{fix_id}</code> already has terminal status "
+                    f"<code>{_esc(current_status)}</code> — no action taken.",
+                    parse_mode="HTML",
+                )
+                return
+
+            if current_verdict == "APPROVE":
+                await update.message.reply_text(
+                    f"ℹ️ Fix <code>{fix_id}</code> already has review_verdict=APPROVE "
+                    f"(status: <code>{_esc(current_status)}</code>).",
+                    parse_mode="HTML",
+                )
+                return
+
+            # Record approval: set review_verdict + append to notes
+            approval_note = f"[telegram approval by {username} at {now_iso}]"
+            existing_notes = row["notes"] or ""
+            new_notes = f"{existing_notes} {approval_note}".strip() if existing_notes else approval_note
+
+            conn.execute(
+                "UPDATE fix_attempts SET review_verdict = 'APPROVE', notes = ? WHERE id = ?",
+                (new_notes, fix_id),
+            )
+            conn.commit()
+
+        await update.message.reply_text(
+            f"✅ Fix <code>{fix_id}</code> approved\n\n"
+            f"Approver: {_esc(username)}\n"
+            f"review_verdict → <code>APPROVE</code>\n"
+            f"Status: <code>{_esc(current_status)}</code> (automation will advance)\n"
+            f"Timestamp: <code>{_esc(now_iso)}</code>",
+            parse_mode="HTML",
+        )
+    except _sqlite3.Error as e:
+        logger.exception("cmd_approve_fix DB error for fix_id=%s", fix_id)
+        await update.message.reply_text(f"❌ DB error: {_esc(str(e))}", parse_mode="HTML")
+    except Exception as e:
+        logger.exception("cmd_approve_fix unexpected error")
+        await update.message.reply_text(f"❌ Unexpected error: check server logs.", parse_mode="HTML")
+
+
 async def handle_approval_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Handle Approve / Reject button presses.
 
@@ -1549,6 +1711,9 @@ def main():
     app.add_handler(CommandHandler("plan", cmd_plan))
     app.add_handler(CommandHandler("halt", cmd_halt))
     app.add_handler(CommandHandler("unhalt", cmd_unhalt))
+    app.add_handler(CommandHandler("halt_remediation", cmd_halt_remediation))
+    app.add_handler(CommandHandler("resume_remediation", cmd_resume_remediation))
+    app.add_handler(CommandHandler("approve_fix", cmd_approve_fix))
 
     # Job dispatch handlers
     app.add_handler(CommandHandler("task", cmd_task))
@@ -1594,7 +1759,7 @@ def main():
 
     app.add_error_handler(_error_handler)
 
-    logger.info("Bot polling started. Commands: /status /plan /halt /unhalt /task /jobs /job /kill /logs /specs")
+    logger.info("Bot polling started. Commands: /status /plan /halt /unhalt /halt_remediation /resume_remediation /approve_fix /task /jobs /job /kill /logs /specs")
     app.run_polling(drop_pending_updates=True)
 
 
