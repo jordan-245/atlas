@@ -146,6 +146,60 @@ class TradePlanGenerator:
         min_confidence = self.config.get("risk", {}).get("min_confidence", 0.0)
         max_positions = self.config.get("risk", {}).get("max_open_positions", 5)
         available_slots = max_positions - len(self.portfolio.positions)
+
+        # ── RCA #4B: Position replacement at limit ─────────────────────────────
+        ## Position replacement policy (RCA #4B)
+        ## When `risk.enable_position_replacement: true` AND len(positions) >= max_open_positions:
+        ##   - Find the worst-PnL existing position (lowest unrealized_pnl)
+        ##   - Find the best candidate signal (highest confidence)
+        ##   - If candidate confidence > existing position confidence at entry,
+        ##     queue an exit of the worst position AND admit the new candidate
+        ##   - Replacement happens across cycles: exit fills first, new entry next cycle
+        ##   - Logged at WARNING with full context for audit
+        _enable_replacement = self.config.get("risk", {}).get("enable_position_replacement", False)
+        # Make a mutable copy so synthetic replacement exits can be appended
+        proposed_exits = list(exit_recommendations)
+
+        if _enable_replacement and len(self.portfolio.positions) >= max_positions and signals:
+            # Identify worst-PnL existing position (uses prices dict for live PnL)
+            _existing_with_pnl = [
+                (
+                    p,
+                    p.unrealized_pnl(prices.get(p.ticker, p.entry_price))
+                    if callable(getattr(p, "unrealized_pnl", None))
+                    else (getattr(p, "unrealized_pnl", 0.0) or 0.0),
+                )
+                for p in self.portfolio.positions
+            ]
+            if _existing_with_pnl:
+                _worst_pos, _worst_pnl = min(_existing_with_pnl, key=lambda x: x[1])
+                _best_candidate = max(signals, key=lambda s: getattr(s, "confidence", 0.0))
+                _worst_strength = getattr(_worst_pos, "confidence", 0.0) or 0.0
+                _new_strength = getattr(_best_candidate, "confidence", 0.0) or 0.0
+                if _new_strength > _worst_strength:
+                    logger.warning(
+                        "POSITION_REPLACEMENT: at limit (%d) — exiting %s "
+                        "(pnl=%.2f, conf=%.2f) to admit %s (conf=%.2f)",
+                        max_positions,
+                        getattr(_worst_pos, "ticker", "?"),
+                        _worst_pnl,
+                        _worst_strength,
+                        _best_candidate.ticker,
+                        _new_strength,
+                    )
+                    proposed_exits.append({
+                        "ticker": getattr(_worst_pos, "ticker", ""),
+                        "reason": "position_replacement",
+                        "shares": getattr(_worst_pos, "shares", 0),
+                        "details": (
+                            f"Replaced by {_best_candidate.ticker} "
+                            f"(conf {_new_strength:.2f} > {_worst_strength:.2f})"
+                        ),
+                    })
+                    # Free one slot so the replacement candidate can pass the cap check
+                    available_slots += 1
+        # ────────────────────────────────────────────────────────────────────────
+
         for signal in signals:
             # Build a rich entry dict with all signal data for future analysis
             base_entry = {
@@ -325,13 +379,13 @@ class TradePlanGenerator:
             },
             "proposed_entries": proposed_entries,
             "rejected_entries": rejected_entries,
-            "proposed_exits": exit_recommendations,
+            "proposed_exits": proposed_exits,
             "total_signals_generated": len(signals),
             "risk_summary": {
                 "total_proposed_cost": round(proposed_cost, 2),
                 "total_proposed_risk": round(proposed_risk, 2),
                 "risk_pct_of_equity": round(proposed_risk / current_eq * 100, 2) if current_eq > 0 else 0,
-                "positions_after": n_atlas + len(proposed_entries) - len(exit_recommendations),
+                "positions_after": n_atlas + len(proposed_entries) - len(proposed_exits),
                 "cash_after_entries": round(self.portfolio.cash - proposed_cost, 2),
                 "portfolio_exposure_pct": round((current_eq - self.portfolio.cash + proposed_cost) / current_eq * 100, 2) if current_eq > 0 else 0,
             },
