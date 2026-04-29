@@ -23,6 +23,7 @@ from core.merge_gates import (
     _load_deny_globs,
     gate_diff_size_cap,
     gate_mypy_clean,
+    gate_no_check_violations,
     gate_no_new_bare_except,
     gate_no_never_list_touched,
     gate_no_safety_critical_function_modified,
@@ -625,3 +626,125 @@ class TestRunAllGates:
         assert "reviewer_approved" in outcome.summary["blocking_failures"]
         # full_suite (WARNING, skipped) must NOT be in blocking_failures
         assert "full_suite" not in outcome.summary["blocking_failures"]
+
+
+# ── Gate 6: no CHECK violations ──────────────────────────────────────
+
+class TestGateNoCheckViolations:
+    """Gate 6: verify_cases-based CHECK constraint tests.
+
+    Uses an in-memory SQLite DB seeded with a minimal schema.
+    No subprocess mocking needed — this gate doesn't invoke external tools.
+    """
+
+    SIMPLE_SCHEMA = "CREATE TABLE t (id INTEGER, qty INTEGER CHECK (qty > 0));"
+
+    def test_passes_when_violating_row_is_rejected(self, tmp_worktree: Path):
+        """A CHECK that correctly blocks bad data → gate passes."""
+        cases = [("INSERT INTO t VALUES (1, -1)", False)]  # qty=-1 must be REJECTED
+        result = gate_no_check_violations(
+            tmp_worktree, verify_cases=cases, schema_sql=self.SIMPLE_SCHEMA,
+        )
+        assert result.passed is True
+        assert result.detail["verify_cases_run"] == 1
+        assert "all CHECK" in result.detail["note"]
+
+    def test_passes_when_valid_row_is_accepted(self, tmp_worktree: Path):
+        """A valid INSERT under the CHECK → gate passes."""
+        cases = [("INSERT INTO t VALUES (1, 5)", True)]   # qty=5 must SUCCEED
+        result = gate_no_check_violations(
+            tmp_worktree, verify_cases=cases, schema_sql=self.SIMPLE_SCHEMA,
+        )
+        assert result.passed is True
+
+    def test_fails_when_violating_row_is_accepted(self, tmp_worktree: Path):
+        """
+        CHECK constraint too permissive (qty > -9999 instead of qty > 0):
+        violating row (qty=-1) is accepted → gate FAILS.
+        This is the core regression: a weak CHECK would silently pass a naive
+        heuristic but is caught by the real insert test.
+        """
+        weak_schema = "CREATE TABLE t (id INTEGER, qty INTEGER CHECK (qty > -9999));"
+        cases = [("INSERT INTO t VALUES (1, -1)", False)]  # expected reject, but accepted
+        result = gate_no_check_violations(
+            tmp_worktree, verify_cases=cases, schema_sql=weak_schema,
+        )
+        assert result.passed is False
+        fc = result.detail["failed_cases"][0]
+        assert "violating row was accepted" in fc["reason"]
+        assert result.detail["verify_cases_run"] == 1
+
+    def test_fails_when_valid_row_is_rejected(self, tmp_worktree: Path):
+        """
+        Overly strict CHECK (qty > 9999): rejects a valid row → gate FAILS.
+        Catches constraints that are accidentally too restrictive.
+        """
+        strict_schema = "CREATE TABLE t (id INTEGER, qty INTEGER CHECK (qty > 9999));"
+        cases = [("INSERT INTO t VALUES (1, 5)", True)]   # expected succeed, but rejected
+        result = gate_no_check_violations(
+            tmp_worktree, verify_cases=cases, schema_sql=strict_schema,
+        )
+        assert result.passed is False
+        fc = result.detail["failed_cases"][0]
+        assert "valid row was rejected" in fc["reason"]
+
+    def test_no_op_pass_when_no_verify_cases(self, tmp_worktree: Path):
+        """When verify_cases=None, gate uses heuristic (WARNING severity) and passes."""
+        with patch("core.merge_gates.subprocess.run") as mock_run:
+            mock_run.return_value = Mock(returncode=0, stdout="", stderr="")
+            result = gate_no_check_violations(tmp_worktree)
+        assert result.passed is True
+        assert result.severity == "WARNING"
+        assert "heuristic" in result.detail.get("note", "").lower()
+        assert "upgrade_hint" in result.detail
+
+    def test_multiple_cases_all_pass(self, tmp_worktree: Path):
+        """Multiple verify_cases all behaving correctly → gate passes."""
+        cases = [
+            ("INSERT INTO t VALUES (1, 5)", True),     # valid
+            ("INSERT INTO t VALUES (2, -1)", False),   # invalid, must be rejected
+            ("INSERT INTO t VALUES (3, 100)", True),   # valid
+        ]
+        result = gate_no_check_violations(
+            tmp_worktree, verify_cases=cases, schema_sql=self.SIMPLE_SCHEMA,
+        )
+        assert result.passed is True
+        assert result.detail["verify_cases_run"] == 3
+
+    def test_partial_failure_reports_all_bad_cases(self, tmp_worktree: Path):
+        """If one case out of several fails, failed_cases list is populated."""
+        weak_schema = "CREATE TABLE t (id INTEGER, qty INTEGER CHECK (qty > -9999));"
+        cases = [
+            ("INSERT INTO t VALUES (1, 5)", True),    # passes (valid row accepted)
+            ("INSERT INTO t VALUES (2, -1)", False),  # expected reject, but ACCEPTED → fail
+        ]
+        result = gate_no_check_violations(
+            tmp_worktree, verify_cases=cases, schema_sql=weak_schema,
+        )
+        assert result.passed is False
+        assert len(result.detail["failed_cases"]) == 1
+        assert result.detail["verify_cases_run"] == 2
+
+    def test_cases_are_isolated_no_leakage_between_rows(self, tmp_worktree: Path):
+        """Each verify case uses a savepoint so earlier inserts don't affect later cases."""
+        # Both cases insert id=1; if not isolated the second would see id collision
+        # (but there's no UNIQUE on id in our test schema, so let's use a UNIQUE schema)
+        schema = "CREATE TABLE t (id INTEGER UNIQUE, qty INTEGER CHECK (qty > 0));"
+        cases = [
+            ("INSERT INTO t VALUES (1, 5)", True),   # id=1 inserted, then rolled back
+            ("INSERT INTO t VALUES (1, 10)", True),  # id=1 again — should succeed if isolated
+        ]
+        result = gate_no_check_violations(
+            tmp_worktree, verify_cases=cases, schema_sql=schema,
+        )
+        assert result.passed is True, f"Savepoint isolation failed: {result.detail}"
+
+    def test_severity_is_blocking_when_verify_cases_provided(self, tmp_worktree: Path):
+        """When verify_cases fails, it should be BLOCKING (default severity)."""
+        weak_schema = "CREATE TABLE t (id INTEGER, qty INTEGER CHECK (qty > -9999));"
+        cases = [("INSERT INTO t VALUES (1, -1)", False)]
+        result = gate_no_check_violations(
+            tmp_worktree, verify_cases=cases, schema_sql=weak_schema,
+        )
+        assert result.passed is False
+        assert result.severity == "BLOCKING"

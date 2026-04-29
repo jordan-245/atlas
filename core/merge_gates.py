@@ -167,11 +167,110 @@ def gate_pi_system_prompt_lint(worktree: Path) -> GateResult:
 
 # ── Gate 6: no CHECK violations ───────────────────────────────────────
 
-def gate_no_check_violations(worktree: Path, *, db_path: Optional[Path] = None) -> GateResult:
-    """If diff touches any *.py that constructs SQL INSERT against a CHECK-constrained
-    table, run a smoke insert. For Phase 2, this is a heuristic — any diff that
-    modifies db/atlas_db.py or scripts/migrations/ gets flagged.
+def _load_production_schema(worktree: Path) -> str:
+    """Load production schema SQL from db/schema.sql; fall back to PROJECT_ROOT."""
+    for candidate in (worktree / "db" / "schema.sql", PROJECT_ROOT / "db" / "schema.sql"):
+        if candidate.exists():
+            return candidate.read_text()
+    return ""
+
+
+def gate_no_check_violations(
+    worktree: Path,
+    *,
+    db_path: Optional[Path] = None,
+    verify_cases: Optional[list[tuple[str, bool]]] = None,
+    schema_sql: Optional[str] = None,
+) -> GateResult:
+    """Verify proposed CHECK constraints actually behave as expected.
+
+    Design choice (§4.4): gate accepts ``verify_cases`` supplied by the fix author
+    rather than auto-synthesising test rows from the diff.  Reason: parsing arbitrary
+    SQL CHECK expressions and generating correct edge-case values is extremely brittle
+    and likely to produce false-positive passes (e.g. ``qty > -9999`` would pass a
+    naive 'insert negative number' test).  The fix author knows exactly what the
+    constraint is trying to prevent.
+
+    When ``verify_cases`` is provided:
+        1. Build a fresh in-memory SQLite DB seeded with ``schema_sql`` (or the
+           production schema loaded from ``db/schema.sql``).
+        2. For each ``(stmt, should_succeed)`` pair:
+           - ``should_succeed=True``:  stmt must NOT raise IntegrityError.
+           - ``should_succeed=False``: stmt MUST raise IntegrityError.
+        3. Any case where actual != expected → gate FAILS.
+
+    When ``verify_cases`` is None:
+        Falls back to heuristic path-scan (severity=WARNING).  DB-touching paths
+        are already gated by gate_no_never_list_touched, so this remains a
+        WARNING-only advisory in that mode.
+
+    Args:
+        worktree:     Path to the candidate fix worktree (used to load schema).
+        db_path:      Optional path to the live SQLite DB (unused here).
+        verify_cases: List of (sql_stmt, should_succeed) pairs from the fix author.
+                      ``should_succeed=False`` = INSERT must be REJECTED by CHECK.
+                      ``should_succeed=True``  = INSERT must SUCCEED.
+        schema_sql:   Optional schema SQL override (useful in tests to avoid disk I/O).
     """
+    import sqlite3 as _sqlite3
+
+    if verify_cases is not None:
+        _schema = schema_sql if schema_sql is not None else _load_production_schema(worktree)
+
+        failed_cases: list[dict] = []
+        try:
+            conn = _sqlite3.connect(":memory:")
+            conn.execute("PRAGMA foreign_keys = ON")
+            try:
+                if _schema:
+                    conn.executescript(_schema)
+                for stmt, should_succeed in verify_cases:
+                    # Use savepoint so each case is isolated
+                    conn.execute("SAVEPOINT _gate_test")
+                    actual_succeeded: bool
+                    try:
+                        conn.execute(stmt)
+                        actual_succeeded = True
+                    except _sqlite3.IntegrityError:
+                        actual_succeeded = False
+                    except _sqlite3.Error as exc:
+                        conn.execute("ROLLBACK TO SAVEPOINT _gate_test")
+                        conn.execute("RELEASE SAVEPOINT _gate_test")
+                        failed_cases.append({
+                            "stmt": stmt[:120],
+                            "expected_succeed": should_succeed,
+                            "error": f"SQL error (not IntegrityError): {exc}",
+                        })
+                        continue
+                    conn.execute("ROLLBACK TO SAVEPOINT _gate_test")
+                    conn.execute("RELEASE SAVEPOINT _gate_test")
+                    if actual_succeeded != should_succeed:
+                        failed_cases.append({
+                            "stmt": stmt[:120],
+                            "expected_succeed": should_succeed,
+                            "actual_succeed": actual_succeeded,
+                            "reason": (
+                                "violating row was accepted by CHECK constraint"
+                                if not should_succeed
+                                else "valid row was rejected by CHECK constraint"
+                            ),
+                        })
+            finally:
+                conn.close()
+        except _sqlite3.Error as exc:
+            return GateResult("no_check_violations", False,
+                              {"error": f"schema apply failed: {exc}"},
+                              severity="BLOCKING")
+
+        if failed_cases:
+            return GateResult("no_check_violations", False,
+                              {"failed_cases": failed_cases,
+                               "verify_cases_run": len(verify_cases)})
+        return GateResult("no_check_violations", True,
+                          {"verify_cases_run": len(verify_cases),
+                           "note": "all CHECK constraints behave as expected"})
+
+    # ── Heuristic fallback (verify_cases not provided) ────────────────────
     diff = _git_diff(worktree, "HEAD")  # diff vs current worktree HEAD
     flagged_paths = []
     for ln in diff.split("\n"):
@@ -180,12 +279,11 @@ def gate_no_check_violations(worktree: Path, *, db_path: Optional[Path] = None) 
                 if p in ln:
                     flagged_paths.append(p)
                     break
-    # If no DB-touch, gate passes trivially. If DB-touch, we still PASS in Phase 2
-    # but flag the touch in detail (these paths are also on NEVER list, so other
-    # gates will catch them anyway).
     return GateResult("no_check_violations", True,
                       {"flagged_paths": flagged_paths,
-                       "note": "heuristic check; DB paths are NEVER-listed and caught by gate_no_never_list_touched"},
+                       "note": ("heuristic path scan only — pass verify_cases=[...] for real "
+                                "constraint verification when fix modifies CHECK constraints"),
+                       "upgrade_hint": "gate_no_check_violations(verify_cases=[(stmt, should_succeed), ...])"},
                       severity="WARNING")
 
 
@@ -370,7 +468,8 @@ def run_all_gates(worktree: Path, branch: str, *,
                   test_paths: Optional[list[str]] = None,
                   diff_max_lines: int = 30,
                   run_full_suite: bool = False,
-                  db_path: Optional[Path] = None) -> GateRunOutcome:
+                  db_path: Optional[Path] = None,
+                  verify_cases: Optional[list[tuple[str, bool]]] = None) -> GateRunOutcome:
     results = [
         gate_targeted_tests(worktree, test_paths=test_paths),
         gate_regression_test_present(worktree, branch),
@@ -378,7 +477,7 @@ def run_all_gates(worktree: Path, branch: str, *,
             "full_suite", True, {"note": "skipped (run_full_suite=False)"}, severity="WARNING"),
         gate_no_new_bare_except(worktree),
         gate_pi_system_prompt_lint(worktree),
-        gate_no_check_violations(worktree, db_path=db_path),
+        gate_no_check_violations(worktree, db_path=db_path, verify_cases=verify_cases),
         gate_diff_size_cap(worktree, branch, max_lines=diff_max_lines),
         gate_no_never_list_touched(worktree, branch),
         gate_no_safety_critical_function_modified(worktree, branch),
