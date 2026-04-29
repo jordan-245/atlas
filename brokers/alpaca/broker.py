@@ -25,6 +25,8 @@ Alpaca uses the same format — conversion is a no-op for SP500.
 from __future__ import annotations
 
 import logging
+import os
+import time
 import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -657,6 +659,72 @@ class AlpacaBroker(BrokerAdapter):
                 status=OrderStatus.FAILED, message=str(e),
             )
 
+
+    def _wait_for_cancel_confirmed(
+        self,
+        order_id: str,
+        timeout_s: float | None = None,
+        poll_interval_s: float = 0.25,
+    ) -> bool:
+        """Poll until Alpaca confirms the cancel is terminal.
+
+        Phase 2C: mirrors _wait_for_cancel_confirm in sync_protective_orders.py
+        for the five broker.py internal cancel-then-place sites.  Prevents the
+        40310000 insufficient-qty race where a replacement order is placed before
+        Alpaca has fully settled the cancellation.
+
+        Args:
+            order_id:         Order ID that was just cancelled.
+            timeout_s:        Max seconds to wait.  Defaults to env var
+                              ATLAS_BROKER_CANCEL_CONFIRM_TIMEOUT_SEC (default 10.0).
+            poll_interval_s:  Seconds between polls (default 0.25 s).
+
+        Returns:
+            True  -- cancel confirmed: status is CANCELLED or FAILED.
+            False -- order FILLED (race lost) OR timeout elapsed.
+        """
+        if timeout_s is None:
+            timeout_s = float(
+                os.environ.get("ATLAS_BROKER_CANCEL_CONFIRM_TIMEOUT_SEC", "10.0")
+            )
+
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            try:
+                result = self.get_order_status(order_id)
+            except Exception as poll_exc:
+                logger.warning(
+                    "_wait_for_cancel_confirmed: get_order_status(%s) failed: %s -- retrying",
+                    order_id, poll_exc,
+                )
+                time.sleep(poll_interval_s)
+                continue
+
+            status = result.status
+            if status in (OrderStatus.CANCELLED, OrderStatus.FAILED):
+                logger.debug(
+                    "_wait_for_cancel_confirmed: order %s confirmed terminal (status=%s)",
+                    order_id, status.value,
+                )
+                return True
+            if status == OrderStatus.FILLED:
+                logger.warning(
+                    "_wait_for_cancel_confirmed: order %s FILLED before cancel confirmed"
+                    " -- race lost (position may have exited)",
+                    order_id,
+                )
+                return False
+
+            # PENDING / SUBMITTED / UNKNOWN -- still settling; wait and retry
+            time.sleep(poll_interval_s)
+
+        logger.error(
+            "_wait_for_cancel_confirmed: order %s did not reach terminal status within"
+            " %.1fs -- refusing to place replacement (would risk duplicate stops)",
+            order_id, timeout_s,
+        )
+        return False
+
     def cancel_all_orders(self) -> list[OrderResult]:
         """Cancel all open orders.
 
@@ -1010,7 +1078,7 @@ class AlpacaBroker(BrokerAdapter):
                                 # Cancel existing OCO (both legs)
                                 cancel_success = True
                                 try:
-                                    # Cancel the stop order
+                                    # Site 1 of 5 -- Phase 2C: cancel stop + confirm settled
                                     cancel_result = self.cancel_order(existing_stop_order_id)
                                     if not cancel_result.success:
                                         logger.warning(
@@ -1019,24 +1087,45 @@ class AlpacaBroker(BrokerAdapter):
                                         )
                                         cancel_success = False
                                     else:
-                                        logger.info(
-                                            "sync_protective: canceled existing stop order %s for %s (tightening)",
-                                            existing_stop_order_id, ticker,
-                                        )
-                                    
-                                    # Cancel the TP order
-                                    cancel_result = self.cancel_order(existing_tp_order_id)
-                                    if not cancel_result.success:
-                                        logger.warning(
-                                            "sync_protective: failed to cancel TP order %s for %s: %s",
-                                            existing_tp_order_id, ticker, cancel_result.error,
-                                        )
-                                        cancel_success = False
-                                    else:
-                                        logger.info(
-                                            "sync_protective: canceled existing TP order %s for %s (tightening)",
-                                            existing_tp_order_id, ticker,
-                                        )
+                                        if not self._wait_for_cancel_confirmed(
+                                            existing_stop_order_id, timeout_s=10.0
+                                        ):
+                                            logger.warning(
+                                                "sync_protective: cancel-confirm timeout for stop order %s"
+                                                " on %s -- aborting tightened OCO to avoid duplicate stops",
+                                                existing_stop_order_id, ticker,
+                                            )
+                                            cancel_success = False
+                                        else:
+                                            logger.info(
+                                                "sync_protective: canceled existing stop order %s for %s (tightening)",
+                                                existing_stop_order_id, ticker,
+                                            )
+
+                                    # Site 2 of 5 -- Phase 2C: cancel TP + confirm settled
+                                    if cancel_success:
+                                        cancel_result = self.cancel_order(existing_tp_order_id)
+                                        if not cancel_result.success:
+                                            logger.warning(
+                                                "sync_protective: failed to cancel TP order %s for %s: %s",
+                                                existing_tp_order_id, ticker, cancel_result.error,
+                                            )
+                                            cancel_success = False
+                                        else:
+                                            if not self._wait_for_cancel_confirmed(
+                                                existing_tp_order_id, timeout_s=10.0
+                                            ):
+                                                logger.warning(
+                                                    "sync_protective: cancel-confirm timeout for TP order %s"
+                                                    " on %s -- aborting tightened OCO to avoid duplicate stops",
+                                                    existing_tp_order_id, ticker,
+                                                )
+                                                cancel_success = False
+                                            else:
+                                                logger.info(
+                                                    "sync_protective: canceled existing TP order %s for %s (tightening)",
+                                                    existing_tp_order_id, ticker,
+                                                )
                                 except Exception as cancel_err:
                                     logger.error(
                                         "sync_protective: error canceling orders for %s: %s",
@@ -1134,6 +1223,8 @@ class AlpacaBroker(BrokerAdapter):
                         ticker_result["tp_action"] = "dry_run_oco"
                     else:
                         # Need to place OCO. First cancel any existing individual orders.
+                        # Phase 2C: track ALL cancels confirmed before placing OCO
+                        cancel_confirmed_all = True
                         canceled_orders = []
                         if has_existing_stop:
                             # Cancel existing stop orders for this ticker
@@ -1145,11 +1236,22 @@ class AlpacaBroker(BrokerAdapter):
                             for order in stop_orders:
                                 cancel_result = self.cancel_order(order.id)
                                 if cancel_result.success:
-                                    canceled_orders.append(f"stop:{order.id}")
-                                    logger.info(
-                                        "sync_protective: canceled existing stop order %s for %s",
-                                        order.id, ticker,
-                                    )
+                                    # Site 3 of 5 -- Phase 2C: confirm cancel settled before placing OCO
+                                    if not self._wait_for_cancel_confirmed(
+                                        order.id, timeout_s=10.0
+                                    ):
+                                        logger.warning(
+                                            "sync_protective: cancel-confirm timeout for stop order %s"
+                                            " on %s -- aborting OCO to avoid duplicate stops",
+                                            order.id, ticker,
+                                        )
+                                        cancel_confirmed_all = False
+                                    else:
+                                        canceled_orders.append(f"stop:{order.id}")
+                                        logger.info(
+                                            "sync_protective: canceled existing stop order %s for %s",
+                                            order.id, ticker,
+                                        )
 
                         if ticker in tickers_with_tp:
                             # Cancel existing TP (limit sell) orders for this ticker
@@ -1162,161 +1264,184 @@ class AlpacaBroker(BrokerAdapter):
                             for order in tp_orders:
                                 cancel_result = self.cancel_order(order.id)
                                 if cancel_result.success:
-                                    canceled_orders.append(f"tp:{order.id}")
-                                    logger.info(
-                                        "sync_protective: canceled existing TP order %s for %s",
-                                        order.id, ticker,
-                                    )
-
-                        # Now place OCO order with both legs.
-                        # Alpaca OCO requires a LIMIT order as parent (TP leg),
-                        # with both take_profit and stop_loss parameters.
-                        try:
-                            request = LimitOrderRequest(
-                                symbol=ticker,
-                                qty=pos.shares,
-                                side=AlpacaSide.SELL,
-                                limit_price=take_profit,
-                                order_class=OrderClass.OCO,
-                                take_profit=TakeProfitRequest(limit_price=take_profit),
-                                stop_loss=StopLossRequest(stop_price=stop_price),
-                                time_in_force=TimeInForce.GTC,
-                            )
-                            order = self._broker_call(self._trade_client.submit_order, request)
-
-                            # Success
-                            sl_placed += 1
-                            tp_placed += 1
-                            ticker_result["sl_action"] = "oco_placed"
-                            ticker_result["tp_action"] = "oco_placed"
-                            ticker_result["oco_order_id"] = str(order.id)
-                            if canceled_orders:
-                                ticker_result["canceled_orders"] = canceled_orders
-                            logger.info(
-                                "sync_protective: placed OCO SELL GTC %s qty=%d stop=%.2f tp=%.2f → id=%s",
-                                ticker, pos.shares, stop_price, take_profit, order.id,
-                            )
-                        except Exception as oco_err:
-                            oco_error_msg = str(oco_err)
-
-                            # Check if it's a PDT error
-                            if _is_pdt_error(oco_error_msg):
-                                # Record deferral so next cycle's pre-check skips submit.
-                                _set_pdt_deferred_new(ticker, _pdt_rth_close())
-                                # OCO rejected due to PDT. The TP leg makes the
-                                # entire OCO look like a potential day trade.
-                                # Try placing JUST the SL as a fallback — a stop
-                                # well below market is less likely to trigger PDT
-                                # than the full OCO, and at minimum protects downside.
-                                logger.warning(
-                                    "sync_protective: OCO deferred for %s — PDT. "
-                                    "Attempting SL-only fallback.",
-                                    ticker,
-                                )
-                                try:
-                                    sl_result = self.place_order(
-                                        ticker=ticker,
-                                        side=OrderSide.SELL,
-                                        qty=pos.shares,
-                                        price=0.0,
-                                        order_type=OrderType.STOP,
-                                        stop_price=stop_price,
-                                        remark="sync_sl_pdt_fallback",
-                                        tif="gtc",
-                                    )
-                                    if sl_result.success:
-                                        sl_placed += 1
-                                        ticker_result["sl_action"] = "placed_pdt_fallback"
-                                        ticker_result["sl_order_id"] = sl_result.order_id
-                                        ticker_result["tp_action"] = "pdt_deferred"
-                                        ticker_result["tp_message"] = "OCO PDT-rejected, SL placed alone"
-                                        logger.info(
-                                            "sync_protective: SL-only placed for %s stop=%.2f "
-                                            "(TP deferred to next sync) → id=%s",
-                                            ticker, stop_price, sl_result.order_id,
+                                    # Site 4 of 5 -- Phase 2C: confirm cancel settled before placing OCO
+                                    if not self._wait_for_cancel_confirmed(
+                                        order.id, timeout_s=10.0
+                                    ):
+                                        logger.warning(
+                                            "sync_protective: cancel-confirm timeout for TP order %s"
+                                            " on %s -- aborting OCO to avoid duplicate stops",
+                                            order.id, ticker,
                                         )
-                                    elif _is_pdt_error(sl_result.message):
-                                        # Both OCO and standalone SL rejected by PDT
+                                        cancel_confirmed_all = False
+                                    else:
+                                        canceled_orders.append(f"tp:{order.id}")
+                                        logger.info(
+                                            "sync_protective: canceled existing TP order %s for %s",
+                                            order.id, ticker,
+                                        )
+
+                        if not cancel_confirmed_all:
+                            # cancel-confirm timeout -- skip OCO this cycle, retry next pass
+                            logger.warning(
+                                "sync_protective: skipping OCO for %s -- one or more cancel"
+                                " confirmations timed out (will retry next cycle)",
+                                ticker,
+                            )
+                            ticker_result["sl_action"] = "cancel_confirm_timeout"
+                            ticker_result["tp_action"] = "cancel_confirm_timeout"
+                            errors += 1
+
+                        if cancel_confirmed_all:
+                            # Now place OCO order with both legs.
+                            # Alpaca OCO requires a LIMIT order as parent (TP leg),
+                            # with both take_profit and stop_loss parameters.
+                            try:
+                                request = LimitOrderRequest(
+                                    symbol=ticker,
+                                    qty=pos.shares,
+                                    side=AlpacaSide.SELL,
+                                    limit_price=take_profit,
+                                    order_class=OrderClass.OCO,
+                                    take_profit=TakeProfitRequest(limit_price=take_profit),
+                                    stop_loss=StopLossRequest(stop_price=stop_price),
+                                    time_in_force=TimeInForce.GTC,
+                                )
+                                order = self._broker_call(self._trade_client.submit_order, request)
+
+                                # Success
+                                sl_placed += 1
+                                tp_placed += 1
+                                ticker_result["sl_action"] = "oco_placed"
+                                ticker_result["tp_action"] = "oco_placed"
+                                ticker_result["oco_order_id"] = str(order.id)
+                                if canceled_orders:
+                                    ticker_result["canceled_orders"] = canceled_orders
+                                logger.info(
+                                    "sync_protective: placed OCO SELL GTC %s qty=%d stop=%.2f tp=%.2f → id=%s",
+                                    ticker, pos.shares, stop_price, take_profit, order.id,
+                                )
+                            except Exception as oco_err:
+                                oco_error_msg = str(oco_err)
+
+                                # Check if it's a PDT error
+                                if _is_pdt_error(oco_error_msg):
+                                    # Record deferral so next cycle's pre-check skips submit.
+                                    _set_pdt_deferred_new(ticker, _pdt_rth_close())
+                                    # OCO rejected due to PDT. The TP leg makes the
+                                    # entire OCO look like a potential day trade.
+                                    # Try placing JUST the SL as a fallback — a stop
+                                    # well below market is less likely to trigger PDT
+                                    # than the full OCO, and at minimum protects downside.
+                                    logger.warning(
+                                        "sync_protective: OCO deferred for %s — PDT. "
+                                        "Attempting SL-only fallback.",
+                                        ticker,
+                                    )
+                                    try:
+                                        sl_result = self.place_order(
+                                            ticker=ticker,
+                                            side=OrderSide.SELL,
+                                            qty=pos.shares,
+                                            price=0.0,
+                                            order_type=OrderType.STOP,
+                                            stop_price=stop_price,
+                                            remark="sync_sl_pdt_fallback",
+                                            tif="gtc",
+                                        )
+                                        if sl_result.success:
+                                            sl_placed += 1
+                                            ticker_result["sl_action"] = "placed_pdt_fallback"
+                                            ticker_result["sl_order_id"] = sl_result.order_id
+                                            ticker_result["tp_action"] = "pdt_deferred"
+                                            ticker_result["tp_message"] = "OCO PDT-rejected, SL placed alone"
+                                            logger.info(
+                                                "sync_protective: SL-only placed for %s stop=%.2f "
+                                                "(TP deferred to next sync) → id=%s",
+                                                ticker, stop_price, sl_result.order_id,
+                                            )
+                                        elif _is_pdt_error(sl_result.message):
+                                            # Both OCO and standalone SL rejected by PDT
+                                            pdt_deferred += 1
+                                            ticker_result["sl_action"] = "pdt_deferred"
+                                            ticker_result["tp_action"] = "pdt_deferred"
+                                            ticker_result["sl_message"] = oco_error_msg
+                                            logger.warning(
+                                                "sync_protective: both OCO and SL deferred for %s "
+                                                "— PDT (account < $25k, same-day entry). "
+                                                "Orders will be placed at next pre-market sync.",
+                                                ticker,
+                                            )
+                                        else:
+                                            errors += 1
+                                            ticker_result["sl_action"] = "error"
+                                            ticker_result["tp_action"] = "pdt_deferred"
+                                            ticker_result["sl_message"] = sl_result.message
+                                            logger.error(
+                                                "sync_protective: SL fallback also failed for %s: %s",
+                                                ticker, sl_result.message,
+                                            )
+                                    except Exception as sl_err:
                                         pdt_deferred += 1
                                         ticker_result["sl_action"] = "pdt_deferred"
                                         ticker_result["tp_action"] = "pdt_deferred"
-                                        ticker_result["sl_message"] = oco_error_msg
+                                        ticker_result["sl_message"] = str(sl_err)
                                         logger.warning(
-                                            "sync_protective: both OCO and SL deferred for %s "
-                                            "— PDT (account < $25k, same-day entry). "
-                                            "Orders will be placed at next pre-market sync.",
-                                            ticker,
+                                            "sync_protective: SL fallback exception for %s: %s — "
+                                            "full deferral to next sync",
+                                            ticker, sl_err,
                                         )
-                                    else:
-                                        errors += 1
-                                        ticker_result["sl_action"] = "error"
-                                        ticker_result["tp_action"] = "pdt_deferred"
-                                        ticker_result["sl_message"] = sl_result.message
-                                        logger.error(
-                                            "sync_protective: SL fallback also failed for %s: %s",
-                                            ticker, sl_result.message,
-                                        )
-                                except Exception as sl_err:
-                                    pdt_deferred += 1
-                                    ticker_result["sl_action"] = "pdt_deferred"
-                                    ticker_result["tp_action"] = "pdt_deferred"
-                                    ticker_result["sl_message"] = str(sl_err)
+                                else:
+                                    # OCO failed with non-PDT error. Fallback: try placing just SL
                                     logger.warning(
-                                        "sync_protective: SL fallback exception for %s: %s — "
-                                        "full deferral to next sync",
-                                        ticker, sl_err,
+                                        "sync_protective: OCO order failed for %s: %s — falling back to SL-only",
+                                        ticker, oco_error_msg,
                                     )
-                            else:
-                                # OCO failed with non-PDT error. Fallback: try placing just SL
-                                logger.warning(
-                                    "sync_protective: OCO order failed for %s: %s — falling back to SL-only",
-                                    ticker, oco_error_msg,
-                                )
 
-                                try:
-                                    sl_result = self.place_order(
-                                        ticker=ticker,
-                                        side=OrderSide.SELL,
-                                        qty=pos.shares,
-                                        price=0.0,
-                                        order_type=OrderType.STOP,
-                                        stop_price=stop_price,
-                                        remark="sync_sl_fallback",
-                                        tif="gtc",
-                                    )
-                                    if sl_result.success:
-                                        sl_placed += 1
-                                        ticker_result["sl_action"] = "placed_fallback"
-                                        ticker_result["sl_order_id"] = sl_result.order_id
-                                        ticker_result["tp_action"] = "skipped"
-                                        ticker_result["tp_reason"] = "oco_failed_sl_fallback"
-                                        ticker_result["oco_error"] = oco_error_msg
-                                        logger.info(
-                                            "sync_protective: fallback SL placed for %s stop=%.2f → id=%s",
-                                            ticker, stop_price, sl_result.order_id,
+                                    try:
+                                        sl_result = self.place_order(
+                                            ticker=ticker,
+                                            side=OrderSide.SELL,
+                                            qty=pos.shares,
+                                            price=0.0,
+                                            order_type=OrderType.STOP,
+                                            stop_price=stop_price,
+                                            remark="sync_sl_fallback",
+                                            tif="gtc",
                                         )
-                                    else:
+                                        if sl_result.success:
+                                            sl_placed += 1
+                                            ticker_result["sl_action"] = "placed_fallback"
+                                            ticker_result["sl_order_id"] = sl_result.order_id
+                                            ticker_result["tp_action"] = "skipped"
+                                            ticker_result["tp_reason"] = "oco_failed_sl_fallback"
+                                            ticker_result["oco_error"] = oco_error_msg
+                                            logger.info(
+                                                "sync_protective: fallback SL placed for %s stop=%.2f → id=%s",
+                                                ticker, stop_price, sl_result.order_id,
+                                            )
+                                        else:
+                                            errors += 1
+                                            ticker_result["sl_action"] = "error"
+                                            ticker_result["tp_action"] = "error"
+                                            ticker_result["sl_message"] = sl_result.message
+                                            ticker_result["oco_error"] = oco_error_msg
+                                            logger.error(
+                                                "sync_protective: OCO and fallback SL both failed for %s. "
+                                                "OCO: %s, SL: %s",
+                                                ticker, oco_error_msg, sl_result.message,
+                                            )
+                                    except Exception as fallback_err:
                                         errors += 1
                                         ticker_result["sl_action"] = "error"
                                         ticker_result["tp_action"] = "error"
-                                        ticker_result["sl_message"] = sl_result.message
+                                        ticker_result["sl_message"] = str(fallback_err)
                                         ticker_result["oco_error"] = oco_error_msg
                                         logger.error(
                                             "sync_protective: OCO and fallback SL both failed for %s. "
-                                            "OCO: %s, SL: %s",
-                                            ticker, oco_error_msg, sl_result.message,
+                                            "OCO: %s, Fallback: %s",
+                                            ticker, oco_error_msg, str(fallback_err),
                                         )
-                                except Exception as fallback_err:
-                                    errors += 1
-                                    ticker_result["sl_action"] = "error"
-                                    ticker_result["tp_action"] = "error"
-                                    ticker_result["sl_message"] = str(fallback_err)
-                                    ticker_result["oco_error"] = oco_error_msg
-                                    logger.error(
-                                        "sync_protective: OCO and fallback SL both failed for %s. "
-                                        "OCO: %s, Fallback: %s",
-                                        ticker, oco_error_msg, str(fallback_err),
-                                    )
 
                 else:
                     # ═══ Path B: No TP → trailing stop GTC (combined SL + profit capture) ═══
@@ -1343,18 +1468,29 @@ class AlpacaBroker(BrokerAdapter):
 
                         if should_upgrade and not dry_run:
                             # Cancel existing static stop, place trailing stop
+                            # Site 5 of 5 -- Phase 2C: cancel + confirm settled before placing
                             cancel_ok = False
                             try:
                                 existing_order_id = tickers_with_stop[ticker]["order_id"]
                                 cr = self.cancel_order(existing_order_id)
-                                cancel_ok = cr.success
-                                if cancel_ok:
-                                    logger.info(
-                                        "sync_protective: canceled static stop %s for %s "
-                                        "(upgrading to trailing stop, static=$%.2f trailing≈$%.2f)",
-                                        existing_order_id, ticker,
-                                        existing_stop_price, trailing_would_be,
-                                    )
+                                if cr.success:
+                                    if self._wait_for_cancel_confirmed(
+                                        existing_order_id, timeout_s=10.0
+                                    ):
+                                        cancel_ok = True
+                                        logger.info(
+                                            "sync_protective: canceled static stop %s for %s "
+                                            "(upgrading to trailing stop, static=$%.2f"
+                                            " trailing~$%.2f)",
+                                            existing_order_id, ticker,
+                                            existing_stop_price, trailing_would_be,
+                                        )
+                                    else:
+                                        logger.warning(
+                                            "sync_protective: cancel-confirm timeout for static stop %s"
+                                            " on %s -- aborting trailing upgrade to avoid duplicate stops",
+                                            existing_order_id, ticker,
+                                        )
                             except Exception as ce:
                                 logger.warning(
                                     "sync_protective: cancel failed for %s static stop: %s",
