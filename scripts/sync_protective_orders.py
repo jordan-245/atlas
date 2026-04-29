@@ -78,6 +78,17 @@ _HELD_MAX_RETRIES = 4
 # PDT (Pattern Day Trader) deferred-stop tracking
 _PDT_STATE_FILE = PROJECT / "data" / "pdt_deferred_state.json"
 # Retry PDT-deferred positions ONLY before this UTC hour (pre-market / after-hours window).
+
+# ── Phase B.0: Protective ledger feature flag ───────────────
+def _protective_ledger_enabled() -> bool:
+    """Return True if position_protective_orders ledger writes are enabled.
+
+    Controlled by env var PROTECTIVE_LEDGER_WRITE_ENABLED (default: true).
+    Set to 'false', '0', or 'no' to disable all Phase B.0 ledger writes
+    without touching order flow.  Allows instant rollback if issues arise.
+    """
+    val = os.environ.get("PROTECTIVE_LEDGER_WRITE_ENABLED", "true").lower()
+    return val not in ("false", "0", "no")
 # 00:00–13:59 UTC ≈ before US market open — same-day restriction has cleared overnight.
 _PDT_RETRY_BEFORE_UTC_HOUR = 14
 
@@ -704,6 +715,83 @@ def _apply_db_consistency(broker, market_id: str, sync_result: dict) -> None:
                     "sync_protective DB update failed for %s/%s (non-fatal): %s",
                     ticker, market_id, db_exc,
                 )
+
+            # Phase B.0 (c): also upsert position_protective_orders with same IDs
+            if _protective_ledger_enabled():
+                try:
+                    from db.atlas_db import upsert_protective_record as _upr_dbc
+                    _tres = per_ticker[ticker]
+                    _qty = int(_tres.get("qty", 0) or 0)
+                    _sp = _tres.get("stop_price")
+                    _tp = _tres.get("take_profit")
+                    _sp_f = float(_sp) if _sp is not None else None
+                    _tp_f = float(_tp) if _tp is not None else None
+                    _oco = "oco" if _tp_f else "stop"
+                    _upr_dbc(
+                        market_id=market_id,
+                        ticker=ticker,
+                        trade_id=None,
+                        position_qty=_qty,
+                        stop_order_id=new_stop,
+                        stop_price=_sp_f,
+                        tp_order_id=new_tp,
+                        tp_price=_tp_f,
+                        oco_class=_oco,
+                    )
+                    logger.debug(
+                        "Protective ledger (c): upserted %s/%s stop=%s tp=%s",
+                        ticker, market_id,
+                        (new_stop or "")[:8], (new_tp or "")[:8],
+                    )
+                except Exception as _prot_dbc_exc:
+                    logger.warning(
+                        "Protective ledger upsert (DB consistency) failed for %s/%s (non-fatal): %s",
+                        ticker, market_id, _prot_dbc_exc,
+                    )
+
+        # Phase B.0 (a): upsert for ALL tickers with resolved IDs (including "skipped"/existing).
+        # This updates last_synced_at on every sync cycle so freshness is trackable.
+        if _protective_ledger_enabled():
+            try:
+                from db.atlas_db import upsert_protective_record as _upr_all
+                for _all_ticker, _all_tres in per_ticker.items():
+                    _all_ops = ticker_ops.get(_all_ticker, {"stop": "", "tp": ""})
+                    _all_stop = _all_ops["stop"] or None
+                    _all_tp = _all_ops["tp"] or None
+                    if not _all_stop and not _all_tp:
+                        continue  # no resolved IDs at broker → skip
+                    _all_qty = int(_all_tres.get("qty", 0) or 0)
+                    _all_sp = _all_tres.get("stop_price")
+                    _all_tpp = _all_tres.get("take_profit")
+                    _all_sp_f = float(_all_sp) if _all_sp is not None else None
+                    _all_tp_f = float(_all_tpp) if _all_tpp is not None else None
+                    try:
+                        _upr_all(
+                            market_id=market_id,
+                            ticker=_all_ticker,
+                            trade_id=None,
+                            position_qty=_all_qty,
+                            stop_order_id=_all_stop,
+                            stop_price=_all_sp_f,
+                            tp_order_id=_all_tp,
+                            tp_price=_all_tp_f,
+                            oco_class="oco" if _all_tp else "stop",
+                        )
+                        logger.debug(
+                            "Protective ledger (a): refreshed %s/%s stop=%s tp=%s",
+                            _all_ticker, market_id,
+                            (_all_stop or "")[:8], (_all_tp or "")[:8],
+                        )
+                    except Exception as _upr_all_exc:
+                        logger.warning(
+                            "Protective ledger refresh (a) failed for %s/%s (non-fatal): %s",
+                            _all_ticker, market_id, _upr_all_exc,
+                        )
+            except Exception as _prot_all_exc:
+                logger.warning(
+                    "Protective ledger batch refresh failed (non-fatal): %s", _prot_all_exc,
+                )
+
     except Exception as wrap_exc:
         logger.warning(
             "sync_protective DB consistency block failed (non-fatal): %s", wrap_exc,
@@ -1163,6 +1251,33 @@ def sync_market(
             # Non-fatal — sync succeeds even if the DB update fails.
             if not dry_run:
                 _apply_db_consistency(broker, market_id, sync_result)
+
+                # Phase B.0 (b): close protective records for broker-detached positions.
+                # state_tickers = all tickers the state file says we own.
+                # my_market_positions = those actually at broker (pre-PDT-filter).
+                # Difference = positions gone at broker → mark ledger closed.
+                if _protective_ledger_enabled() and state_tickers:
+                    try:
+                        from db.atlas_db import close_protective_record as _cpr_det
+                        _broker_tickers = {p.ticker for p in my_market_positions}
+                        for _det_ticker in state_tickers - _broker_tickers:
+                            try:
+                                _cpr_det(market_id=market_id, ticker=_det_ticker)
+                                logger.debug(
+                                    "Protective ledger (b): closed detached record %s/%s",
+                                    _det_ticker, market_id,
+                                )
+                            except Exception as _det_exc:
+                                logger.warning(
+                                    "Protective ledger close (detached) failed for %s/%s "
+                                    "(non-fatal): %s",
+                                    _det_ticker, market_id, _det_exc,
+                                )
+                    except Exception as _det_outer_exc:
+                        logger.warning(
+                            "Protective ledger detached-position close block failed "
+                            "(non-fatal): %s", _det_outer_exc,
+                        )
 
         else:
             result["error"] = f"Unsupported broker: {broker_name}"

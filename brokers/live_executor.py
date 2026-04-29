@@ -83,6 +83,17 @@ def _health_log(level: str, message: str, detail: dict = None) -> None:
 HALT_FILE = PROJECT_ROOT / ".live_halt"
 
 
+def _protective_ledger_enabled() -> bool:
+    """Return True if position_protective_orders ledger writes are enabled.
+
+    Controlled by env var PROTECTIVE_LEDGER_WRITE_ENABLED (default: true).
+    Set to 'false', '0', or 'no' to disable all Phase B.0 ledger writes
+    without touching order flow.  Allows instant rollback if issues arise.
+    """
+    val = os.environ.get("PROTECTIVE_LEDGER_WRITE_ENABLED", "true").lower()
+    return val not in ("false", "0", "no")
+
+
 # ═══════════════════════════════════════════════════════════════
 # Pre-flight safety checks
 # ═══════════════════════════════════════════════════════════════
@@ -1272,6 +1283,34 @@ class LiveExecutor:
                                     "tp_order_id=%s rows_updated=%d",
                                     ticker, _trade_id, _stop_id, _tp_id, _n,
                                 )
+                                # Phase B.0: also write to position_protective_orders ledger
+                                # (additive second writer; does NOT replace trades.stop_order_id)
+                                try:
+                                    if _protective_ledger_enabled():
+                                        from db.atlas_db import upsert_protective_record as _upr
+                                        _mkt = self.config.get("market_id", "sp500")
+                                        _upr(
+                                            market_id=_mkt,
+                                            ticker=ticker,
+                                            trade_id=_trade_id,
+                                            position_qty=qty,
+                                            stop_order_id=_stop_id or None,
+                                            stop_price=stop_price if stop_price else None,
+                                            tp_order_id=_tp_id or None,
+                                            tp_price=_atomic_take_profit if _atomic_take_profit else None,
+                                            oco_class="bracket",
+                                        )
+                                        logger.debug(
+                                            "Protective ledger: upserted bracket record %s/%s "
+                                            "trade_id=%s stop=%s tp=%s",
+                                            ticker, _mkt, _trade_id,
+                                            (_stop_id or "")[:8], (_tp_id or "")[:8],
+                                        )
+                                except Exception as _prot_exc:
+                                    logger.warning(
+                                        "Protective ledger upsert failed for %s (non-fatal): %s",
+                                        ticker, _prot_exc,
+                                    )
                             else:
                                 logger.warning(
                                     "BRACKET fill recorded but no child legs found in order "
@@ -1565,6 +1604,21 @@ class LiveExecutor:
                 _ledger.record_exit(_exit_record)
             except Exception as _ledger_exc:
                 logger.warning("TradeLedger exit record failed (non-fatal): %s", _ledger_exc)
+
+            # Phase B.0: close position_protective_orders ledger record on exit
+            try:
+                if _protective_ledger_enabled():
+                    from db.atlas_db import close_protective_record as _cpr
+                    _cpr(
+                        market_id=self.config.get("market_id", "sp500"),
+                        ticker=ticker,
+                    )
+                    logger.debug("Protective ledger: closed record %s on exit", ticker)
+            except Exception as _prot_close_exc:
+                logger.warning(
+                    "Protective ledger close failed for %s (non-fatal): %s",
+                    ticker, _prot_close_exc,
+                )
 
             # Record to LivePortfolio closed_trades for dashboard display
             try:
@@ -1936,6 +1990,33 @@ class LiveExecutor:
                 if tp_id:
                     stop_orders[f"{ticker}_tp"] = tp_id
 
+                # Phase B.0: upsert protective ledger after stop+tp placement
+                try:
+                    if _protective_ledger_enabled() and (sl_id or tp_id):
+                        from db.atlas_db import upsert_protective_record as _upr_sp
+                        _sp_mkt = config.get("market_id", "sp500")
+                        _upr_sp(
+                            market_id=_sp_mkt,
+                            ticker=ticker,
+                            trade_id=None,
+                            position_qty=qty,
+                            stop_order_id=sl_id or None,
+                            stop_price=stop_price if stop_price else None,
+                            tp_order_id=tp_id or None,
+                            tp_price=float(take_profit) if take_profit else None,
+                            oco_class="oco",
+                        )
+                        logger.debug(
+                            "Protective ledger: upserted oco record %s/%s stop=%s tp=%s",
+                            ticker, _sp_mkt,
+                            (sl_id or "")[:8], (tp_id or "")[:8],
+                        )
+                except Exception as _prot_sp_exc:
+                    logger.warning(
+                        "Protective ledger upsert (stop+tp) failed for %s (non-fatal): %s",
+                        ticker, _prot_sp_exc,
+                    )
+
             else:
                 # ── No TP: trailing stop (GTC) — combined SL + profit capture ──
                 # Trail distance = entry - stop (same initial risk).
@@ -1970,6 +2051,33 @@ class LiveExecutor:
                 )
                 if order_id:
                     stop_orders[ticker] = order_id
+
+                # Phase B.0: upsert protective ledger after trailing stop placement
+                try:
+                    if _protective_ledger_enabled() and order_id:
+                        from db.atlas_db import upsert_protective_record as _upr_tr
+                        _tr_mkt = config.get("market_id", "sp500")
+                        _entry_price = entry_rec.get("entry_price", 0)
+                        _upr_tr(
+                            market_id=_tr_mkt,
+                            ticker=ticker,
+                            trade_id=None,
+                            position_qty=qty,
+                            stop_order_id=order_id,
+                            stop_price=stop_price if stop_price else None,
+                            tp_order_id=None,
+                            tp_price=None,
+                            oco_class="trailing",
+                        )
+                        logger.debug(
+                            "Protective ledger: upserted trailing record %s/%s stop=%s",
+                            ticker, _tr_mkt, order_id[:8],
+                        )
+                except Exception as _prot_tr_exc:
+                    logger.warning(
+                        "Protective ledger upsert (trailing) failed for %s (non-fatal): %s",
+                        ticker, _prot_tr_exc,
+                    )
 
         return stop_orders
 
@@ -2706,6 +2814,22 @@ class LiveExecutor:
                     order_id[:12],
                 )
                 reconciled.append(exit_record)
+                # Phase B.0: close protective ledger on reconciled exit
+                try:
+                    if _protective_ledger_enabled():
+                        from db.atlas_db import close_protective_record as _cpr_recon
+                        _cpr_recon(
+                            market_id=self.config.get("market_id", "sp500"),
+                            ticker=ticker,
+                        )
+                        logger.debug(
+                            "Protective ledger: closed record %s (reconciled exit)", ticker,
+                        )
+                except Exception as _prot_recon_exc:
+                    logger.warning(
+                        "Protective ledger close failed for %s reconciled exit (non-fatal): %s",
+                        ticker, _prot_recon_exc,
+                    )
             except Exception as e:
                 logger.error(
                     "Failed to reconcile exit for %s: %s", ticker, e,
