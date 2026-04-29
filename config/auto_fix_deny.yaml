@@ -17,8 +17,8 @@ file_globs:
   - "strategies/**"
   - "portfolio/**"
   - "overlay/**"
-  - "monitor/lifecycle.py"
-  - "monitor/evaluator.py"
+  - "monitor/lifecycle.py"          # NEVER — trading-path-adjacent, manages position lifecycle
+  # monitor/evaluator.py intentionally NOT here — observability only (permanent_assist)
   - "core/reconcile.py"
   - "plans/**"
   - "approve/**"

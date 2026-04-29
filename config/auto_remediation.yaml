@@ -34,7 +34,10 @@ permanent_assist:                      # BROADER list — never auto-merge
   paths:
     - services/**                      # API contracts
     - research/**                      # strategy parameters
-    - monitor/**                       # alerting logic
+    # monitor/**: all monitor files are permanent_assist, EXCEPT monitor/lifecycle.py
+    # which is in never_fix below (trading-path-adjacent, manages position lifecycle).
+    # monitor/evaluator.py — permanent_assist: observability, assist allowed but no auto-merge
+    - monitor/**
     - systemd/**                       # service definitions
     - cron/**                          # cron schedules
     - "**/*.cron"
@@ -56,6 +59,7 @@ never_fix:                             # Permanent ESCALATE — never even ASSIS
     - overlay/**
     - strategies/**
     - core/reconcile.py
+    - monitor/lifecycle.py             # NEVER — trading-path-adjacent, manages position lifecycle
     - "**/kill_switch*.py"
     - "**/live_executor*.py"
     - "**/plan*.py"
