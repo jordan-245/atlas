@@ -56,7 +56,7 @@ def get_db(db_path: Optional[str] = None):
     try:
         yield conn
         conn.commit()
-    except Exception:
+    except Exception:  # Broad catch intentional: must roll back on any DB error; re-raised immediately
         conn.rollback()
         raise
     finally:
@@ -207,7 +207,7 @@ def _assert_state_file_parity(
             try:
                 if _cooldown_path.exists():
                     _cooldown_state = json.loads(_cooldown_path.read_text())
-            except Exception:
+            except (json.JSONDecodeError, OSError):
                 pass
             _last_alert = float(_cooldown_state.get(universe, 0))
             if _now_ts - _last_alert >= 3600:
@@ -219,7 +219,7 @@ def _assert_state_file_parity(
                             (universe,),
                         ).fetchall()
                     _sqlite_tickers = sorted(r["ticker"] for r in _sqlite_rows)
-                except Exception:
+                except sqlite3.Error:
                     _sqlite_tickers = [ticker]
                 _sqlite_count = len(_sqlite_tickers)
                 _json_tickers_sorted = sorted(_tickers_in_state)
@@ -242,7 +242,7 @@ def _assert_state_file_parity(
                 _cooldown_state[universe] = _now_ts
                 try:
                     _cooldown_path.write_text(json.dumps(_cooldown_state))
-                except Exception:
+                except OSError:
                     pass
         except Exception as _tg_exc:
             _log.warning(
@@ -1115,7 +1115,7 @@ def record_equity(
         ]:
             try:
                 db.execute(f"ALTER TABLE equity_curve ADD COLUMN {col} {ctype}")
-            except Exception:
+            except sqlite3.OperationalError:  # Column already exists
                 pass  # Column already exists
         db.execute(
             """
@@ -2375,7 +2375,7 @@ def get_cached_regime_transitions(max_age_hours: int = 24) -> Optional[Dict]:
     d = dict(row)
     try:
         d["matrix"] = json.loads(d["matrix_json"])
-    except Exception:
+    except (json.JSONDecodeError, KeyError, TypeError):
         d["matrix"] = {}
     return d
 
@@ -2460,7 +2460,7 @@ def get_cached_ruin_probability(max_age_hours: int = 24) -> Optional[Dict]:
         first = dict(rows[0])
         try:
             cached_tickers = sorted(json.loads(first["tickers"] or "[]"))
-        except Exception:
+        except (json.JSONDecodeError, TypeError):
             cached_tickers = []
 
         current_tickers = sorted(r["ticker"] for r in open_rows)
@@ -2568,7 +2568,7 @@ def get_cached_portfolio_risk(max_age_hours: int = 24) -> Optional[Dict]:
         d = dict(row)
         try:
             d["tickers"] = json.loads(d["tickers"]) if d["tickers"] else []
-        except Exception:
+        except (json.JSONDecodeError, TypeError):
             d["tickers"] = []
         return d
     except Exception as exc:

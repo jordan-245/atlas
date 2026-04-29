@@ -37,11 +37,11 @@ def is_tripped() -> bool:
             # Cooldown expired — self-heal
             try:
                 BREAKER_FILE.unlink(missing_ok=True)
-            except Exception:
+            except OSError:
                 pass
             return False
         return True
-    except Exception:
+    except (OSError, json.JSONDecodeError, ValueError):
         return False
 
 
@@ -54,7 +54,7 @@ def trip(reason: str = "") -> None:
             "pid": os.getpid(),
         }
         BREAKER_FILE.write_text(json.dumps(payload))
-    except Exception:
+    except OSError:
         pass
 
 
@@ -62,7 +62,7 @@ def reset() -> None:
     """Manual reset — delete breaker file if it exists."""
     try:
         BREAKER_FILE.unlink(missing_ok=True)
-    except Exception:
+    except OSError:
         pass
 
 
@@ -78,7 +78,7 @@ def remaining_cooldown_sec() -> int:
         elapsed = time.time() - tripped_at
         remaining = COOLDOWN_SEC - elapsed
         return max(0, int(remaining))
-    except Exception:
+    except (OSError, json.JSONDecodeError, ValueError):
         return 0
 
 
@@ -89,7 +89,7 @@ def check_or_skip(context: str = "pi call") -> None:
         try:
             data = json.loads(BREAKER_FILE.read_text())
             reason = data.get("reason", "unknown")
-        except Exception:
+        except (json.JSONDecodeError, OSError):
             reason = "unknown"
         raise RuntimeError(
             f"Claude circuit breaker tripped ({context}): {mins}m cooldown remaining. "
@@ -107,7 +107,7 @@ def scan_and_trip(text: str, reason_prefix: str = "") -> bool:
                 trip(reason)
                 return True
         return False
-    except Exception:
+    except (AttributeError, TypeError):
         return False
 
 
@@ -120,7 +120,7 @@ def _cli_status() -> None:
             data = json.loads(BREAKER_FILE.read_text())
             reason = data.get("reason", "unknown")
             pid = data.get("pid", "?")
-        except Exception:
+        except (json.JSONDecodeError, OSError):
             reason = "unknown"
             pid = "?"
         print(f"TRIPPED — {mins}m remaining (reason={reason!r}, pid={pid})")

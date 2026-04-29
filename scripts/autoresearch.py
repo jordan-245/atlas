@@ -161,7 +161,7 @@ def _check_director_queue(strategies: list[str], agent_name: str) -> list[dict]:
     """
     try:
         queue = json.loads(RESEARCH_QUEUE_PATH.read_text())
-    except Exception:
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
         return []
 
     claimed = []
@@ -472,14 +472,14 @@ def build_agent_prompt(strategy: str, cycle: int, director_exps: list[dict] | No
         else:
             best_info = "No results yet — needs baseline."
         best_info += "\n\nRecent history:\n" + read_results(strategy, 10)
-    except Exception:
+    except (ImportError, AttributeError, KeyError, TypeError, RuntimeError):
         best_info = "(failed to load)"
 
     # Get leaderboard
     try:
         from research.loop import leaderboard
         lb = leaderboard()
-    except Exception:
+    except (ImportError, AttributeError, RuntimeError):
         lb = "(failed)"
 
     # Build Director-queued experiments section (if any)
@@ -658,7 +658,7 @@ def run_cycle(cycle: int, claimed_experiments: list[dict] | None = None) -> dict
             from research.loop import load_best as _load_best
             _best_before = _load_best(strategy)
             _exp_before = _best_before.get("experiments_run", 0) if _best_before else 0
-        except Exception:
+        except (ImportError, AttributeError, KeyError, TypeError):
             _exp_before = 0
 
         # Get director-queued experiments for this strategy (if any)
@@ -698,7 +698,7 @@ def run_cycle(cycle: int, claimed_experiments: list[dict] | None = None) -> dict
             _best_sharpe = (
                 _best_after.get("metrics", {}).get("sharpe", 0) if _best_after else 0
             )
-        except Exception:
+        except (ImportError, AttributeError, KeyError, TypeError):
             _exp_after = _exp_before
             _best_sharpe = 0
 
@@ -773,7 +773,7 @@ def main():
     try:
         from utils.telegram import flush_digest
         flush_digest()
-    except Exception:
+    except (ImportError, OSError, RuntimeError):
         pass
 
     tag = f" [P{PARTITION}]" if PARTITION is not None else ""
@@ -828,7 +828,7 @@ def main():
             from research.loop import leaderboard
             lb = leaderboard()
             logger.info(lb)
-        except Exception:
+        except (ImportError, AttributeError, RuntimeError):
             lb = "(failed)"
 
         # Queue cycle summary for digest (INFO level — batched, not spammed)
@@ -845,7 +845,7 @@ def main():
         # Flush digest at end of each cycle (sends if enough time passed)
         try:
             flush_digest()
-        except Exception:
+        except (ImportError, OSError, RuntimeError):
             pass
 
         # Write cycle report for Director to read (atomically, before sleep)
@@ -864,7 +864,7 @@ def main():
     try:
         from utils.telegram import flush_digest
         flush_digest()
-    except Exception:
+    except (ImportError, OSError, RuntimeError):
         pass
     tag = f" [P{PARTITION}]" if PARTITION is not None else ""
     elapsed_h = (time.time() - session_start) / 3600

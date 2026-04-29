@@ -328,7 +328,7 @@ def _build_dashboard_from_eod_summaries() -> Optional[dict]:
                 s = json.load(f)
             mid = s.get("market_id", "unknown")
             summaries[mid] = s
-        except Exception:
+        except (json.JSONDecodeError, OSError):
             continue
 
     # Also check for market-specific summary files
@@ -338,7 +338,7 @@ def _build_dashboard_from_eod_summaries() -> Optional[dict]:
             try:
                 with open(path) as f:
                     summaries[market] = json.load(f)
-            except Exception:
+            except (json.JSONDecodeError, OSError):
                 continue
 
     if not summaries:
@@ -410,7 +410,7 @@ def _read_eod_summary(trade_date: str) -> Optional[dict]:
     try:
         with open(path) as f:
             return json.load(f)
-    except Exception:
+    except (json.JSONDecodeError, OSError):
         return None
 
 
@@ -421,7 +421,7 @@ def _read_eod_report(trade_date: str) -> Optional[str]:
         return None
     try:
         return path.read_text(errors="replace")
-    except Exception:
+    except OSError:
         return None
 
 
@@ -1083,7 +1083,7 @@ def send_research_complete(market_id: str = "sp500") -> bool:
                     f"  Experiments: {len(today_entries)}\n"
                     f"  ✅ Passed: {passed} | ❌ Failed: {failed} | 🏆 Promoted: {promoted}"
                 )
-    except Exception:
+    except (json.JSONDecodeError, OSError, KeyError, AttributeError):
         pass
 
     msg = (
@@ -1314,7 +1314,7 @@ def _load_notify_state() -> dict:
         if _NOTIFY_STATE_PATH.exists():
             with open(_NOTIFY_STATE_PATH) as f:
                 return json.load(f)
-    except Exception:
+    except (json.JSONDecodeError, OSError):
         pass
     return {"last_sent": {}, "queued": [], "last_digest": 0}
 

@@ -335,7 +335,7 @@ def auto_promote(
                 "dsr_num_experiments": n_exp,
                 "dsr_significant": final_sharpe > e_max_s,
             }
-    except Exception:
+    except (ImportError, AttributeError, ValueError, ZeroDivisionError, TypeError):
         pass
 
     # ── All gates passed — queue for Telegram approval ────────────────────────────
@@ -416,7 +416,7 @@ def _check_cooldown(strategy: str) -> bool:
         last_dt = datetime.fromisoformat(last_iso)
         elapsed = (datetime.now(timezone.utc) - last_dt).total_seconds()
         return elapsed >= COOLDOWN_SECONDS
-    except Exception:
+    except ValueError:  # Malformed timestamp — allow
         return True  # Malformed timestamp — allow
 
 
@@ -424,7 +424,7 @@ def _load_cooldowns() -> dict:
     if COOLDOWN_PATH.exists():
         try:
             return json.loads(COOLDOWN_PATH.read_text())
-        except Exception:
+        except (json.JSONDecodeError, OSError):
             pass
     return {}
 
@@ -588,7 +588,7 @@ def _append_promotion_log(entry: dict) -> None:
     if PROMOTION_LOG_PATH.exists():
         try:
             entries = json.loads(PROMOTION_LOG_PATH.read_text())
-        except Exception:
+        except (json.JSONDecodeError, OSError):
             entries = []
     entries.append(entry)
     PROMOTION_LOG_PATH.write_text(json.dumps(entries, indent=2, default=str))
@@ -602,7 +602,7 @@ def _last_promotion_entry(market: str) -> Optional[dict]:
         entries = json.loads(PROMOTION_LOG_PATH.read_text())
         mkt_entries = [e for e in entries if e.get("market") == market]
         return mkt_entries[-1] if mkt_entries else None
-    except Exception:
+    except (json.JSONDecodeError, OSError):
         return None
 
 
@@ -612,7 +612,7 @@ def _load_pending() -> list:
     if PENDING_PROMOTIONS_PATH.exists():
         try:
             return json.loads(PENDING_PROMOTIONS_PATH.read_text())
-        except Exception:
+        except (json.JSONDecodeError, OSError):
             return []
     return []
 
@@ -682,8 +682,8 @@ def complete_pending_promotion(pending_id: str) -> dict:
             },
             auto=True,
         )
-    except Exception:
-        pass
+    except (ImportError, AttributeError, RuntimeError, OSError) as exc:
+        logger.debug("record_promotion brain write failed (non-fatal): %s", exc, exc_info=True)
 
     return {
         "promoted": True,
@@ -721,7 +721,7 @@ def expire_pending_promotions() -> list:
                 e["status"] = "expired"
                 e["expired_at"] = now.isoformat()
                 expired.append(e.get("pending_id"))
-        except Exception:
+        except ValueError:  # Malformed timestamp — skip entry
             continue
     if expired:
         _save_pending(entries)
@@ -736,7 +736,7 @@ def expire_pending_promotions() -> list:
                         f"Market: {entry.get('market', '').upper()}\n"
                         f"No response within 24h — auto-expired."
                     )
-        except Exception:
+        except (ImportError, OSError, ConnectionError, RuntimeError):
             pass
     return expired
 
