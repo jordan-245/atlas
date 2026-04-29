@@ -78,6 +78,9 @@ class LivePortfolio:
         self.daily_high_water_date: Optional[str] = None
         self.halted: bool = False
         self.halt_reason: str = ""
+        # Cooldown: HWM reset timestamp — suppresses marginal false-positive halts
+        # within 1h of a session reset (see check_daily_drawdown)
+        self._hwm_reset_at: Optional[datetime] = None
 
         # Throttle: save_state warning fires only once per instance (not 30+ times)
         self._save_state_warned: bool = False
@@ -108,6 +111,22 @@ class LivePortfolio:
                 self.daily_high_water_date = state.get("daily_high_water_date", None)
                 self.halted = state.get("halted", False)
                 self.halt_reason = state.get("halt_reason", "")
+                # Guard: HWM > 5× starting_equity means it was written when
+                # check_daily_drawdown used global broker equity, before per-market
+                # attribution existed.  Reset to starting_equity so the new
+                # per-market path has a sensible baseline.
+                if (
+                    self.starting_equity > 0
+                    and self.daily_high_water > self.starting_equity * 5
+                ):
+                    logger.warning(
+                        "_load_local_state %s: HWM=$%.2f is >5× starting_equity=$%.2f — "
+                        "likely set from global broker equity before per-market attribution. "
+                        "Resetting HWM to starting_equity for correct per-market drawdown.",
+                        self.market_id, self.daily_high_water, self.starting_equity,
+                    )
+                    self.daily_high_water = self.starting_equity
+                    self.daily_high_water_date = None  # force date-reset on first drawdown check
                 logger.info("Loaded live state: %d closed trades, %d equity pts",
                             len(self.closed_trades), len(self.equity_history))
             except Exception as e:
@@ -798,25 +817,35 @@ class LivePortfolio:
 
     # ── Per-market equity attribution ─────────────────────────────────────────
 
-    def _get_per_market_equity(self, current_broker_eq: float) -> float | None:
-        """Return this market's estimated allocated equity scaled to current broker equity.
+    def _get_per_market_equity(
+        self,
+        current_broker_eq: float,
+        prices: dict[str, float] | None = None,
+    ) -> float | None:
+        """Return this market's estimated allocated equity.
 
-        Reads the most recent ``market_equity_history`` row for ``self.market_id``
-        and scales ``allocated_equity`` by the ratio of current broker equity to
-        the snapshot broker equity.  This gives an up-to-date per-market equity
-        estimate without requiring a full re-attribution (which would need
-        all markets' positions simultaneously).
+        Uses a two-component formula:
+        - **Position MV**: sum of this market's current positions × current prices
+          (from ``prices`` dict, falling back to ``entry_price``).
+        - **Scaled cash share**: snapshot cash share × (current_broker / snap_broker).
 
-        Returns ``None`` on DB failure, missing table, or if the snapshot is
-        older than 24 hours (stale) — callers should fall back to global
-        broker equity.
+        This avoids the false-positive where the old proportional-scaling formula
+        amplified a small broker-equity change into a large apparent per-market drop
+        (because positions have independent price movement that shouldn't be conflated
+        with cash-scale drift).
+
+        Legacy fallback: if the snapshot row lacks ``position_mv`` / ``cash_attributed``
+        columns (both zero), falls back to proportional scaling of ``allocated_equity``.
+
+        Returns ``None`` on DB failure, missing table, or stale snapshot (>3 days).
         """
         try:
             from db.atlas_db import get_db
             with get_db() as db:
                 row = db.execute(
                     """
-                    SELECT allocated_equity, broker_equity, date
+                    SELECT allocated_equity, broker_equity, date,
+                           position_mv, cash_attributed
                     FROM market_equity_history
                     WHERE market_id = ?
                     ORDER BY date DESC, created_at DESC
@@ -837,9 +866,11 @@ class LivePortfolio:
 
         snap_alloc: float = row["allocated_equity"] or 0.0
         snap_broker: float = row["broker_equity"] or 0.0
+        snap_pos_mv: float = row["position_mv"] or 0.0
+        snap_cash: float = row["cash_attributed"] or 0.0
         snap_date: str = row["date"] or ""
 
-        # Reject stale snapshot (>2 trading days old)
+        # Reject stale snapshot (>3 trading days old)
         try:
             from datetime import date as _date
             snap_days_old = (_date.today() - _date.fromisoformat(snap_date)).days
@@ -851,18 +882,45 @@ class LivePortfolio:
                 )
                 return None
         except (ValueError, TypeError):
-            pass  # Malformed date — just proceed with the scale
+            pass  # Malformed date — just proceed
 
         if snap_broker <= 0 or current_broker_eq <= 0:
             return None
 
-        # Scale: per_market_eq = snap_alloc × (current_total / snap_total)
-        per_market_eq = snap_alloc * (current_broker_eq / snap_broker)
-        logger.debug(
-            "_get_per_market_equity %s: snap_alloc=$%.2f snap_broker=$%.2f "
-            "current_broker=$%.2f → per_market=$%.2f",
-            self.market_id, snap_alloc, snap_broker, current_broker_eq, per_market_eq,
-        )
+        cash_scale = current_broker_eq / snap_broker
+
+        # ── New formula: separate position MV from cash-share scaling ──────────
+        if snap_pos_mv > 0 or snap_cash > 0:
+            # Position MV: sum current prices × shares for this market's positions
+            if self.positions:
+                current_pos_mv = sum(
+                    p.shares * ((prices or {}).get(p.ticker) or p.entry_price)
+                    for p in self.positions
+                )
+            else:
+                current_pos_mv = 0.0
+
+            # Cash share: scales with broker equity (proportional to portfolio cash)
+            scaled_cash = snap_cash * cash_scale
+            per_market_eq = current_pos_mv + scaled_cash
+            logger.debug(
+                "_get_per_market_equity %s (position+cash formula): "
+                "pos_mv=$%.2f + scaled_cash=$%.2f (snap_cash=$%.2f × scale=%.4f) "
+                "→ per_market=$%.2f",
+                self.market_id, current_pos_mv, scaled_cash,
+                snap_cash, cash_scale, per_market_eq,
+            )
+        else:
+            # ── Legacy fallback: no position/cash breakdown in snapshot ───────
+            # Proportional scaling of full allocated equity — less accurate but
+            # safe for rows written before position_mv/cash_attributed columns existed.
+            per_market_eq = snap_alloc * cash_scale
+            logger.debug(
+                "_get_per_market_equity %s (legacy proportional): "
+                "snap_alloc=$%.2f snap_broker=$%.2f current_broker=$%.2f → per_market=$%.2f",
+                self.market_id, snap_alloc, snap_broker, current_broker_eq, per_market_eq,
+            )
+
         return per_market_eq
 
     def check_daily_drawdown(self, prices: dict[str, float] = None):
@@ -884,7 +942,7 @@ class LivePortfolio:
         # Determine effective equity — prefer per-market attributed equity
         broker_eq = self.broker_equity()
         if broker_eq > 0:
-            per_market_eq = self._get_per_market_equity(broker_eq)
+            per_market_eq = self._get_per_market_equity(broker_eq, prices)
             if per_market_eq is not None:
                 effective_eq = per_market_eq
                 logger.debug(
@@ -915,6 +973,7 @@ class LivePortfolio:
             old_date = self.daily_high_water_date
             self.daily_high_water = effective_eq
             self.daily_high_water_date = today_str
+            self._hwm_reset_at = datetime.now()  # start 1h cooldown (see HALT guard below)
             logger.info(
                 "Session HWM reset: $%.2f → $%.2f for %s (date %s → %s)",
                 old_hwm, effective_eq, self.market_id, old_date, today_str,
@@ -942,7 +1001,26 @@ class LivePortfolio:
             else 0.0
         )
 
+        # _HALT_COOLDOWN: within 1h of HWM reset, suppress marginal false-positive halts.
+        # The per-market equity formula stabilises over a few minutes after calibration.
+        # Override threshold (>20%) still fires — this only protects against drift artefacts.
+        _HALT_COOLDOWN_SECS = 3600        # 1 hour
+        _HALT_COOLDOWN_OVERRIDE_DD = 0.20  # catastrophic drawdown always halts
+
         if dd >= self.max_daily_dd:
+            _now_dt = datetime.now()
+            if (
+                self._hwm_reset_at is not None
+                and dd < _HALT_COOLDOWN_OVERRIDE_DD
+                and (_now_dt - self._hwm_reset_at).total_seconds() < _HALT_COOLDOWN_SECS
+            ):
+                logger.warning(
+                    "HALT suppressed — within 1h of HWM reset "
+                    "(would have halted at %.2f%% drawdown on %s)",
+                    dd * 100, self.market_id,
+                )
+                return False, dd
+
             self.halted = True
             self.halt_reason = f"Daily drawdown {dd:.2%} >= {self.max_daily_dd:.2%}"
             logger.warning("HALT: %s", self.halt_reason)
