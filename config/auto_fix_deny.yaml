@@ -40,6 +40,11 @@ file_globs:
   - "config/auto_fix_classes.yaml"
   - "config/auto_fix_deny.yaml"
   - "config/safety_critical_functions.txt"
+  # Research engine canonical state — promotion-gate inputs (NEVER list)
+  - "config/research_priorities.json"
+  - "config/research_priorities*.json"
+  - "research/best/**"
+  - "research/brain/strategies/**"
   - "data/atlas.db*"
   - "data/HALT"
   - ".live_halt"

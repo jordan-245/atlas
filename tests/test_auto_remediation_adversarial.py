@@ -961,3 +961,84 @@ class TestCapitalAffectingNeverPaths:
         c = TriageClassifier()
         r = c.classify(_make_error(file_path="config/safety_critical_functions.txt"))
         assert r.classification == "ESCALATE"
+
+
+# ---------------------------------------------------------------------------
+# Group N -- Research engine canonical state (NEVER list 2026-04-30)
+# ---------------------------------------------------------------------------
+
+class TestResearchCanonicalNeverList:
+    """CEO mandate 2026-04-30 Step 1: config/research_priorities.json and
+    research/best/**, research/brain/strategies/** are gate-blocked at
+    auto_fix_deny.yaml level (NEVER list)."""
+
+    def _load_deny_globs(self) -> list:
+        import yaml
+        with open(PROJECT_ROOT / "config" / "auto_fix_deny.yaml") as f:
+            deny = yaml.safe_load(f)
+        return list(deny.get("file_globs") or [])
+
+    def test_research_priorities_json_in_file_globs(self):
+        """config/research_priorities.json must be in deny.yaml file_globs."""
+        globs = self._load_deny_globs()
+        assert "config/research_priorities.json" in globs, (
+            f"'config/research_priorities.json' missing from file_globs: {globs}"
+        )
+
+    def test_research_priorities_wildcard_in_file_globs(self):
+        """config/research_priorities*.json wildcard must be in deny.yaml file_globs."""
+        globs = self._load_deny_globs()
+        assert "config/research_priorities*.json" in globs, (
+            f"'config/research_priorities*.json' missing from file_globs: {globs}"
+        )
+
+    def test_research_best_glob_in_file_globs(self):
+        """research/best/** must be in deny.yaml file_globs (dual-write derivation)."""
+        globs = self._load_deny_globs()
+        assert "research/best/**" in globs, (
+            f"'research/best/**' missing from file_globs: {globs}"
+        )
+
+    def test_research_brain_strategies_glob_in_file_globs(self):
+        """research/brain/strategies/** must be in deny.yaml file_globs (dual-write derivation)."""
+        globs = self._load_deny_globs()
+        assert "research/brain/strategies/**" in globs, (
+            f"'research/brain/strategies/**' missing from file_globs: {globs}"
+        )
+
+    def test_research_priorities_json_classified_escalate(self):
+        """TriageClassifier must classify errors pointing at research_priorities.json as ESCALATE."""
+        from core.triage import TriageClassifier
+        c = TriageClassifier()
+        r = c.classify(_make_error(file_path="config/research_priorities.json"))
+        assert r.classification == "ESCALATE", (
+            f"Expected ESCALATE, got {r.classification} (rule={r.rule_id}, reason={r.reason})"
+        )
+        assert r.tier == 0
+
+    def test_research_priorities_variant_classified_escalate(self):
+        """Wildcard match: config/research_priorities_v2.json must also ESCALATE."""
+        from core.triage import TriageClassifier
+        c = TriageClassifier()
+        r = c.classify(_make_error(file_path="config/research_priorities_v2.json"))
+        assert r.classification == "ESCALATE", (
+            f"Expected ESCALATE, got {r.classification}"
+        )
+
+    def test_research_best_path_classified_escalate(self):
+        """research/best/strategy_abc.pkl must ESCALATE via research/best/** glob."""
+        from core.triage import TriageClassifier
+        c = TriageClassifier()
+        r = c.classify(_make_error(file_path="research/best/strategy_abc.pkl"))
+        assert r.classification == "ESCALATE", (
+            f"Expected ESCALATE, got {r.classification}"
+        )
+
+    def test_research_brain_strategies_path_classified_escalate(self):
+        """research/brain/strategies/momentum.py must ESCALATE via the glob."""
+        from core.triage import TriageClassifier
+        c = TriageClassifier()
+        r = c.classify(_make_error(file_path="research/brain/strategies/momentum.py"))
+        assert r.classification == "ESCALATE", (
+            f"Expected ESCALATE, got {r.classification}"
+        )
