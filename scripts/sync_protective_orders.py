@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import sqlite3
 import os
 import sys
 import time
@@ -160,7 +161,7 @@ def _load_held_state(state_file: Path | None = None) -> dict:
         try:
             with open(path) as f:
                 return json.load(f)
-        except Exception as exc:
+        except (json.JSONDecodeError, OSError) as exc:
             logger.warning("Could not read held-stop state file %s: %s", path, exc)
     return {}
 
@@ -172,7 +173,7 @@ def _save_held_state(state: dict, state_file: Path | None = None) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w") as f:
             json.dump(state, f, indent=2)
-    except Exception as exc:
+    except (OSError, TypeError) as exc:
         logger.warning("Could not save held-stop state file %s: %s", path, exc)
 
 
@@ -215,7 +216,7 @@ def _maybe_alert_stuck(
             f"<i>Manual intervention needed — not resubmitting further today.</i>"
         )
         send_message(msg)
-    except Exception as tg_exc:
+    except (ImportError, OSError, ConnectionError, RuntimeError) as tg_exc:  # Telegram non-fatal
         logger.warning("_maybe_alert_stuck: Telegram alert failed (non-fatal): %s", tg_exc)
     return True
 
@@ -261,7 +262,7 @@ def _wait_for_cancel_confirm(
     while time.monotonic() < deadline:
         try:
             result = broker.get_order_status(order_id)
-        except Exception as poll_exc:
+        except Exception as poll_exc:  # noqa: BLE001 — broker RPC can raise any exception
             logger.warning(
                 "_wait_for_cancel_confirm: get_order_status(%s) failed: %s — retrying",
                 order_id, poll_exc,
@@ -338,7 +339,7 @@ def _handle_held_stops(
 
     try:
         open_orders = broker.get_open_orders()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — broker call can raise any exception
         logger.warning("_handle_held_stops: get_open_orders failed (non-fatal): %s", exc)
         return {"resubmitted": resubmitted, "newly_held": newly_held, "errors": errors}
 
@@ -555,7 +556,7 @@ def _handle_held_stops(
                         f"Order: <code>{_tge(order_id[:16])}</code> | "
                         f"Retry: {entry['retry_count']}/{_HELD_MAX_RETRIES}"
                     )
-                except Exception as tg_exc:
+                except (ImportError, OSError, ConnectionError, RuntimeError) as tg_exc:  # Telegram non-fatal
                     logger.warning(
                         "_handle_held_stops: Telegram alert failed (non-fatal): %s",
                         tg_exc,
@@ -599,7 +600,7 @@ def _load_pdt_state(state_file: Path | None = None) -> dict:
         try:
             with open(path) as f:
                 return json.load(f)
-        except Exception as exc:
+        except (json.JSONDecodeError, OSError) as exc:
             logger.warning("Could not read PDT state file %s: %s", path, exc)
     return {}
 
@@ -611,7 +612,7 @@ def _save_pdt_state(state: dict, state_file: Path | None = None) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w") as f:
             json.dump(state, f, indent=2)
-    except Exception as exc:
+    except (OSError, TypeError) as exc:
         logger.warning("Could not save PDT state file %s: %s", path, exc)
 
 
@@ -718,7 +719,7 @@ def _apply_db_consistency(broker, market_id: str, sync_result: dict) -> None:
                     ticker, market_id,
                     (new_stop or "")[:8], (new_tp or "")[:8], n,
                 )
-            except Exception as db_exc:
+            except sqlite3.Error as db_exc:  # DB update; only sqlite3 errors escape atlas_db
                 logger.warning(
                     "sync_protective DB update failed for %s/%s (non-fatal): %s",
                     ticker, market_id, db_exc,
@@ -751,7 +752,7 @@ def _apply_db_consistency(broker, market_id: str, sync_result: dict) -> None:
                         ticker, market_id,
                         (new_stop or "")[:8], (new_tp or "")[:8],
                     )
-                except Exception as _prot_dbc_exc:
+                except (ImportError, sqlite3.Error, AttributeError, ValueError) as _prot_dbc_exc:  # DB upsert
                     logger.warning(
                         "Protective ledger upsert (DB consistency) failed for %s/%s (non-fatal): %s",
                         ticker, market_id, _prot_dbc_exc,
@@ -790,17 +791,17 @@ def _apply_db_consistency(broker, market_id: str, sync_result: dict) -> None:
                             _all_ticker, market_id,
                             (_all_stop or "")[:8], (_all_tp or "")[:8],
                         )
-                    except Exception as _upr_all_exc:
+                    except (sqlite3.Error, AttributeError, ValueError) as _upr_all_exc:  # DB upsert loop
                         logger.warning(
                             "Protective ledger refresh (a) failed for %s/%s (non-fatal): %s",
                             _all_ticker, market_id, _upr_all_exc,
                         )
-            except Exception as _prot_all_exc:
+            except (ImportError, sqlite3.Error, AttributeError) as _prot_all_exc:  # import or batch DB fail
                 logger.warning(
                     "Protective ledger batch refresh failed (non-fatal): %s", _prot_all_exc,
                 )
 
-    except Exception as wrap_exc:
+    except Exception as wrap_exc:  # noqa: BLE001 — outer DB consistency block catches all
         logger.warning(
             "sync_protective DB consistency block failed (non-fatal): %s", wrap_exc,
         )
@@ -912,7 +913,7 @@ def sync_market(
                                 )
 
                 plan["proposed_entries"] = entries
-    except Exception as _state_err:
+    except Exception as _state_err:  # noqa: BLE001 — state merge block touches file+dict ops
         logger.warning("Failed to merge state-file stops: %s", _state_err)
 
     # ── Connect to broker ────────────────────────────────────
@@ -956,7 +957,7 @@ def sync_market(
                     len(reconciled_exits), market_id,
                 )
                 result["reconciled_exits"] = len(reconciled_exits)
-        except Exception as _recon_exc:
+        except Exception as _recon_exc:  # noqa: BLE001 — broker+DB reconciliation can raise any exception
             logger.warning("Fill reconciliation failed (non-fatal): %s", _recon_exc)
 
         # ── Cancel orphaned orders (no matching position) ─────
@@ -1015,7 +1016,7 @@ def sync_market(
                 logger.info("Orphan cleanup: %s%d orphaned orders",
                             "[DRY RUN] " if dry_run else "", orphaned_count)
             _orphans_cancelled = orphaned_count
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — broker position fetch + order cancel can raise any exception
             logger.warning("Orphan order cleanup failed (non-fatal): %s", e)
             _orphans_cancelled = 0
 
@@ -1042,7 +1043,7 @@ def sync_market(
                     "Held-stop first-cycle: %s — will resubmit next cycle if still held",
                     _held_result["newly_held"],
                 )
-        except Exception as _held_exc:
+        except Exception as _held_exc:  # noqa: BLE001 — inner broker call wrapping
             logger.warning("_handle_held_stops failed (non-fatal): %s", _held_exc)
 
         # ── Sync protective orders ────────────────────────────
@@ -1082,7 +1083,7 @@ def sync_market(
             # of each market cycle (no-op if no entries have expired).
             try:
                 _clear_pdt_expired()
-            except Exception as _pdt_clr_exc:
+            except Exception as _pdt_clr_exc:  # noqa: BLE001 — optional PDT housekeeping
                 logger.debug("PDT clear_expired (non-fatal): %s", _pdt_clr_exc)
 
             for _pos in my_market_positions:
@@ -1177,7 +1178,7 @@ def sync_market(
                                 "pdt_deferred: %s recorded in pdt_state.json until 21:00 UTC",
                                 _t,
                             )
-                        except Exception as _pdt_new_exc:
+                        except (OSError, ValueError, AttributeError, RuntimeError) as _pdt_new_exc:  # pdt_state write
                             logger.debug(
                                 "pdt_state set_pdt_deferred (non-fatal): %s", _pdt_new_exc
                             )
@@ -1189,7 +1190,7 @@ def sync_market(
                         )
                 if _pdt_changed and not dry_run:
                     _save_pdt_state(_pdt_state)
-            except Exception as _pdt_upd_exc:
+            except Exception as _pdt_upd_exc:  # noqa: BLE001 — PDT state update touches file+dict ops
                 logger.warning("PDT state update failed (non-fatal): %s", _pdt_upd_exc)
 
             for ticker, tdata in per_ticker.items():
@@ -1275,13 +1276,13 @@ def sync_market(
                                     "Protective ledger (b): closed detached record %s/%s",
                                     _det_ticker, market_id,
                                 )
-                            except Exception as _det_exc:
+                            except (sqlite3.Error, AttributeError) as _det_exc:  # DB close call
                                 logger.warning(
                                     "Protective ledger close (detached) failed for %s/%s "
                                     "(non-fatal): %s",
                                     _det_ticker, market_id, _det_exc,
                                 )
-                    except Exception as _det_outer_exc:
+                    except (ImportError, sqlite3.Error, AttributeError) as _det_outer_exc:  # outer import+close
                         logger.warning(
                             "Protective ledger detached-position close block failed "
                             "(non-fatal): %s", _det_outer_exc,
@@ -1295,7 +1296,7 @@ def sync_market(
         for ticker, tresult in result["results"].items():
             logger.info("  %s", tresult.get("summary", ticker))
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — sync_market outer catch-all; broker/DB/FS errors
         result["error"] = str(e)
         logger.error("Error syncing %s: %s", market_id, e, exc_info=True)
 
@@ -1303,8 +1304,8 @@ def sync_market(
         if broker:
             try:
                 broker.disconnect()
-            except Exception as e:
-                logger.warning(f"Broker disconnect error during sync-protective cleanup: {e}")
+            except (RuntimeError, OSError, AttributeError) as e:  # disconnect can fail if connection dropped
+                logger.warning("Broker disconnect error during sync-protective cleanup: %s", e)
 
     return result
 
@@ -1397,7 +1398,7 @@ def send_telegram_summary(
         from utils.telegram import send_message
         msg = format_telegram_message(market_results, trade_date, dry_run)
         return send_message(msg)
-    except Exception as e:
+    except (ImportError, OSError, ConnectionError, RuntimeError) as e:  # Telegram non-fatal
         logger.warning("Telegram send failed: %s", e)
         return False
 
@@ -1459,7 +1460,7 @@ def main() -> int:
     log_level = logging.DEBUG if args.verbose else logging.INFO
     try:
         setup_logging("sync_protective_orders", level=log_level)
-    except Exception as _setup_e:
+    except (ImportError, OSError, AttributeError, RuntimeError) as _setup_e:  # logging setup
         logging.basicConfig(
             level=log_level,
             format="%(asctime)s %(name)s %(levelname)s %(message)s",
@@ -1561,7 +1562,7 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — top-level crash guard; must catch all
         # Top-level crash guard — alert via Telegram so cron failures aren't silent
         try:
             from utils.telegram import send_message
@@ -1571,6 +1572,6 @@ if __name__ == "__main__":
                 f"<pre>{_tge(type(exc).__name__)}: {_tge(str(exc)[:500])}</pre>\n\n"
                 f"Check logs/sync_protective.log"
             )
-        except Exception as e:
-            logger.warning(f"Crash-alert Telegram notification failed: {e}")
+        except (ImportError, OSError, ConnectionError, RuntimeError) as e:  # Telegram in crash guard
+            logger.warning("Crash-alert Telegram notification failed: %s", e)
         raise
