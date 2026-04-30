@@ -17,6 +17,7 @@ import os
 import json
 import logging
 import argparse
+import sqlite3
 import subprocess
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -40,8 +41,8 @@ def _health_log(level, message, detail=None):
         from monitor.health_writer import log_error, log_warning, log_info
         fn = {"error": log_error, "warning": log_warning}.get(level, log_info)
         fn("eod_settlement", message, detail)
-    except Exception as e:
-        log.warning(f"Health-log write failed (non-fatal): {e}")
+    except (ImportError, OSError, AttributeError, RuntimeError) as e:  # health_writer import/write
+        log.warning("Health-log write failed (non-fatal): %s", e)
 
 
 def load_config(market_id="asx"):
@@ -142,8 +143,8 @@ def check_stop_losses(portfolio, prices, lows, trade_date, dry_run):
                             _temp_exec._cancel_open_orders_for_ticker(pos.ticker)
                             import time
                             time.sleep(1.0)  # let Alpaca settle after cancel
-                        except Exception as _cancel_err:
-                            log.warning(f"Failed to cancel protective orders for {pos.ticker}: {_cancel_err}")
+                        except (ImportError, OSError, RuntimeError, ConnectionError) as _cancel_err:  # broker cancel call
+                            log.warning("Failed to cancel protective orders for %s: %s", pos.ticker, _cancel_err)
 
                         from brokers.base import OrderSide, OrderType
                         log.info(f"STOP HIT for {pos.ticker} — submitting market sell to broker ({pos.shares} shares)")
@@ -162,8 +163,8 @@ def check_stop_losses(portfolio, prices, lows, trade_date, dry_run):
                             try:
                                 from db import atlas_db as _adb
                                 _p1_fill = _adb.get_fill_price(sell_result.order_id)
-                            except Exception:
-                                pass
+                            except (ImportError, AttributeError, sqlite3.OperationalError) as _p1_exc:
+                                log.debug("broker_orders fill price lookup failed (non-fatal): %s", _p1_exc)
                             if _p1_fill and _p1_fill > 0:
                                 actual_exit_price = _p1_fill
                                 log.info(f"[fill-price P1] {pos.ticker}: broker_orders fill ${_p1_fill:.4f} order_id={sell_result.order_id}")
@@ -180,8 +181,8 @@ def check_stop_losses(portfolio, prices, lows, trade_date, dry_run):
                                 )
                         else:
                             log.error(f"Broker sell FAILED for {pos.ticker}: {sell_result.message} — NOT marking as closed internally")
-                    except Exception as _broker_err:
-                        log.error(f"Broker sell exception for {pos.ticker}: {_broker_err} — NOT marking as closed internally")
+                    except Exception as _broker_err:  # noqa: BLE001 — broker sell can raise any SDK exception
+                        log.error("Broker sell exception for %s: %s — NOT marking as closed internally", pos.ticker, _broker_err)
                 else:
                     # No broker connected (backtest/offline mode) — proceed with internal-only exit
                     broker_sell_ok = True
@@ -197,7 +198,7 @@ def check_stop_losses(portfolio, prices, lows, trade_date, dry_run):
                             try:
                                 from regime.model import RegimeModel
                                 _eod_regime = RegimeModel().classify_current().state.value
-                            except Exception as _re:
+                            except (ImportError, AttributeError, ValueError, RuntimeError) as _re:  # regime model
                                 log.debug(
                                     "RegimeModel classification failed (non-fatal, using None): %s",
                                     _re,
@@ -210,8 +211,8 @@ def check_stop_losses(portfolio, prices, lows, trade_date, dry_run):
                                 exit_reason="stop_loss",
                                 regime_at_exit=_eod_regime,
                             )
-                        except Exception as _e:
-                            log.warning(f"SQLite trade exit dual-write failed: {_e}")
+                        except (ImportError, sqlite3.OperationalError, sqlite3.DatabaseError, AttributeError) as _e:  # DB write
+                            log.warning("SQLite trade exit dual-write failed: %s", _e)
             else:
                 exits.append({"ticker": pos.ticker, "type": "stop_loss",
                               "intraday_low": intraday_low, "stop_price": pos.stop_price,
@@ -262,8 +263,8 @@ def check_take_profits(portfolio, prices, highs, trade_date, dry_run):
                             _temp_exec._cancel_open_orders_for_ticker(pos.ticker)
                             import time
                             time.sleep(1.0)  # let Alpaca settle after cancel
-                        except Exception as _cancel_err:
-                            log.warning(f"Failed to cancel protective orders for {pos.ticker}: {_cancel_err}")
+                        except (ImportError, OSError, RuntimeError, ConnectionError) as _cancel_err:  # broker cancel call
+                            log.warning("Failed to cancel protective orders for %s: %s", pos.ticker, _cancel_err)
 
                         from brokers.base import OrderSide, OrderType
                         log.info(f"TP HIT for {pos.ticker} — submitting sell to broker ({pos.shares} shares)")
@@ -282,8 +283,8 @@ def check_take_profits(portfolio, prices, highs, trade_date, dry_run):
                             try:
                                 from db import atlas_db as _adb
                                 _p1_fill = _adb.get_fill_price(sell_result.order_id)
-                            except Exception:
-                                pass
+                            except (ImportError, AttributeError, sqlite3.OperationalError) as _p1_exc:
+                                log.debug("broker_orders fill price lookup failed (non-fatal): %s", _p1_exc)
                             if _p1_fill and _p1_fill > 0:
                                 actual_exit_price = _p1_fill
                                 log.info(f"[fill-price P1] {pos.ticker}: broker_orders fill ${_p1_fill:.4f} order_id={sell_result.order_id}")
@@ -300,8 +301,8 @@ def check_take_profits(portfolio, prices, highs, trade_date, dry_run):
                                 )
                         else:
                             log.error(f"Broker sell FAILED for {pos.ticker}: {sell_result.message} — NOT marking as closed internally")
-                    except Exception as _broker_err:
-                        log.error(f"Broker sell exception for {pos.ticker}: {_broker_err} — NOT marking as closed internally")
+                    except Exception as _broker_err:  # noqa: BLE001 — broker sell can raise any SDK exception
+                        log.error("Broker sell exception for %s: %s — NOT marking as closed internally", pos.ticker, _broker_err)
                 else:
                     # No broker connected (backtest/offline mode) — proceed with internal-only exit
                     broker_sell_ok = True
@@ -317,7 +318,7 @@ def check_take_profits(portfolio, prices, highs, trade_date, dry_run):
                             try:
                                 from regime.model import RegimeModel
                                 _eod_regime = RegimeModel().classify_current().state.value
-                            except Exception as _re:
+                            except (ImportError, AttributeError, ValueError, RuntimeError) as _re:  # regime model
                                 log.debug(
                                     "RegimeModel classification failed (non-fatal, using None): %s",
                                     _re,
@@ -330,8 +331,8 @@ def check_take_profits(portfolio, prices, highs, trade_date, dry_run):
                                 exit_reason="take_profit",
                                 regime_at_exit=_eod_regime,
                             )
-                        except Exception as _e:
-                            log.warning(f"SQLite trade exit dual-write failed: {_e}")
+                        except (ImportError, sqlite3.OperationalError, sqlite3.DatabaseError, AttributeError) as _e:  # DB write
+                            log.warning("SQLite trade exit dual-write failed: %s", _e)
             else:
                 exits.append({"ticker": pos.ticker, "type": "take_profit",
                               "intraday_high": intraday_high, "take_profit": pos.take_profit,
@@ -413,7 +414,7 @@ def generate_eod_report(portfolio, prices, trade_date, stop_exits, tp_exits):
     try:
         from markets import get_market
         _settle_tz = get_market(market_id).operator_tz() if 'market_id' in dir() else BRISBANE
-    except Exception as _tz_e:
+    except (ImportError, AttributeError, RuntimeError) as _tz_e:  # market module import/call
         log.debug("Could not detect operator timezone (using Brisbane fallback): %s", _tz_e)
         _settle_tz = BRISBANE
     _settle_now = datetime.now(_settle_tz)
@@ -468,7 +469,7 @@ def record_daily_snapshot(portfolio, prices: dict, eq: float, daily_pnl: float, 
             "Portfolio snapshot recorded: equity=$%.2f, positions=%d, daily_pnl=$%+.2f",
             eq, len(position_list), daily_pnl,
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — snapshot touches DB+broker, any failure is non-fatal
         log.warning("Portfolio snapshot failed (non-fatal): %s", exc)
 
 
@@ -562,8 +563,8 @@ def main():
         try:
             from utils.telegram import send_message, tg_escape as _tge
             send_message(f"\U0001f534 <b>EOD Settlement Failed</b>\nMarket: {_tge(market_id)}\nBroker connection failed after {len(_connect_delays)} attempts.\nCheck logs/eod_settlement.log")
-        except Exception as e:
-            log.warning(f"Broker-failure Telegram alert could not be sent: {e}")
+        except (ImportError, OSError, ConnectionError, RuntimeError) as e:  # Telegram non-fatal
+            log.warning("Broker-failure Telegram alert could not be sent: %s", e)
         print("ERROR: Broker connection failed after retries. Settlement aborted.")
         return
 
@@ -621,7 +622,7 @@ def main():
             log.info("Ledger backfilled: %s", _ledger_result["backfilled"])
         if _ledger_result.get("closed_phantom"):
             log.info("Ledger phantoms closed: %s", _ledger_result["closed_phantom"])
-    except Exception as _lr_err:
+    except Exception as _lr_err:  # noqa: BLE001 — reconciliation touches broker+DB+file ops
         log.warning("Ledger reconciliation failed (non-fatal): %s", _lr_err)
 
     # Reconcile broker-side fills (trailing stops, etc.)
@@ -790,8 +791,8 @@ def main():
             positions=position_snapshot,
         )
         log.info("SQLite EOD data written: equity_curve + portfolio_snapshots + position_snapshots")
-    except Exception as _e:
-        log.warning(f"SQLite EOD write failed (non-fatal): {_e}")
+    except (ImportError, sqlite3.OperationalError, sqlite3.DatabaseError, AttributeError) as _e:  # DB write
+        log.warning("SQLite EOD write failed (non-fatal): %s", _e)
 
     # RCA #4D: per-market virtual equity attribution
     try:
@@ -834,7 +835,7 @@ def main():
                 )
             _conn.commit()
         log.info("Market equity attribution: %s", _attribution)
-    except Exception as _eq_exc:
+    except Exception as _eq_exc:  # noqa: BLE001 — equity attribution touches DB+market ops
         log.warning("Per-market equity attribution failed (non-fatal): %s", _eq_exc)
 
     _health_log("info", "EOD settlement completed", {
@@ -865,8 +866,8 @@ def _eod_monitor_already_sent_today() -> bool:
             data = json.loads(_EOD_MONITOR_STATE_FILE.read_text())
             from datetime import date
             return data.get("last_sent_date") == str(date.today())
-    except Exception:
-        pass
+    except (json.JSONDecodeError, OSError, AttributeError, KeyError) as _mon_err:  # state file read
+        log.debug("_eod_monitor_already_sent_today: state read failed (non-fatal): %s", _mon_err)
     return False
 
 
@@ -878,7 +879,7 @@ def _eod_monitor_mark_sent() -> None:
         _EOD_MONITOR_STATE_FILE.write_text(
             json.dumps({"last_sent_date": str(date.today())}),
         )
-    except Exception as exc:
+    except (OSError, json.JSONDecodeError) as exc:  # state file write
         log.warning("_eod_monitor_mark_sent: state write failed (non-fatal): %s", exc)
 
 
@@ -901,8 +902,8 @@ def run_position_monitor():
             _eod_monitor_mark_sent()
         log.info(f"Position monitor: evaluated {result['evaluated']} positions, "
                  f"{result['alerts']} alerts fired (telegram={'suppressed' if already_sent else 'enabled'})")
-    except Exception as e:
-        log.error(f"Position monitor evaluation failed: {e}")
+    except Exception as e:  # noqa: BLE001 — position monitor evaluation wraps broker+DB ops
+        log.error("Position monitor evaluation failed: %s", e)
 
 
 if __name__ == "__main__":
@@ -911,7 +912,7 @@ if __name__ == "__main__":
         # Run position monitor after EOD settlement
         # (main() broker connection is closed at end of main, so clientId is free)
         run_position_monitor()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — top-level crash guard; must catch all
         # Top-level crash guard — alert via Telegram so cron failures aren't silent
         try:
             from utils.telegram import send_message, tg_escape as _tge
@@ -920,6 +921,6 @@ if __name__ == "__main__":
                 f"<pre>{_tge(type(exc).__name__)}: {_tge(str(exc)[:500])}</pre>\n\n"
                 f"Check logs/eod_settlement.log"
             )
-        except Exception as e:
-            log.warning(f"Crash-alert Telegram notification failed: {e}")
+        except (ImportError, OSError, ConnectionError, RuntimeError) as e:  # Telegram in crash guard
+            log.warning("Crash-alert Telegram notification failed: %s", e)
         raise
