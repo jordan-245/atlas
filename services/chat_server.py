@@ -24,20 +24,11 @@ Run (uvicorn module):
 Run (systemd):
     systemctl start atlas-dashboard
 """
-# TODO: Refactor — 1369 lines. Split into: routes/, websocket/, chat/ sub-packages.
-# TODO: Split into api_routes.py, auth.py, static.py using FastAPI APIRouter
-
-import asyncio
-import base64
-import json
 import logging
 import os
-import secrets
 import signal
 import sys
-import time
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
 from pathlib import Path
 
 # ── Housekeeping (mirror dashboard_server.py top-level setup) ────────────────
@@ -55,25 +46,13 @@ os.chdir(PROJECT_ROOT)
 
 # ── FastAPI imports (after path setup) ───────────────────────────────────────
 
-from fastapi import Depends, FastAPI, HTTPException, Request  # noqa: E402
-from fastapi.responses import JSONResponse, Response  # noqa: E402
-from fastapi.security import HTTPBasic, HTTPBasicCredentials  # noqa: E402
+from fastapi import FastAPI, Request  # noqa: E402
+from fastapi.responses import JSONResponse  # noqa: E402
 from starlette.middleware.base import BaseHTTPMiddleware  # noqa: E402
 
-# ── Chat imports ──────────────────────────────────────────────────────────────
+# ── Chat DB init (lifespan only — session CRUD is in api/chat_sessions.py) ────
 try:
-    from services.chat_db import (  # noqa: E402
-        init_db as init_chat_db,
-        create_session as _chat_create_session,
-        get_session as _chat_get_session,
-        list_sessions as _chat_list_sessions,
-        add_message as _chat_add_message,
-        get_messages as _chat_get_messages,
-        get_latest_session as _chat_get_latest_session,
-        rename_session as _chat_rename_session,
-        delete_session as _chat_delete_session,
-    )
-    from services.pi_session import PiSessionManager  # noqa: E402
+    from services.chat_db import init_db as init_chat_db  # noqa: E402
     _CHAT_AVAILABLE = True
 except ImportError as _chat_import_err:
     logger_pre = logging.getLogger("chat_server")
@@ -81,13 +60,6 @@ except ImportError as _chat_import_err:
     _CHAT_AVAILABLE = False
 
 logger = logging.getLogger("chat_server")
-
-# ── Credential management ─────────────────────────────────────────────────────
-
-# ── HTTP Basic Auth dependency (moved to services/auth.py for router sharing) ─
-from services.auth import check_auth, security  # noqa: E402
-
-
 
 
 
@@ -211,6 +183,7 @@ from services.api.approvals import (  # noqa: F401
     _reject_plan,
     PlanRequest,
 )
+from services.auth import check_auth  # noqa: F401 — re-exported for backward compat (tests)
 
 app.include_router(_finance_router)
 app.include_router(_regime_router)
