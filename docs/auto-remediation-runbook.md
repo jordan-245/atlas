@@ -11,7 +11,7 @@
 **Audience:** Atlas operator (the human who runs/owns the trading system).  
 **Purpose:** Day-to-day operations and incident response for the auto-remediation pipeline.  
 **Date:** 2026-04-29  
-**Phase Status:** Phase 2 ENABLED (ASSIST dispatch active). Phase 3 code-shipped but feature-gated behind `phase_3_enabled: false` until 14d clean Phase 2 data is accumulated.
+**Phase Status:** **Phase 3 ENABLED** (autonomous AUTO_FIX active, user Option-C 2026-04-30). Phase 3 went live day-1 with no 14-day Phase 2 wait. The `permanent_assist` tier was removed; the whitelist (`config/auto_fix_classes.yaml`) was broadened to 9 classes covering any non-NEVER-listed path. **All structural safety perimeters remain intact**: NEVER list, adversarial Reviewer (Opus 4.7, default-REJECT), 15 merge gates, 30-min post-merge monitor + auto-revert, 8-layer kill switch, budget caps (10/day, 2 reverts → halt, 25% revert rate → halt), demotion gate (>5 violations in 60d → permanent revert).
 
 ---
 
@@ -64,7 +64,7 @@ The deny lists in `config/auto_fix_deny.yaml` and `config/auto_remediation.yaml#
 | Phase 0 | Capture + Triage | ✅ Shipped, ACTIVE |
 | Phase 1 | Classifier + Audit log | ✅ Shipped, ACTIVE |
 | Phase 2 | Fix Worker + Reviewer + Merger (ASSIST) | ✅ Shipped, ACTIVE |
-| Phase 3 | Auto Merger + Graduation (AUTO_FIX) | ⏳ Code shipped, feature-gated (`phase_3_enabled: false`) |
+| Phase 3 | Auto Merger + Graduation (AUTO_FIX) | ✅ Shipped, ACTIVE (Option-C 2026-04-30) |
 
 **Systemd timer**: `atlas-error-remediation.timer` fires every 5 min (RTH) / 15 min (off-hours). See §8.1 for installation.
 
@@ -384,16 +384,17 @@ ORDER BY ts ASC;
 
 **This section must be read end-to-end before enabling Phase 3. Phase 3 permits autonomous merges to `main` without human review.**
 
-### 5.1 Pre-conditions for activating Phase 3 AUTO_FIX
+### 5.1 Phase 3 — already active (Option-C, 2026-04-30)
 
-All of the following must be true before you flip the switch:
+> **Note**: This section preserved for historical reference. The user-ratified Option-C amendment skipped the 14-day waiting period and broadened the whitelist. Phase 3 is **already enabled**. To re-enable from scratch (e.g., after a stop-gap rollback to Phase 2), follow the procedure in §5.2 below — with the understanding that `graduation.assist_to_auto_fix.days_of_clean_assist=0` and `min_merged_assist_fixes=0` make graduation effectively automatic for any class matching `config/auto_fix_classes.yaml`.
 
-- [ ] **≥14 calendar days** of Phase 2 ASSIST data (`graduation.assist_to_auto_fix.days_of_clean_assist: 14`)
-- [ ] **≥5 human-merged ASSIST fixes per class** on the Day-1 whitelist (`graduation.assist_to_auto_fix.min_merged_assist_fixes: 5`)
-- [ ] **0 scope-guard violations** on whitelist classes in the 14-day window
-- [ ] **0 reverts** on Phase 2 fixes during the 14-day window
-- [ ] **Reviewer rejection rate stable below 40%** over rolling 7d (`review.rejection_rate_alert_pct: 40`)
-- [ ] **Operator manual review** of `/api/error_remediation/attempts` for all 14 days — spot-check at least 10 merged proposals
+The original Phase-2-to-3 graduation pre-conditions (kept for reference if you ever choose to tighten them again):
+
+- ~~≥14 calendar days~~ → currently **0 days** (`days_of_clean_assist: 0`)
+- ~~≥5 merged ASSIST fixes~~ → currently **0 required** (`min_merged_assist_fixes: 0`)
+- 0 scope-guard violations on whitelist classes
+- 0 reverts during the observation window
+- Reviewer rejection rate <40%
 
 The Day-1 whitelist classes (from `config/auto_remediation.yaml#day1_auto_fix_whitelist`):
 
@@ -469,6 +470,8 @@ git -C /root/atlas log --oneline | grep "auto-fix"
 
 ### 5.4 Adding a new whitelist class
 
+> **2026-04-30 update**: The whitelist now contains **9 classes** (was 6) covering broad-pattern errors in any non-NEVER-listed path: `test_import_error`, `stale_fixture_datetime`, `lint_non_trading_files` (expanded globs), `markdown_typos`, `dashboard_react_build_errors`, `healthz_section_logic`, plus three new broad-pattern classes constrained by Python error-class regex: `python_runtime_error_non_trading`, `assertion_or_state_error`, `file_or_data_error`. Adding more classes is rarely needed — most errors now match one of the existing 9.
+
 1. Verify the class meets graduation thresholds:
 
 ```bash
@@ -530,6 +533,22 @@ A permanently demoted class becomes ASSIST-only. Re-promotion requires a fresh 1
 ### 6.1 NEVER list (`config/auto_fix_deny.yaml`)
 
 **This is the single most safety-critical config file.** Reducing coverage (removing entries) must be treated with the same care as modifying trading-path code. When in doubt: add, never remove.
+
+**Capital-affecting + recursive protection (added 2026-04-30 for Option-C)**:
+- `config/active/**` — per-market trade plans, sizing multipliers, leverage, max_risk_per_trade_pct, stop/TP ATR multipliers (capital-affecting)
+- `config/global_risk.json` — global risk caps, drawdown halt thresholds (capital-affecting)
+- `config/versions/**` — historical snapshots of capital-affecting configs
+- `config/schema.py` — schema validation logic for `config/active/**`
+- `config/price_arbiter.json` — which broker is authoritative for live-order pricing
+- `config/heartbeat.json` — monitoring cadence (modifying could mask outages)
+- `config/auto_remediation.yaml`, `config/auto_fix_classes.yaml`, `config/auto_fix_deny.yaml`, `config/safety_critical_functions.txt` — **recursive protection**: the auto-remediation system MUST NOT be allowed to modify its own policy, whitelist, deny list, or safety-critical function list. Even a "safe" lint fix in these files is structurally forbidden.
+
+To remove a path from the NEVER list (operator procedure):
+1. Identify the file glob in `config/auto_fix_deny.yaml#file_globs`
+2. Reason in writing about WHY removing it is safe (capital exposure, recursive risk, gate coverage)
+3. Make the edit; commit with `auto-remediation: remove <path> from NEVER list — <reason>`
+4. Run `cd /root/atlas && python3 -m pytest tests/test_auto_remediation_config_loading.py tests/test_auto_remediation_adversarial.py --timeout=30 -q` to verify nothing broke
+5. Watch the dashboard for the next 7 days
 
 The deny list is enforced at three layers:
 1. **Triage classifier** (`core/triage.py`) — any matching error → `ESCALATE`
@@ -1238,8 +1257,8 @@ Ratified 2026-04-29. Do not change without deliberate review.
 | `budget.max_commits_per_day` | 10 | Circuit-breaker; prevents runaway fix loops |
 | `budget.reverts_to_halt` | 2 | Two reverts = something systematic is wrong |
 | `budget.revert_rate_halt_pct` | 25 | 1 in 4 merges being bad is unacceptable |
-| `graduation.assist_to_auto_fix.days_of_clean_assist` | 14 | Two calendar weeks of data before autonomy |
-| `graduation.assist_to_auto_fix.min_merged_assist_fixes` | 5 | Minimum track record per class |
+| `graduation.assist_to_auto_fix.days_of_clean_assist` | 0 | User Option-C 2026-04-30: skip wait, Phase 3 day-1 |
+| `graduation.assist_to_auto_fix.min_merged_assist_fixes` | 0 | User Option-C 2026-04-30: skip merge requirement |
 | `graduation.auto_fix_to_permanent_assist.scope_violations_threshold` | 5 | >5 violations = class too risky for autonomy |
 | `review.approval_threshold_confidence` | 0.75 | Reviewer must be 75% confident to APPROVE |
 | `review.rejection_rate_halt_pct` | 50 | >50% rejection = fixes are systematically bad |

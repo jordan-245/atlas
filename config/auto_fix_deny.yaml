@@ -27,10 +27,19 @@ file_globs:
   - "**/plan*.py"
   - "**/approve*.py"
   - "**/halt*.py"
-  # Trading config + state
+  # Trading config + state — capital-affecting (NEVER list)
   - "config/active/**"
   - "config/active_config.json"
   - "config/global_risk.json"
+  - "config/versions/**"                # Historical versions of active/* — never modify
+  - "config/schema.py"                  # Schema validation logic for active configs
+  - "config/price_arbiter.json"         # Price authority for live order routing
+  - "config/heartbeat.json"             # Monitor cadence — modifying could mask outages
+  # Recursive protection — auto-remediation cannot modify its own policy/whitelist/safety
+  - "config/auto_remediation.yaml"
+  - "config/auto_fix_classes.yaml"
+  - "config/auto_fix_deny.yaml"
+  - "config/safety_critical_functions.txt"
   - "data/atlas.db*"
   - "data/HALT"
   - ".live_halt"

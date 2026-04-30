@@ -503,16 +503,22 @@ class TestAllKillSwitchLayersIndividually:
         assert result.layer == "L3"
 
     def test_l4_drawdown_breach_blocks(self, tmp_path):
+        # check_l4_drawdown was refactored (Task #289) to use equity_history
+        # (market_id, date, equity, pnl), NOT the old portfolio_snapshots table.
         from core.remediation_kill_switch import check_l4_drawdown
         db = tmp_path / "l4_test.db"
         conn = sqlite3.connect(str(db))
-        conn.execute("""CREATE TABLE portfolio_snapshots (
-            id INTEGER PRIMARY KEY, timestamp TEXT,
-            equity REAL, daily_pnl_pct REAL, market_id TEXT
+        conn.execute("""CREATE TABLE equity_history (
+            market_id TEXT, date TEXT, equity REAL, pnl REAL
         )""")
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+        # peak=10000 yesterday, current=9000 today → 10% drawdown > 5% threshold
         conn.execute(
-            "INSERT INTO portfolio_snapshots VALUES (1, ?, 5000, -7.0, 'sp500')", (now,)
+            "INSERT INTO equity_history VALUES ('sp500', ?, 10000.0, 0.0)", (yesterday,)
+        )
+        conn.execute(
+            "INSERT INTO equity_history VALUES ('sp500', ?, 9000.0, -1000.0)", (today,)
         )
         conn.commit()
         conn.close()
@@ -804,3 +810,154 @@ class TestDomainWriteEnforcement:
                 )
                 checked += 1
         assert checked >= 3, "Should have checked at least 3 never_fix paths"
+
+# ---------------------------------------------------------------------------
+# Group L -- Fix Worker domain perimeter (Option-C 2026-04-30)
+# ---------------------------------------------------------------------------
+
+class TestFixWorkerDomainPerimeter:
+    """User Option-C 2026-04-30: Fix Worker domain.write expanded to broad
+    Phase 3 surface area, but NEVER paths must remain STRUCTURALLY ABSENT
+    so OS-tool layer blocks writes."""
+
+    @pytest.fixture
+    def fix_worker_writes(self):
+        import yaml
+        with open("/root/.pi/teams/config.yaml") as f:
+            cfg = yaml.safe_load(f)
+        for team in cfg.get("teams", {}).values():
+            for member in team.get("members", []):
+                if member.get("name") == "Fix Worker":
+                    return list((member.get("domain") or {}).get("write") or [])
+        pytest.fail("Fix Worker not found in /root/.pi/teams/config.yaml")
+
+    def test_core_in_writes(self, fix_worker_writes):
+        assert "core/**" in fix_worker_writes
+
+    def test_services_in_writes(self, fix_worker_writes):
+        assert "services/**" in fix_worker_writes
+
+    def test_monitor_in_writes(self, fix_worker_writes):
+        assert "monitor/**" in fix_worker_writes
+
+    def test_config_in_writes(self, fix_worker_writes):
+        assert "config/**" in fix_worker_writes
+
+    def test_db_in_writes(self, fix_worker_writes):
+        assert "db/**" in fix_worker_writes
+
+    def test_research_in_writes(self, fix_worker_writes):
+        assert "research/**" in fix_worker_writes
+
+    def test_scripts_in_writes(self, fix_worker_writes):
+        assert "scripts/**" in fix_worker_writes
+
+    def test_brokers_NOT_in_writes(self, fix_worker_writes):
+        assert "brokers/**" not in fix_worker_writes
+        assert not any("brokers" in p for p in fix_worker_writes)
+
+    def test_risk_NOT_in_writes(self, fix_worker_writes):
+        assert "risk/**" not in fix_worker_writes
+
+    def test_regime_NOT_in_writes(self, fix_worker_writes):
+        assert "regime/**" not in fix_worker_writes
+
+    def test_signals_NOT_in_writes(self, fix_worker_writes):
+        assert "signals/**" not in fix_worker_writes
+
+    def test_portfolio_NOT_in_writes(self, fix_worker_writes):
+        assert "portfolio/**" not in fix_worker_writes
+
+    def test_overlay_NOT_in_writes(self, fix_worker_writes):
+        assert "overlay/**" not in fix_worker_writes
+
+    def test_strategies_NOT_in_writes(self, fix_worker_writes):
+        assert "strategies/**" not in fix_worker_writes
+
+    def test_kill_switch_pattern_NOT_in_writes(self, fix_worker_writes):
+        assert "**/kill_switch*.py" not in fix_worker_writes
+
+    def test_live_executor_pattern_NOT_in_writes(self, fix_worker_writes):
+        assert "**/live_executor*.py" not in fix_worker_writes
+
+    def test_atlas_db_pattern_NOT_in_writes(self, fix_worker_writes):
+        for pattern in fix_worker_writes:
+            assert "atlas.db" not in pattern
+
+    def test_secrets_files_NOT_in_writes(self, fix_worker_writes):
+        for pattern in fix_worker_writes:
+            assert ".atlas-secrets" not in pattern
+            assert ".env" not in pattern
+
+
+# ---------------------------------------------------------------------------
+# Group M -- Capital-affecting + recursive protection NEVER additions
+# ---------------------------------------------------------------------------
+
+class TestCapitalAffectingNeverPaths:
+    """User Option-C 2026-04-30: extra NEVER additions block capital-affecting
+    configs (config/active/**, etc.) and provide recursive protection of the
+    auto-remediation system itself."""
+
+    def test_config_active_sp500_escalates(self):
+        """sp500.json contains max_positions, leverage, sizing — capital-affecting."""
+        from core.triage import TriageClassifier
+        c = TriageClassifier()
+        r = c.classify(_make_error(file_path="config/active/sp500.json"))
+        assert r.classification == "ESCALATE"
+        assert r.tier == 0
+
+    def test_config_active_commodity_etfs_escalates(self):
+        from core.triage import TriageClassifier
+        c = TriageClassifier()
+        r = c.classify(_make_error(file_path="config/active/commodity_etfs.json"))
+        assert r.classification == "ESCALATE"
+
+    def test_config_global_risk_escalates(self):
+        from core.triage import TriageClassifier
+        c = TriageClassifier()
+        r = c.classify(_make_error(file_path="config/global_risk.json"))
+        assert r.classification == "ESCALATE"
+
+    def test_config_versions_escalates(self):
+        from core.triage import TriageClassifier
+        c = TriageClassifier()
+        r = c.classify(_make_error(file_path="config/versions/sp500_v3.2.json"))
+        assert r.classification == "ESCALATE"
+
+    def test_config_price_arbiter_escalates(self):
+        from core.triage import TriageClassifier
+        c = TriageClassifier()
+        r = c.classify(_make_error(file_path="config/price_arbiter.json"))
+        assert r.classification == "ESCALATE"
+
+    def test_config_heartbeat_escalates(self):
+        from core.triage import TriageClassifier
+        c = TriageClassifier()
+        r = c.classify(_make_error(file_path="config/heartbeat.json"))
+        assert r.classification == "ESCALATE"
+
+    def test_recursive_protection_auto_remediation_yaml_escalates(self):
+        """Auto-remediation cannot modify its own policy file."""
+        from core.triage import TriageClassifier
+        c = TriageClassifier()
+        r = c.classify(_make_error(file_path="config/auto_remediation.yaml"))
+        assert r.classification == "ESCALATE"
+
+    def test_recursive_protection_auto_fix_classes_yaml_escalates(self):
+        from core.triage import TriageClassifier
+        c = TriageClassifier()
+        r = c.classify(_make_error(file_path="config/auto_fix_classes.yaml"))
+        assert r.classification == "ESCALATE"
+
+    def test_recursive_protection_auto_fix_deny_yaml_escalates(self):
+        from core.triage import TriageClassifier
+        c = TriageClassifier()
+        r = c.classify(_make_error(file_path="config/auto_fix_deny.yaml"))
+        assert r.classification == "ESCALATE"
+
+    def test_recursive_protection_safety_critical_functions_escalates(self):
+        from core.triage import TriageClassifier
+        c = TriageClassifier()
+        r = c.classify(_make_error(file_path="config/safety_critical_functions.txt"))
+        assert r.classification == "ESCALATE"

@@ -200,13 +200,13 @@ _FIXED_THRESHOLDS = {
 
 class TestLoadThresholds:
     def test_user_locked_values(self):
-        """Config YAML returns the exact user-locked values from auto_remediation.yaml."""
+        """Config YAML returns Option-C amended values (was 14/5; now 0/0)."""
         cfg_path = PROJECT / "config" / "auto_remediation.yaml"
         if not cfg_path.exists():
             pytest.skip("auto_remediation.yaml not present")
         th = _load_thresholds(cfg_path)
-        assert th["days_of_clean_assist"] == 14
-        assert th["min_merged_assist_fixes"] == 5
+        assert th["days_of_clean_assist"] == 0
+        assert th["min_merged_assist_fixes"] == 0
         assert th["scope_violations_threshold"] == 5
         assert th["scope_violations_window_days"] == 60
 

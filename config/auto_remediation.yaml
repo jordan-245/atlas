@@ -1,7 +1,9 @@
 # config/auto_remediation.yaml
 # Atlas Autonomous Error Remediation — User-Ratified Configuration
 # Source-of-truth specs: reports/auto-error-remediation-{planning,engineering,validation}-2026-04-29.md
-# All settings reflect user decisions on 2026-04-29.
+# All settings reflect user decisions on 2026-04-29 + Option-C amendment 2026-04-30:
+# Phase 3 enabled day-1, permanent_assist tier removed, graduation wait skipped.
+# NEVER list, reviewer, 15 gates, kill switches, budget caps remain INTACT.
 
 budget:
   max_commits_per_day: 10              # AGGRESSIVE
@@ -23,31 +25,14 @@ telegram:
   daily_digest: false                  # No daily digest either — failure-only
 
 graduation:
-  assist_to_auto_fix:                  # When can ASSIST class graduate to AUTO_FIX?
-    days_of_clean_assist: 14           # LENIENT
-    min_merged_assist_fixes: 5         # ≥5 human-merged fixes
-  auto_fix_to_permanent_assist:        # When does AUTO_FIX revert permanently?
+  assist_to_auto_fix:                  # User Option-C 2026-04-30: skip the wait
+    days_of_clean_assist: 0            # NO wait — Phase 3 enabled day-1
+    min_merged_assist_fixes: 0         # NO merge requirement — promote immediately
+  auto_fix_to_permanent_assist:        # SAFETY BRAKE — kept intact per user spec
     scope_violations_threshold: 5      # >5 scope-guard violations in...
     scope_violations_window_days: 60   # ...60 days → permanent revert to ASSIST
 
-permanent_assist:                      # BROADER list — never auto-merge
-  paths:
-    - services/**                      # API contracts
-    - research/**                      # strategy parameters
-    # monitor/**: all monitor files are permanent_assist, EXCEPT monitor/lifecycle.py
-    # which is in never_fix below (trading-path-adjacent, manages position lifecycle).
-    # monitor/evaluator.py — permanent_assist: observability, assist allowed but no auto-merge
-    - monitor/**
-    - systemd/**                       # service definitions
-    - cron/**                          # cron schedules
-    - "**/*.cron"
-    - "config/**"                      # any config file change
-    - db/migrations/**                 # any schema change
-    - "**/*.sql"
-  patterns:
-    - any_api_endpoint_change          # additions, removals, signature changes
-    - any_cron_schedule_change
-    - any_systemd_unit_change
+permanent_assist: {}                   # REMOVED 2026-04-30 (user Option-C) — no permanent ASSIST tier
 
 never_fix:                             # Permanent ESCALATE — never even ASSIST
   paths:
@@ -76,8 +61,8 @@ defaults_applied:
 
 # === Operational settings (engineering defaults, not user-locked) ===
 phase:
-  current: 2                           # Phase 2 = ASSIST dispatch active (fix_worker → reviewer → merger)
-  phase_3_enabled: false               # Hard feature flag for AUTO_FIX go-live
+  current: 3                           # Phase 3 ENABLED — autonomous AUTO_FIX active (user Option-C, 2026-04-30)
+  phase_3_enabled: true                # Hard feature flag — ON immediately, no 14-day wait
 
 monitor:
   rth_interval_minutes: 5              # During US RTH (09:30–16:00 ET), poll every 5 min

@@ -533,21 +533,24 @@ class TestPermanentAssist:
             assert r.tier == 1
 
     def test_research_path_returns_assist(self, clf):
+        # Phase 3: permanent_assist tier removed — research/loop.py falls through
+        # to default_deny (no matching whitelist class) → ESCALATE
         r = self._off_hours_classify(clf, _err(
             file_path="research/loop.py",
             message="import error in research module"
         ))
-        assert r.classification == "ASSIST"
-        assert r.tier == 1
+        assert r.classification == "ESCALATE"
+        assert r.tier == 99
 
     def test_monitor_path_returns_assist(self, clf):
-        # monitor/lifecycle.py is in NEVER list — use a different monitor file
+        # Phase 3: permanent_assist tier removed — monitor/heartbeat.py falls through
+        # to default_deny (no matching whitelist class) → ESCALATE
         r = self._off_hours_classify(clf, _err(
             file_path="monitor/heartbeat.py",
             message="heartbeat check failed"
         ))
-        assert r.classification == "ASSIST"
-        assert r.tier == 1
+        assert r.classification == "ESCALATE"
+        assert r.tier == 99
 
     def test_systemd_path_returns_assist(self, clf):
         r = self._off_hours_classify(clf, _err(
@@ -560,13 +563,15 @@ class TestPermanentAssist:
         assert r.tier == 0
 
     def test_config_path_returns_assist(self, clf):
-        # config/** is in permanent_assist (but config/active/** is in NEVER)
+        # Phase 3 + Option-C: config/heartbeat.json added to NEVER list
+        # (capital-affecting / monitor-cadence configs are NEVER touched by auto-fix)
+        # NEVER fires first → ESCALATE tier=0
         r = self._off_hours_classify(clf, _err(
             file_path="config/heartbeat.json",
             message="JSON parse error"
         ))
-        assert r.classification == "ASSIST"
-        assert r.tier == 1
+        assert r.classification == "ESCALATE"
+        assert r.tier == 0
 
     def test_cron_file_returns_assist(self, clf):
         r = self._off_hours_classify(clf, _err(
@@ -643,8 +648,8 @@ class TestPhase3Gate:
                 assert r.classification != "AUTO_FIX"
 
     def test_phase_3_disabled_confirmed_in_config(self, clf):
-        """Verify the config itself has phase_3_enabled=false."""
-        assert clf._phase_3_enabled is False
+        """Phase 3 is now ACTIVE (user Option-C 2026-04-30)."""
+        assert clf._phase_3_enabled is True
 
     def test_whitelist_has_six_entries(self, clf):
         """User spec requires exactly 6 whitelist entries."""
@@ -672,7 +677,8 @@ class TestStructural:
         assert any("Circuit breaker" in p for p in clf._ignore_patterns)
 
     def test_permanent_assist_has_services(self, clf):
-        assert any("services" in g for g in clf._permanent_assist_globs)
+        # Phase 3: permanent_assist tier removed entirely — globs is now empty []
+        assert clf._permanent_assist_globs == []
 
     def test_result_is_frozen_dataclass(self, clf):
         with patch.object(TriageClassifier, "is_market_hours_now", return_value=False):

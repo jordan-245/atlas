@@ -212,6 +212,8 @@ class TestRunOnceClassificationDispatch:
         assert row[1] == "ESCALATED"
 
     def test_run_once_assist_sets_triaged_status(self, db_path, monkeypatch):
+        # Phase 3: permanent_assist tier removed — services/chat_server.py no longer
+        # falls to ASSIST tier; it hits default_deny → ESCALATE/ESCALATED.
         monkeypatch.delenv("ATLAS_AUTO_REMEDIATION_DISABLED", raising=False)
         _insert_error(db_path, fingerprint="fp_assist_status",
                       message="test chat server error",
@@ -226,8 +228,8 @@ class TestRunOnceClassificationDispatch:
             "SELECT classification, remediation_status FROM errors WHERE fingerprint='fp_assist_status'"
         ).fetchone()
         conn.close()
-        assert row[0] == "ASSIST"
-        assert row[1] == "TRIAGED"
+        assert row[0] == "ESCALATE"
+        assert row[1] == "ESCALATED"
 
     def test_run_once_ignore_sets_ignored_status(self, db_path, monkeypatch):
         monkeypatch.delenv("ATLAS_AUTO_REMEDIATION_DISABLED", raising=False)
@@ -569,7 +571,8 @@ class TestConfigInvariants:
         assert cfg["telegram"]["daily_digest"] is False
 
     def test_phase_3_enabled_is_false(self, cfg):
-        assert cfg["phase"]["phase_3_enabled"] is False
+        # Phase 3 now ACTIVE (user Option-C 2026-04-30) — renamed but kept for clarity
+        assert cfg["phase"]["phase_3_enabled"] is True
 
     def test_max_commits_per_day_is_10(self, cfg):
         assert cfg["budget"]["max_commits_per_day"] == 10

@@ -65,9 +65,10 @@ class TestFilesParse:
 
 class TestRequiredKeys:
     def test_auto_remediation_top_level_keys(self, cfg):
+        # 2026-04-30 Option-C: permanent_assist tier removed (key may exist as empty dict)
         required = {
             "budget", "day1_auto_fix_whitelist", "telegram", "graduation",
-            "permanent_assist", "never_fix", "defaults_applied", "phase",
+            "never_fix", "defaults_applied", "phase",
             "monitor", "verify", "review", "audit_log", "ignore_patterns"
         }
         missing = required - set(cfg.keys())
@@ -103,37 +104,24 @@ class TestWhitelist:
 # 4. permanent_assist.paths includes required globs
 # ===========================================================================
 
-class TestPermanentAssistPaths:
-    @pytest.fixture(autouse=True)
-    def _paths(self, cfg):
-        self.paths = set(cfg.get("permanent_assist", {}).get("paths") or [])
+class TestPermanentAssistRemoved:
+    """User Option-C 2026-04-30: permanent_assist tier deleted.
 
-    def test_services_present(self):
-        assert "services/**" in self.paths
+    The key may exist as `{}` (empty dict) or be absent entirely. Either way,
+    the previous list of paths must NO LONGER appear.
+    """
+    def test_permanent_assist_is_empty_or_absent(self, cfg):
+        pa = cfg.get("permanent_assist") or {}
+        paths = (pa or {}).get("paths") or []
+        assert paths == [], f"permanent_assist.paths should be empty, got: {paths}"
 
-    def test_research_present(self):
-        assert "research/**" in self.paths
-
-    def test_monitor_present(self):
-        assert "monitor/**" in self.paths
-
-    def test_systemd_present(self):
-        assert "systemd/**" in self.paths
-
-    def test_cron_dir_present(self):
-        assert "cron/**" in self.paths
-
-    def test_cron_glob_present(self):
-        assert "**/*.cron" in self.paths
-
-    def test_config_present(self):
-        assert "config/**" in self.paths
-
-    def test_db_migrations_present(self):
-        assert "db/migrations/**" in self.paths
-
-    def test_sql_glob_present(self):
-        assert "**/*.sql" in self.paths
+    def test_no_old_permanent_assist_paths_remain(self, cfg):
+        pa = cfg.get("permanent_assist") or {}
+        paths = (pa or {}).get("paths") or []
+        forbidden = {"services/**", "research/**", "monitor/**", "systemd/**",
+                     "cron/**", "**/*.cron", "config/**", "db/migrations/**", "**/*.sql"}
+        leaked = forbidden & set(paths)
+        assert not leaked, f"Old permanent_assist paths leaked back in: {leaked}"
 
 
 # ===========================================================================
@@ -268,17 +256,27 @@ class TestTelegramSettings:
 # ===========================================================================
 
 class TestGraduationThresholds:
+    """User Option-C 2026-04-30: graduation wait skipped (0/0)."""
+
     @pytest.fixture(autouse=True)
     def _grad(self, cfg):
         self.grad = cfg.get("graduation") or {}
 
-    def test_days_of_clean_assist_is_14(self):
+    def test_days_of_clean_assist_is_0(self):
+        """Was 14 — Option-C dropped to 0 (no wait, Phase 3 day-1)."""
         assist = self.grad.get("assist_to_auto_fix") or {}
-        assert assist.get("days_of_clean_assist") == 14
+        assert assist.get("days_of_clean_assist") == 0
 
-    def test_min_merged_assist_fixes_is_5(self):
+    def test_min_merged_assist_fixes_is_0(self):
+        """Was 5 — Option-C dropped to 0 (no merge requirement)."""
         assist = self.grad.get("assist_to_auto_fix") or {}
-        assert assist.get("min_merged_assist_fixes") == 5
+        assert assist.get("min_merged_assist_fixes") == 0
+
+    def test_demotion_thresholds_intact(self):
+        """SAFETY BRAKE — must remain at 5 violations / 60 days per user spec."""
+        demote = self.grad.get("auto_fix_to_permanent_assist") or {}
+        assert demote.get("scope_violations_threshold") == 5
+        assert demote.get("scope_violations_window_days") == 60
 
 
 # ===========================================================================
@@ -286,15 +284,17 @@ class TestGraduationThresholds:
 # ===========================================================================
 
 class TestPhaseSettings:
+    """User Option-C 2026-04-30: Phase 3 enabled day-1."""
+
     @pytest.fixture(autouse=True)
     def _phase(self, cfg):
         self.phase = cfg.get("phase") or {}
 
-    def test_current_phase_is_2(self):
-        assert self.phase.get("current") == 2
+    def test_current_phase_is_3(self):
+        assert self.phase.get("current") == 3
 
-    def test_phase_3_enabled_is_false(self):
-        assert self.phase.get("phase_3_enabled") is False
+    def test_phase_3_enabled_is_true(self):
+        assert self.phase.get("phase_3_enabled") is True
 
 
 # ===========================================================================
@@ -313,3 +313,66 @@ class TestIgnorePatterns:
     def test_execution_blocked_halted_in_ignore(self, cfg):
         patterns = cfg.get("ignore_patterns") or []
         assert any("Execution blocked: HALTED" in p for p in patterns)
+
+# ===========================================================================
+# 13. Capital-affecting + recursive protection in NEVER list (Option-C)
+# ===========================================================================
+
+class TestNeverListCapitalAffectingAdditions:
+    """User Option-C 2026-04-30: extra NEVER additions for capital-affecting
+    configs and recursive protection of the auto-remediation system itself."""
+
+    @pytest.fixture(autouse=True)
+    def _globs(self, deny):
+        self.globs = set(deny.get("file_globs") or [])
+
+    def test_config_active_glob_blocked(self):
+        assert "config/active/**" in self.globs
+
+    def test_config_versions_glob_blocked(self):
+        assert "config/versions/**" in self.globs
+
+    def test_config_schema_py_blocked(self):
+        assert "config/schema.py" in self.globs
+
+    def test_config_price_arbiter_blocked(self):
+        assert "config/price_arbiter.json" in self.globs
+
+    def test_config_heartbeat_blocked(self):
+        assert "config/heartbeat.json" in self.globs
+
+    def test_global_risk_blocked(self):
+        assert "config/global_risk.json" in self.globs
+
+    def test_recursive_protection_auto_remediation_yaml(self):
+        assert "config/auto_remediation.yaml" in self.globs
+
+    def test_recursive_protection_auto_fix_classes_yaml(self):
+        assert "config/auto_fix_classes.yaml" in self.globs
+
+    def test_recursive_protection_auto_fix_deny_yaml(self):
+        assert "config/auto_fix_deny.yaml" in self.globs
+
+    def test_recursive_protection_safety_critical_functions(self):
+        assert "config/safety_critical_functions.txt" in self.globs
+
+
+class TestPhase3ActiveExpectations:
+    """Sanity checks that Phase 3 is wired through the system after Option-C."""
+
+    def test_phase_3_enabled_propagates_to_auto_merger(self):
+        """core/auto_merger._load_phase_3_state() must return True from current config."""
+        from core.auto_merger import _load_phase_3_state
+        assert _load_phase_3_state() is True
+
+    def test_triage_classifier_loads_phase_3_true(self):
+        """TriageClassifier must read phase_3_enabled=True from config."""
+        from core.triage import TriageClassifier
+        clf = TriageClassifier()
+        assert clf._phase_3_enabled is True
+
+    def test_triage_classifier_no_permanent_assist_globs(self):
+        """With permanent_assist removed, classifier loads empty list."""
+        from core.triage import TriageClassifier
+        clf = TriageClassifier()
+        assert clf._permanent_assist_globs == []
