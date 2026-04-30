@@ -147,7 +147,7 @@ def research_overview(_auth: HTTPBasicCredentials = Depends(check_auth)):
                     engine_status = "idle"
                 else:
                     engine_status = "idle"
-            except Exception as e:
+            except (subprocess.SubprocessError, OSError, ValueError) as e:  # systemctl call
                 logger.debug("engine_status subprocess failed: %s", e)
                 engine_status = "unknown"
 
@@ -179,7 +179,7 @@ def research_overview(_auth: HTTPBasicCredentials = Depends(check_auth)):
                     "daily_counts": daily_counts,
                 },
             })
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — HTTP handler catch-all
         logger.exception("research_overview failed")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -205,7 +205,7 @@ def research_leaderboard(_auth: HTTPBasicCredentials = Depends(check_auth)):
                 d = dict(r)
                 rows.append(d)
             return JSONResponse(content={"leaderboard": rows})
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — HTTP handler catch-all
         logger.exception("research_leaderboard failed")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -252,7 +252,7 @@ async def research_prioritize(
         return JSONResponse(content={"ok": True, "universe": universe, "updated": rp[universe]})
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — HTTP handler catch-all
         logger.exception("research_prioritize failed")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -308,7 +308,7 @@ def research_summary(_auth: HTTPBasicCredentials = Depends(check_auth)):
                 "by_strategy": by_strategy,
                 "by_source": by_source,
             })
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — HTTP handler catch-all
         logger.exception("research_summary failed")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -363,7 +363,7 @@ def research_experiments(
                 rows.append(d)
 
             return JSONResponse(content={"experiments": rows, "total": total})
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — HTTP handler catch-all
         logger.exception("research_experiments failed")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -404,7 +404,7 @@ def research_strategies(_auth: HTTPBasicCredentials = Depends(check_auth)):
                     s["best_params"] = None
 
             return JSONResponse(content={"strategies": strategies})
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — HTTP handler catch-all
         logger.exception("research_strategies failed")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -443,7 +443,7 @@ def research_timeline(days: int = 30, _auth: HTTPBasicCredentials = Depends(chec
                 })
 
             return JSONResponse(content={"dates": dates, "series": series})
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — HTTP handler catch-all
         logger.exception("research_timeline failed")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -467,7 +467,7 @@ def research_discoveries(_auth: HTTPBasicCredentials = Depends(check_auth)):
                         pass
                 rows.append(d)
             return JSONResponse(content={"discoveries": rows})
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — HTTP handler catch-all
         logger.exception("research_discoveries failed")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -500,7 +500,7 @@ def research_brain(_auth: HTTPBasicCredentials = Depends(check_auth)):
             """).fetchall()]
 
             return JSONResponse(content={"params": params, "patterns": patterns})
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — HTTP handler catch-all
         logger.exception("research_brain failed")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -557,6 +557,6 @@ def research_coverage(_auth: HTTPBasicCredentials = Depends(check_auth)):
             "matrix": matrix,
             "generated_at": now.isoformat(),
         })
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — HTTP handler catch-all
         logger.exception("research_coverage failed")
         raise HTTPException(status_code=500, detail=str(e))
