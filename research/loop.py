@@ -549,18 +549,35 @@ class ResearchSession:
             + f"_{strategy}"
         )
 
-        # ── Resolve snapshot ────────────────────────────────────────────────
+        # ── Resolve snapshot OR fall back to live cache ─────────────────────
+        snapshot_required = (market == "sp500")  # sp500 always uses snapshots
+
         if snapshot_id is not None:
+            # Caller forced a specific snapshot — honor it
             self.snapshot_id = snapshot_id
         else:
-            self.snapshot_id = _find_latest_snapshot(market)
+            try:
+                self.snapshot_id = _find_latest_snapshot(market)
+            except RuntimeError:
+                if snapshot_required:
+                    raise   # sp500 with no snapshot is a real error
+                # Non-sp500 universes can fall back to live cache
+                self.snapshot_id = None
+                logger.warning(
+                    "No snapshot for %s — falling back to live cache via "
+                    "universe.builder.build_from_definition()",
+                    market,
+                )
 
-        logger.info("Using snapshot: %s", self.snapshot_id)
-
-        # Load market data from the snapshot (one-time, ~3-5 s)
-        logger.info("Loading market data for %s from snapshot...", market)
-        from scripts.strategy_evaluator import load_market_data
-        data = load_market_data(market, snapshot_id=self.snapshot_id)
+        if self.snapshot_id is not None:
+            logger.info("Using snapshot: %s", self.snapshot_id)
+            logger.info("Loading market data for %s from snapshot...", market)
+            from scripts.strategy_evaluator import load_market_data
+            data = load_market_data(market, snapshot_id=self.snapshot_id)
+        else:
+            logger.info("Loading market data for %s from live cache (no snapshot)...", market)
+            from universe.builder import build_from_definition
+            data = build_from_definition(market)
 
         # Optionally subset to top N tickers by volume for speed
         if top_n is not None and len(data) > top_n:
@@ -582,7 +599,12 @@ class ResearchSession:
             compute_lock,
             save_lock,
         )
-        _snapshot_dir = ATLAS_ROOT / "data" / "snapshots" / self.snapshot_id
+        if self.snapshot_id is not None:
+            _snapshot_dir = ATLAS_ROOT / "data" / "snapshots" / self.snapshot_id
+        else:
+            # Live-cache mode: lock just the engine files (no parquet to hash).
+            # compute_lock() now accepts None and skips parquet hashing.
+            _snapshot_dir = None
         self._eval_lock = compute_lock(LOCKED_FILES, _snapshot_dir)
         save_lock(self._eval_lock, self.session_id)
         logger.info(

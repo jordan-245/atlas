@@ -1874,7 +1874,11 @@ def upsert_research_best(
     New columns (M2 2026-04-28):
         solo_sharpe      — strategy-standalone backtest Sharpe
         portfolio_sharpe — whole-portfolio Sharpe with this strategy
-        metric_type      — 'solo', 'portfolio', 'both', 'legacy_portfolio', 'unknown'
+        metric_type      — 'solo', 'portfolio', 'both', 'legacy_portfolio',
+                           'portfolio_diversifier', 'unknown'
+                           'portfolio_diversifier' = solo Sharpe is weak/negative
+                           but combo contributes positively to portfolio Sharpe;
+                           kept in active config for diversification value.
 
     The legacy ``sharpe`` column is preserved for backwards compat but is
     DEPRECATED (use solo_sharpe / portfolio_sharpe).  A DEBUG log is emitted

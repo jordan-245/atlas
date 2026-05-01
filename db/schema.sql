@@ -308,7 +308,7 @@ CREATE TABLE IF NOT EXISTS research_best (
     updated_at       TEXT    DEFAULT (datetime('now')),
     solo_sharpe      REAL,              -- strategy-standalone Sharpe (M2 2026-04-28)
     portfolio_sharpe REAL,              -- whole-portfolio Sharpe with this strategy (M2 2026-04-28)
-    metric_type      TEXT    NOT NULL DEFAULT 'unknown',  -- 'solo','portfolio','both','legacy_portfolio','unknown'
+    metric_type      TEXT    NOT NULL DEFAULT 'unknown',  -- 'solo','portfolio','both','legacy_portfolio','portfolio_diversifier','unknown'
     PRIMARY KEY (strategy, universe)
 );
 

@@ -114,7 +114,7 @@ def compute_lock(locked_files: List[Path], snapshot_dir: Path) -> dict:
         lock[str(file_path)] = _sha256_file(file_path)
 
     # Hash every parquet file in the snapshot directory
-    if snapshot_dir.exists():
+    if snapshot_dir is not None and snapshot_dir.exists():
         for parquet_path in sorted(snapshot_dir.rglob("*.parquet")):
             lock[str(parquet_path)] = _sha256_file(parquet_path)
 
