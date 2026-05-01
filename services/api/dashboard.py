@@ -108,6 +108,15 @@ def _calc_tiingo_daily_pnl(positions: list, market_id: str = "sp500") -> dict:
 def _get_portfolio_history(broker) -> list:
     """Fetch Alpaca portfolio history (1 year, daily) as a list of dicts.
 
+    Returns rows with `equity` normalized to remove cash-flow events
+    (deposits/withdrawals). The normalized curve represents pure trading
+    performance: equity[i] = baseline + cumulative_profit_loss[i], where
+    baseline = current_live_equity - total_cumulative_profit_loss. The last
+    row always equals current live equity; earlier rows show what equity
+    WOULD have been if all deposits had occurred at t=0 with no subsequent
+    cash flows. This eliminates the visual "funding spike" that distorts
+    the chart's Y-axis when a deposit lands in the middle of the curve.
+
     Returns [] on any error so the caller can fall back to the SQLite
     equity_curve SUM aggregate.
     """
@@ -122,7 +131,10 @@ def _get_portfolio_history(broker) -> list:
         _ts_list = list(getattr(_ph_resp, "timestamp", []) or [])
         _eq_list = list(getattr(_ph_resp, "equity", []) or [])
         _pl_list = list(getattr(_ph_resp, "profit_loss", []) or [])
-        rows: list = []
+
+        # Pass 1: collect non-zero days with raw equity + per-day P&L
+        # (profit_loss is the per-day market P&L EXCLUDING cash flows)
+        raw_rows: list = []
         for _i, (_ts, _eq) in enumerate(zip(_ts_list, _eq_list)):
             if _eq is None or _eq <= 0:
                 continue  # skip pre-funding zero days
@@ -134,14 +146,54 @@ def _get_portfolio_history(broker) -> list:
                 if _i < len(_pl_list) and _pl_list[_i] is not None
                 else 0.0
             )
-            rows.append(
+            raw_rows.append(
                 {
                     "date": _date_str,
-                    "equity": round(float(_eq), 2),
-                    "value": round(float(_eq), 2),
+                    "raw_equity": round(float(_eq), 2),
                     "day_pnl": round(_day_pnl, 2),
                 }
             )
+
+        if not raw_rows:
+            return []
+
+        # Pass 2: compute cumulative P&L and baseline (net deposits)
+        cum_pnl = 0.0
+        for r in raw_rows:
+            cum_pnl += r["day_pnl"]
+            r["cum_pnl"] = round(cum_pnl, 2)
+        total_cum_pnl = raw_rows[-1]["cum_pnl"]
+        # baseline = current account equity minus total trading P&L = net deposits
+        # (current equity = baseline + total_pnl, so baseline = equity - total_pnl)
+        current_equity = raw_rows[-1]["raw_equity"]
+        baseline = round(current_equity - total_cum_pnl, 2)
+
+        # Pass 3: emit normalized equity curve
+        rows: list = []
+        for r in raw_rows:
+            normalized_eq = round(baseline + r["cum_pnl"], 2)
+            rows.append(
+                {
+                    "date": r["date"],
+                    "equity": normalized_eq,
+                    "value": normalized_eq,
+                    "day_pnl": r["day_pnl"],
+                    # Keep the raw_equity around for diagnostic/debugging if needed
+                    # (not displayed by frontend, but useful in logs)
+                    "raw_equity": r["raw_equity"],
+                }
+            )
+        logger.info(
+            "Equity curve normalized: %d days, baseline=$%.2f, total_pnl=$%.2f, "
+            "raw_range=[$%.2f, $%.2f], normalized_range=[$%.2f, $%.2f]",
+            len(rows),
+            baseline,
+            total_cum_pnl,
+            min(r["raw_equity"] for r in rows),
+            max(r["raw_equity"] for r in rows),
+            min(r["equity"] for r in rows),
+            max(r["equity"] for r in rows),
+        )
         return rows
     except Exception as _ph_err:  # noqa: BLE001
         logger.warning(

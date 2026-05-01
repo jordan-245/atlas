@@ -171,11 +171,21 @@ def isolated_db(tmp_path: Path) -> Path:
 
 
 @pytest.fixture()
-def client(isolated_db: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    """TestClient with DB patched + auth bypassed + cache cleared."""
+def client(isolated_db: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> TestClient:
+    """TestClient with DB patched + auth bypassed + cache cleared.
+
+    Also patches PROJECT_ROOT to a clean temp directory so live HALT files on
+    disk do not bleed into tests that expect no halt to be active.
+    """
     import services.api.error_remediation as rem
+
+    # Isolated clean project root — no HALT files present
+    fake_root = tmp_path / "fake_atlas_client"
+    (fake_root / "data").mkdir(parents=True)
+
     monkeypatch.setattr(rem, "_DB_PATH", isolated_db)
     monkeypatch.setattr(rem, "_cache", {})
+    monkeypatch.setattr(rem, "PROJECT_ROOT", fake_root)
 
     from services.auth import check_auth
     app = FastAPI()
@@ -187,11 +197,16 @@ def client(isolated_db: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
 
 
 @pytest.fixture()
-def unauth_client(isolated_db: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+def unauth_client(isolated_db: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> TestClient:
     """TestClient with NO auth override — real HTTPBasic fires."""
     import services.api.error_remediation as rem
+
+    fake_root = tmp_path / "fake_atlas_unauth"
+    (fake_root / "data").mkdir(parents=True)
+
     monkeypatch.setattr(rem, "_DB_PATH", isolated_db)
     monkeypatch.setattr(rem, "_cache", {})
+    monkeypatch.setattr(rem, "PROJECT_ROOT", fake_root)
 
     app = FastAPI()
     app.include_router(rem.router)
@@ -452,3 +467,168 @@ class TestPhase3Disabled:
         resp = client.get("/api/error_remediation/health")
         data = resp.json()
         assert data["phase_3_enabled"] is False
+
+
+# ---------------------------------------------------------------------------
+# Tests: /health — halt_reasons (Fix 2)
+# ---------------------------------------------------------------------------
+
+class TestHealthHaltReasons:
+    def test_health_includes_halt_reasons_when_halt_file_exists(
+        self, isolated_db: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """HALT file with content → halt_reasons contains the reason text."""
+        import services.api.error_remediation as rem
+
+        fake_root = tmp_path / "fake_atlas"
+        fake_data_dir = fake_root / "data"
+        fake_data_dir.mkdir(parents=True)
+        halt_file = fake_data_dir / "HALT"
+        halt_file.write_text("daily_drawdown 13.69% on sector_etfs")
+
+        monkeypatch.setattr(rem, "_DB_PATH", isolated_db)
+        monkeypatch.setattr(rem, "_cache", {})
+        monkeypatch.setattr(rem, "PROJECT_ROOT", fake_root)
+
+        from services.auth import check_auth
+        app = FastAPI()
+        app.dependency_overrides[check_auth] = lambda: HTTPBasicCredentials(
+            username="test", password="test"
+        )
+        app.include_router(rem.router)
+        tc = TestClient(app)
+
+        resp = tc.get("/api/error_remediation/health")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["halt_active"] is True
+        assert "halt_reasons" in data
+        reasons = data["halt_reasons"]
+        assert isinstance(reasons, list)
+        assert len(reasons) == 1
+        r = reasons[0]
+        assert r["name"] == "HALT"
+        assert r["reason"] == "daily_drawdown 13.69% on sector_etfs"
+
+    def test_health_halt_reasons_empty_when_no_halt(
+        self, isolated_db: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """No halt files present → halt_reasons is an empty list."""
+        import services.api.error_remediation as rem
+
+        fake_root = tmp_path / "fake_atlas_clean"
+        (fake_root / "data").mkdir(parents=True)
+
+        monkeypatch.setattr(rem, "_DB_PATH", isolated_db)
+        monkeypatch.setattr(rem, "_cache", {})
+        monkeypatch.setattr(rem, "PROJECT_ROOT", fake_root)
+
+        from services.auth import check_auth
+        app = FastAPI()
+        app.dependency_overrides[check_auth] = lambda: HTTPBasicCredentials(
+            username="test", password="test"
+        )
+        app.include_router(rem.router)
+        tc = TestClient(app)
+
+        resp = tc.get("/api/error_remediation/health")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["halt_active"] is False
+        assert data["halt_reasons"] == []
+
+    def test_health_halt_reasons_truncated_at_200_chars(
+        self, isolated_db: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Halt file with 1000-char content → reason field is exactly 200 chars."""
+        import services.api.error_remediation as rem
+
+        fake_root = tmp_path / "fake_atlas_long"
+        fake_data_dir = fake_root / "data"
+        fake_data_dir.mkdir(parents=True)
+        halt_file = fake_data_dir / "HALT"
+        long_content = "x" * 1000
+        halt_file.write_text(long_content)
+
+        monkeypatch.setattr(rem, "_DB_PATH", isolated_db)
+        monkeypatch.setattr(rem, "_cache", {})
+        monkeypatch.setattr(rem, "PROJECT_ROOT", fake_root)
+
+        from services.auth import check_auth
+        app = FastAPI()
+        app.dependency_overrides[check_auth] = lambda: HTTPBasicCredentials(
+            username="test", password="test"
+        )
+        app.include_router(rem.router)
+        tc = TestClient(app)
+
+        resp = tc.get("/api/error_remediation/health")
+        assert resp.status_code == 200
+        data = resp.json()
+        reasons = data["halt_reasons"]
+        assert len(reasons) == 1
+        assert len(reasons[0]["reason"]) == 200, (
+            f"Expected 200 chars, got {len(reasons[0]['reason'])}"
+        )
+
+    def test_health_halt_reasons_empty_file_shows_placeholder(
+        self, isolated_db: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Empty HALT file → reason shows '(empty file)' placeholder."""
+        import services.api.error_remediation as rem
+
+        fake_root = tmp_path / "fake_atlas_empty"
+        fake_data_dir = fake_root / "data"
+        fake_data_dir.mkdir(parents=True)
+        halt_file = fake_data_dir / "HALT"
+        halt_file.write_text("")   # empty
+
+        monkeypatch.setattr(rem, "_DB_PATH", isolated_db)
+        monkeypatch.setattr(rem, "_cache", {})
+        monkeypatch.setattr(rem, "PROJECT_ROOT", fake_root)
+
+        from services.auth import check_auth
+        app = FastAPI()
+        app.dependency_overrides[check_auth] = lambda: HTTPBasicCredentials(
+            username="test", password="test"
+        )
+        app.include_router(rem.router)
+        tc = TestClient(app)
+
+        resp = tc.get("/api/error_remediation/health")
+        data = resp.json()
+        reasons = data["halt_reasons"]
+        assert reasons[0]["reason"] == "(empty file)"
+
+    def test_health_halt_reasons_multiple_files(
+        self, isolated_db: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Multiple halt files → halt_reasons has one entry per file."""
+        import services.api.error_remediation as rem
+
+        fake_root = tmp_path / "fake_atlas_multi"
+        fake_data_dir = fake_root / "data"
+        fake_data_dir.mkdir(parents=True)
+        (fake_data_dir / "HALT").write_text("drawdown halt reason")
+        (fake_data_dir / "AUTO_REMEDIATION_HALT").write_text("remediation halt")
+        # .live_halt sits at project root
+        (fake_root / ".live_halt").write_text("live halt")
+
+        monkeypatch.setattr(rem, "_DB_PATH", isolated_db)
+        monkeypatch.setattr(rem, "_cache", {})
+        monkeypatch.setattr(rem, "PROJECT_ROOT", fake_root)
+
+        from services.auth import check_auth
+        app = FastAPI()
+        app.dependency_overrides[check_auth] = lambda: HTTPBasicCredentials(
+            username="test", password="test"
+        )
+        app.include_router(rem.router)
+        tc = TestClient(app)
+
+        resp = tc.get("/api/error_remediation/health")
+        data = resp.json()
+        assert len(data["halt_reasons"]) == 3
+        names = {r["name"] for r in data["halt_reasons"]}
+        assert names == {"HALT", ".live_halt", "AUTO_REMEDIATION_HALT"}
+

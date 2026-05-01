@@ -166,8 +166,21 @@ def health():
                 PROJECT_ROOT / ".live_halt",
                 PROJECT_ROOT / "data" / "AUTO_REMEDIATION_HALT",
             ]
-            halt_active = any(p.exists() for p in halt_paths)
             halt_files_present = [str(p) for p in halt_paths if p.exists()]
+            halt_active = bool(halt_files_present)
+            # Read each halt file's content for display in the dashboard banner
+            halt_reasons: list[dict] = []
+            for p in halt_paths:
+                if p.exists():
+                    try:
+                        content = p.read_text(errors="replace").strip()[:200]
+                    except OSError as e:
+                        content = f"<unreadable: {e}>"
+                    halt_reasons.append({
+                        "path": str(p),
+                        "name": p.name,
+                        "reason": content or "(empty file)",
+                    })
             backlog_ok = backlog <= 100
             return {
                 "as_of": now_utc.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -177,6 +190,7 @@ def health():
                 "audit_writes_24h": audit_24h,
                 "halt_active": halt_active,
                 "halt_files_present": halt_files_present,
+                "halt_reasons": halt_reasons,
                 "phase": 1,
                 "phase_3_enabled": False,
                 "ok": backlog_ok and not halt_active,
