@@ -797,3 +797,121 @@ class TestTPLessStrategyExemption:
         assert len(summary_lines) == 1
         assert "1 TP-less" in summary_lines[0], f"Expected '1 TP-less' in summary: {summary_lines[0]}"
         assert "2/2" in summary_lines[0], f"Expected 2/2 covered in summary: {summary_lines[0]}"
+
+
+class TestPerMarketPositionFiltering:
+    """FIX-HC-CROSSMARKET-001: check_market filters to canonical-universe positions.
+
+    broker.get_positions() returns ALL account positions across all markets.
+    The healthcheck must filter via derive_universe(ticker) to avoid evaluating
+    each position 3 times (once per market scan).
+    """
+
+    def test_fcx_only_classified_in_commodity_etfs_scan(self, tmp_path, monkeypatch):
+        """FCX should appear ONLY in commodity_etfs scan, not sp500 or sector_etfs."""
+        from scripts import healthcheck_tp_coverage as hc
+
+        # Setup state files (only FCX exists, in commodity_etfs)
+        monkeypatch.setattr(hc, "_ATLAS_ROOT", tmp_path)
+        state_dir = tmp_path / "brokers" / "state"
+        state_dir.mkdir(parents=True)
+        (state_dir / "live_commodity_etfs.json").write_text(
+            json.dumps({"positions": [{"ticker": "FCX", "strategy": "connors_rsi2"}]})
+        )
+        (state_dir / "live_sp500.json").write_text(json.dumps({"positions": []}))
+        (state_dir / "live_sector_etfs.json").write_text(json.dumps({"positions": []}))
+
+        # Stub config
+        def _fake_config(market_id):
+            return {"strategies": {"strategies": {
+                "connors_rsi2": {"profit_target_atr_mult": 0, "atr_stop_mult": 1.0},
+            }}}
+        import utils.config
+        monkeypatch.setattr(utils.config, "get_active_config", _fake_config)
+
+        # Mock broker — Alpaca returns ALL broker positions regardless of market_id
+        class _Pos:
+            def __init__(self, ticker, strategy=""):
+                self.ticker = ticker
+                self.strategy = strategy
+
+        class _Order:
+            def __init__(self, ticker, side, order_type, status="held", order_class=None):
+                self.ticker = ticker
+                from enum import Enum
+                class _S(Enum):
+                    SELL = "SELL"
+                self.side = _S.SELL
+                self.raw = {"order_type": order_type, "status": status,
+                            "order_class": order_class or ""}
+
+        class _StubBroker:
+            def connect(self): return True
+            def get_positions(self):
+                # Alpaca returns ALL broker positions across all markets
+                return [_Pos("FCX", "connors_rsi2")]
+            def get_open_orders(self):
+                return [_Order("FCX", "SELL", "stop")]
+
+        from brokers import registry
+        monkeypatch.setattr(registry, "get_live_broker", lambda cfg: _StubBroker())
+
+        hc._TP_LESS_CACHE.clear()
+
+        # commodity_etfs scan should INCLUDE FCX (canonical match)
+        results_ce, err = hc.check_market("commodity_etfs")
+        assert err is None
+        assert len(results_ce) == 1
+        assert results_ce[0]["ticker"] == "FCX"
+
+        # sp500 scan should EXCLUDE FCX (non-canonical)
+        results_sp, err = hc.check_market("sp500")
+        assert err is None
+        assert results_sp == [], (
+            f"sp500 scan should be empty (FCX is canonical commodity_etfs), got {results_sp}"
+        )
+
+        # sector_etfs scan should EXCLUDE FCX (non-canonical)
+        results_se, err = hc.check_market("sector_etfs")
+        assert err is None
+        assert results_se == [], (
+            f"sector_etfs scan should be empty, got {results_se}"
+        )
+
+    def test_unknown_universe_kept_in_scan(self, tmp_path, monkeypatch, caplog):
+        """Position with no canonical universe is kept in any scan (logged warning)."""
+        from scripts import healthcheck_tp_coverage as hc
+
+        monkeypatch.setattr(hc, "_ATLAS_ROOT", tmp_path)
+        state_dir = tmp_path / "brokers" / "state"
+        state_dir.mkdir(parents=True)
+        (state_dir / "live_sp500.json").write_text(json.dumps({"positions": []}))
+
+        def _fake_config(market_id):
+            return {"strategies": {"strategies": {}}}
+        import utils.config
+        monkeypatch.setattr(utils.config, "get_active_config", _fake_config)
+
+        class _Pos:
+            def __init__(self, ticker, strategy=""):
+                self.ticker = ticker
+                self.strategy = strategy
+
+        class _StubBroker:
+            def connect(self): return True
+            def get_positions(self):
+                return [_Pos("ZZZNOTREAL", "")]
+            def get_open_orders(self):
+                return []
+
+        from brokers import registry
+        monkeypatch.setattr(registry, "get_live_broker", lambda cfg: _StubBroker())
+        hc._TP_LESS_CACHE.clear()
+
+        import logging
+        caplog.set_level(logging.WARNING)
+        results, err = hc.check_market("sp500")
+        assert err is None
+        # ZZZNOTREAL has no canonical universe → kept in sp500 scan
+        assert len(results) == 1
+        assert any("no canonical universe" in r.getMessage() for r in caplog.records)

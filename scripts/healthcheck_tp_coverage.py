@@ -367,6 +367,42 @@ def check_market(
         logger.info("No open positions for %s", market_id)
         return [], None
 
+    # Filter positions to those canonically belonging to this market.
+    # broker.get_positions() returns ALL account positions; we only want this
+    # market's slice (per derive_universe). Without this filter, FCX would be
+    # evaluated 3 times (once per market check) — triple noise + false alerts.
+    # FIX-HC-CROSSMARKET-001
+    from universe.membership import derive_universe
+    filtered_positions = []
+    skipped_other_market = []
+    for pos in positions:
+        canonical = derive_universe(pos.ticker)
+        if canonical == market_id:
+            filtered_positions.append(pos)
+        elif canonical is not None:
+            skipped_other_market.append((pos.ticker, canonical))
+        else:
+            # Unknown universe — keep it in this market's check (any market will do)
+            # to ensure SOME healthcheck fires. Log a warning.
+            logger.warning(
+                "healthcheck: %s has no canonical universe — keeping in %s scan",
+                pos.ticker, market_id,
+            )
+            filtered_positions.append(pos)
+
+    if skipped_other_market:
+        logger.debug(
+            "healthcheck %s: skipped %d non-canonical positions: %s",
+            market_id, len(skipped_other_market), skipped_other_market,
+        )
+
+    positions = filtered_positions
+
+    if not positions:
+        # All positions belonged to other markets — nothing to check
+        logger.info("No positions for %s after canonical filter", market_id)
+        return [], None
+
     try:
         orders = broker.get_open_orders()
     except Exception as exc:
