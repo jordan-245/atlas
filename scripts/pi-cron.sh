@@ -8,17 +8,30 @@
 # (volatility gate, config validation) that slash commands can't provide.
 # Keep these in sync with the .pi/prompts/ versions.
 #
-# Cron schedule (AEST via TZ=Australia/Brisbane in crontab):
-#   30 8  * * 1-5  /root/atlas/scripts/pi-cron.sh premarket
-#   00 08 * * 2-6  /root/atlas/scripts/pi-cron.sh postclose
-#   00 9  1 * *    /root/atlas/scripts/pi-cron.sh slippage-cal
-#   00 9  * * 6    /root/atlas/scripts/pi-cron.sh health-check
-#   55 18 * * 1-5  /root/atlas/scripts/pi-cron.sh reconcile sp500
-#   00 10 1 * *    /root/atlas/scripts/pi-cron.sh calibrate sp500
-#   00 8  * * 0    /root/atlas/scripts/pi-cron.sh rejected-signals sp500
-#   00 7  * * *   /root/atlas/scripts/cleanup_research_locks.sh   # purge research/locks/*.json >7d old
-#   00 17 * * *  python3 /root/atlas/scripts/cleanup_stale_plans.py >> /root/atlas/logs/cleanup_stale_plans.log 2>&1  # expire pending plans >14d old (17:00 AEST = 07:00 UTC)
-#   30 9  * * *   python3 /root/atlas/scripts/check_macro_freshness.py >> /root/atlas/logs/check_macro_freshness.log 2>&1  # daily macro staleness alert (09:30 UTC = 19:30 AEST)
+# Cron schedule — see /root/atlas/scripts/atlas.crontab for the canonical list.
+# Apply changes via: sudo crontab /root/atlas/scripts/atlas.crontab
+#
+# Quick reference (AEST via TZ=Australia/Brisbane):
+#   1,16,31,46 *      sync_protective_orders sp500       (offset +1 from quarter)
+#   2,17,32,47 *      sync_protective_orders commodity_etfs
+#   3,18,33,48 *      sync_protective_orders sector_etfs
+#   4,19,34,49 *      healthcheck_tp_coverage
+#   5  *              healthz_hourly                     (offset +5 from hour)
+#   0  23             compute_daily_risk                 (clean lane)
+#   30 1-7            intraday_monitor sp500/commodity   (sector at :32)
+#   0  19  * * 1-5    pi-cron.sh premarket {sp500,commodity_etfs,sector_etfs}
+#   0  8   * * 2-6    pi-cron.sh postclose {sp500,commodity_etfs,sector_etfs}
+#   0,2,5 9  * * 2-6  reconcile_positions {sp500,commodity,sector}  (already staggered)
+#   30 9  * * 2-6     reconcile_ledger {sp500,commodity,sector}
+#   15,20 23 * * 1-5  execute_approved {sp500,commodity,sector}  (15 min before US open)
+#   0  10  * * 2-6    verify_dual_write
+#   0  14             sync_broker_orders
+#   0  7              cleanup_research_locks.sh  (+ papers TTL >180d)
+#   0  17             cleanup_stale_plans
+#   30 6              up-bank up_sync.py --full-resync
+#   0  6              research/discovery/run.py
+#   30 9              check_macro_freshness
+#   0  22             healthcheck_pipelines
 #
 # Setup:
 #   1. Ensure pi is logged in: pi (interactive) — OAuth login persists in ~/.pi/agent/auth.json
@@ -305,6 +318,9 @@ NOTE: A Telegram summary is sent automatically after this workflow completes —
             # ── Weekly A/B vision review (same Saturday slot) ─────────────
             cd "$PROJECT" && python3 -m scripts.review_vision_ab --days 7 --telegram >> "$LOG_DIR/overlay_eval_$(date +%Y%m%d).log" 2>&1 || true
         fi
+
+        # ── Dual-write consistency verifier (audit item: catch drift at postclose) ─
+        python3 "$PROJECT/scripts/verify_dual_write.py" >> "$LOG_DIR/verify_dual_write.log" 2>&1 || true
         ;;
     research)
         hb "research" "started"
