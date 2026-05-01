@@ -244,6 +244,34 @@ def _do_insert(
     # Prefer broker JSON entry_date to preserve historical timing
     entry_date: str = pos.get("entry_date") or datetime.now().isoformat()
 
+    # Resolve canonical universe from ticker membership.
+    # market_id is which state-file the position was found in (operational), but
+    # the trade.universe column should reflect ticker membership (canonical).
+    # This prevents cross-market state-file ghosts from poisoning the trades table.
+    #
+    # IMPORTANT: We do NOT pass hint=market_id.  When a ticker belongs to both a
+    # static ETF universe (e.g. commodity_etfs) AND the dynamic sp500 universe
+    # (e.g. FCX is an S&P 500 constituent), derive_universe(ticker, hint="sp500")
+    # would return "sp500" because sp500 is a valid membership — exactly the bug
+    # we are fixing.  With no hint, derive_universe returns the alphabetically-first
+    # membership, which for all known cross-universe ETF tickers sorts the specific
+    # ETF universe before "sp500" (commodity_etfs < sp500, sector_etfs < sp500, etc.).
+    from universe.membership import derive_universe
+    canonical_universe = derive_universe(ticker)
+    if canonical_universe is None:
+        # Could not resolve — log + skip rather than write a wrong/blind value
+        logger.warning(
+            "Could not derive universe for %s (hint=%s) — skipping INSERT"
+            " (universe column requires non-null)",
+            ticker, market_id,
+        )
+        return False
+    if canonical_universe != market_id:
+        logger.info(
+            "Universe mismatch resolved for %s: state_file=%s canonical=%s (using canonical)",
+            ticker, market_id, canonical_universe,
+        )
+
     if dry_run:
         return True
 
@@ -257,7 +285,7 @@ def _do_insert(
                      regime_at_entry, status, config_version)
                 VALUES (?, ?, ?, 'long', ?, ?, ?, ?, NULL, 0.0, NULL, 'open', NULL)
                 """,
-                (ticker, strategy, market_id, entry_date,
+                (ticker, strategy, canonical_universe, entry_date,
                  entry_price, shares, stop_price),
             )
         logger.info("Inserted open trade: %s/%s (market=%s)", ticker, strategy, market_id)
