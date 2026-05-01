@@ -27,6 +27,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from utils.telegram import notify
+
 # ── Path bootstrap ─────────────────────────────────────────────────────────────
 _HERE = Path(__file__).resolve()
 _ATLAS_ROOT = _HERE.parent.parent
@@ -66,15 +68,6 @@ def _setup_logging(log_dir: Path) -> logging.Logger:
 
 
 # ── Telegram ───────────────────────────────────────────────────────────────────
-
-def _send_telegram(msg: str) -> None:
-    """Fire-and-forget alert; never raises."""
-    try:
-        from utils.telegram import send_message
-        send_message(msg)
-    except Exception as exc:
-        logging.getLogger(__name__).warning("Telegram alert failed: %s", exc)
-
 
 # ── Feature extraction ─────────────────────────────────────────────────────────
 
@@ -234,7 +227,7 @@ def run(
                     f"(last {days}d window) — FRED data may be stale"
                 )
                 logger.warning(msg)
-                _send_telegram(msg)
+                notify(msg, category="health")
 
     return report["ok"], report
 

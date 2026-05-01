@@ -440,6 +440,7 @@ def _log_daily_run(report: DailyReport) -> None:
 
 # ─── Telegram digest ─────────────────────────────────────────────────────────
 
+# TODO(#PERF-TG-CONSOLIDATE): rewrite to use utils.telegram.notify() if formatting can move into caller
 def _send_telegram_digest(report: DailyReport) -> None:
     """Send a formatted Telegram message with the daily discovery summary."""
     telegram_script = ATLAS_ROOT / "scripts" / "telegram_notify.py"

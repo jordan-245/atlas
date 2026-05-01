@@ -478,14 +478,15 @@ def build_sweep_plan(
 # ─── Telegram ────────────────────────────────────────────────────────────────
 
 
+# TODO(#PERF-TG-CONSOLIDATE): rewrite to use utils.telegram.notify() if formatting can move into caller
 def _try_send_telegram(text: str) -> None:
     """Attempt to send *text* via Telegram.  Never raises — failures are logged.
 
-    Uses ``utils.telegram.notify`` if available.
+    Uses ``utils.telegram.smart_notify`` if available.
     """
     try:
-        from utils.telegram import notify
-        notify(text, category="autoresearch")
+        from utils.telegram import smart_notify
+        smart_notify(text, category="autoresearch")
     except ImportError:
         logger.info("Telegram notification not configured (utils.telegram not found).")
     except Exception as exc:

@@ -82,6 +82,8 @@ except Exception as _ph_import_err:  # pragma: no cover
 
 import random
 
+from utils.telegram import notify  # noqa: E402
+
 def expand_grid(
     base_grid: Dict[str, list],
     current_best: Dict[str, Any],
@@ -517,20 +519,6 @@ def _write_heartbeat(
         }, indent=2))
     except OSError:
         pass
-
-
-def _send_telegram(message: str, level=None, category: str = "general") -> None:
-    """Best-effort smart Telegram notification.
-
-    Uses SmartNotifier for rate limiting + batching.
-    """
-    try:
-        from utils.telegram import notify, INFO
-        if level is None:
-            level = INFO
-        notify(message, level=level, category=category)
-    except Exception as e:
-        logger.warning("Telegram send failed: %s", e)
 
 
 def _should_stop() -> bool:
@@ -1255,7 +1243,7 @@ def run_sweep(
                         f"  • {imp['param']}={imp['value']} "
                         f"(Sharpe {imp['delta_sharpe']:+.4f} → {imp['new_sharpe']:.4f})"
                     )
-                _send_telegram(
+                notify(
                     f"📈 <b>{strategy_name}</b> improved! "
                     f"{result['experiments_run']} run, {result['experiments_kept']} kept\n"
                     + "\n".join(imp_lines),

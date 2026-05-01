@@ -581,6 +581,7 @@ def format_telegram_message(result: dict, fixed: bool) -> str:
     return "\n".join(lines)
 
 
+# TODO(#PERF-TG-CONSOLIDATE): rewrite to use utils.telegram.notify() if formatting can move into caller
 def send_telegram_summary(result: dict, fixed: bool) -> bool:
     """Send Telegram notification. Returns True on success."""
     try:

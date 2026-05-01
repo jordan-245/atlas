@@ -26,6 +26,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from utils.telegram import notify
+
 # ─── Project Setup ───────────────────────────────────────────────────────────
 
 PROJECT = Path(__file__).resolve().parent.parent
@@ -349,21 +351,6 @@ def write_heartbeat(phase: str, strategy: str, cycle: int, **extra):
         pass
 
 
-# ─── Telegram ───────────────────────────────────────────────────────────────
-
-def send_telegram(message: str, level=None, category: str = "general"):
-    """Best-effort smart Telegram notification.
-
-    Uses the SmartNotifier for rate limiting and batching.
-    Falls back to raw send_message if SmartNotifier fails.
-    """
-    try:
-        from utils.telegram import notify, IMPORTANT
-        if level is None:
-            level = IMPORTANT
-        notify(message, level=level, category=category)
-    except Exception as e:
-        logger.warning("Telegram failed: %s", e)
 
 
 # ─── Sweep Phase ─────────────────────────────────────────────────────────────
@@ -777,7 +764,7 @@ def main():
         pass
 
     tag = f" [P{PARTITION}]" if PARTITION is not None else ""
-    send_telegram(
+    notify(
         f"🔬 <b>Autoresearch{tag} started</b>\n"
         f"Strategies: {', '.join(STRATEGIES)}\n"
         f"Workers: {SWEEP_WORKERS}, Top-N: {SWEEP_TOP_N}\n"
@@ -831,14 +818,13 @@ def main():
         except (ImportError, AttributeError, RuntimeError):
             lb = "(failed)"
 
-        # Queue cycle summary for digest (INFO level — batched, not spammed)
-        from utils.telegram import INFO, flush_digest
+        # Cycle summary
+        from utils.telegram import flush_digest
         elapsed_h = (time.time() - session_start) / 3600
-        send_telegram(
+        notify(
             f"🔄 <b>Cycle {cycle}</b> — {cycle_time / 60:.0f}min "
             f"(sweep {result['sweep_time_s'] / 60:.0f}m + agent {result['agent_time_s'] / 60:.0f}m), "
             f"session {elapsed_h:.1f}h",
-            level=INFO,
             category="cycle",
         )
 
@@ -868,7 +854,7 @@ def main():
         pass
     tag = f" [P{PARTITION}]" if PARTITION is not None else ""
     elapsed_h = (time.time() - session_start) / 3600
-    send_telegram(
+    notify(
         f"🔬 <b>Autoresearch{tag} stopped</b>\n"
         f"Cycles: {cycle}\n"
         f"Runtime: {elapsed_h:.1f}h",

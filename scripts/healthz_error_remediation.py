@@ -134,6 +134,7 @@ def check_phase_state(conn) -> tuple[bool, dict]:
 # ── Telegram alert ────────────────────────────────────────────────────────────
 
 
+# TODO(#PERF-TG-CONSOLIDATE): rewrite to use utils.telegram.notify() if formatting can move into caller
 def send_telegram_alert(failures: list[dict], summary: dict) -> None:
     """Send a structured HTML Telegram alert listing each failing check."""
     try:

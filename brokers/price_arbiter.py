@@ -28,6 +28,7 @@ def _load_config() -> dict:
         return dict(_DEFAULT_CFG)
 
 
+# TODO(#PERF-TG-CONSOLIDATE): rewrite to use utils.telegram.notify() if formatting can move into caller
 def _send_telegram_bg(msg: str) -> None:
     """Fire-and-forget Telegram alert in a daemon thread (never blocks arbitration)."""
     def _send():

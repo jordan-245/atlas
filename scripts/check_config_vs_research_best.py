@@ -280,6 +280,7 @@ def _format_json(analysis: dict, now: datetime) -> str:
 
 # ─── Telegram ─────────────────────────────────────────────────────────────────
 
+# TODO(#PERF-TG-CONSOLIDATE): rewrite to use utils.telegram.notify() if formatting can move into caller
 def _send_telegram_alert(analysis: dict) -> bool:
     """Send Telegram alert if any overdue or aging entries exist."""
     overdue = analysis["overdue"]

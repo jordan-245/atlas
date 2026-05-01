@@ -293,6 +293,7 @@ def run_llm_loop(
         return {"status": "error", "error": str(e), "runtime_s": 0}
 
 
+# TODO(#PERF-TG-CONSOLIDATE): rewrite to use utils.telegram.notify() if formatting can move into caller
 def _send_telegram(summary: dict) -> None:
     """Send a brief Telegram notification about the LLM loop run."""
     try:

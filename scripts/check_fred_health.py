@@ -28,6 +28,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from utils.telegram import notify
+
 # ── Path bootstrap ─────────────────────────────────────────────────────────────
 _HERE = Path(__file__).resolve()
 _ATLAS_ROOT = _HERE.parent.parent
@@ -72,15 +74,6 @@ def _setup_logging(log_dir: Path) -> logging.Logger:
 
 
 # ── Telegram helper ────────────────────────────────────────────────────────────
-
-def _send_telegram(msg: str) -> None:
-    """Fire-and-forget Telegram alert; never raises."""
-    try:
-        from utils.telegram import send_message
-        send_message(msg)
-    except Exception as exc:
-        logging.getLogger(__name__).warning("Telegram alert failed: %s", exc)
-
 
 # ── Core checks ────────────────────────────────────────────────────────────────
 
@@ -238,7 +231,7 @@ def main(argv: list[str] | None = None) -> int:
         for f in failures:
             msg = f"⚠️ FRED health check failed: {f['name']} — {f['reason']}"
             logger.warning(msg)
-            _send_telegram(msg)
+            notify(msg, category="health")
 
     # ── JSON output ────────────────────────────────────────────────────────────
     if args.as_json:

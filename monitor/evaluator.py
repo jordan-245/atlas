@@ -406,6 +406,7 @@ def evaluate_all(send_telegram: bool = True) -> Dict:
     }
 
 
+# TODO(#PERF-TG-CONSOLIDATE): rewrite to use utils.telegram.notify() if formatting can move into caller
 def _send_telegram_alerts(alerts: List[Dict]):
     """Send alert summary to Telegram."""
     try:

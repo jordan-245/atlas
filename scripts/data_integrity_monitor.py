@@ -111,6 +111,7 @@ def _format_report(hits: list[dict], window_hours: int, now: datetime) -> str:
 
 # ─── Telegram ─────────────────────────────────────────────────────────────────
 
+# TODO(#PERF-TG-CONSOLIDATE): rewrite to use utils.telegram.notify() if formatting can move into caller
 def _send_telegram_alert(hits: list[dict], window_hours: int) -> bool:
     """Send Telegram alert for integrity violations."""
     if not hits:

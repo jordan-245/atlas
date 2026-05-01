@@ -1388,6 +1388,7 @@ def format_telegram_message(
     return "\n".join(lines)
 
 
+# TODO(#PERF-TG-CONSOLIDATE): rewrite to use utils.telegram.notify() if formatting can move into caller
 def send_telegram_summary(
     market_results: list[dict],
     trade_date: str,
