@@ -470,3 +470,45 @@ Remaining wrappers (all marked with `# TODO(#PERF-TG-CONSOLIDATE)`):
 - `scripts/reconcile_positions.py:send_telegram_summary(...)` — summary formatter
 - `brokers/price_arbiter.py:_send_telegram_bg(msg)` — threading/dedup logic
 - `research/llm_loop_runner.py:_send_telegram(summary: dict)` — dict-to-text formatting
+
+## #PERF-BT-FOLDS — Walk-forward backtest fold parallelization (DEFERRED)
+
+The 2026-05-01 efficiency audit identified fold execution in `backtest/engine.py` as a
+significant compute bottleneck — fold loops run sequentially even when folds are
+mathematically independent. Per the audit's "simplest fix" rule, the team
+considered adding a `--parallel-folds` flag wrapping fold execution in
+`concurrent.futures.ProcessPoolExecutor`. This was deferred because:
+
+1. **Statelessness is not formalized** — no decorator or marker indicates which
+   strategies have shared mutable state across folds. We'd need an audit first.
+2. **Module-level caches** in `indicators/` and `data/cache/*.parquet` reads may
+   not be process-safe. Pickling and re-loading would defeat the cache benefit.
+3. **SQLite connections don't pickle** — the backtest engine shares a connection
+   that ProcessPoolExecutor would have to recreate per worker.
+4. **WalkForwardSplitter state** carries across folds in some strategies (e.g.
+   warm-up periods that overlap fold boundaries).
+5. **Silent corruption risk** is real — research output is the system's
+   knowledge base and a subtle race condition could pollute days of sweeps
+   before being noticed.
+
+### Recommended approach for round 2
+
+- Phase A (audit): grep for module-level `_cache = {}`, `@lru_cache`, and global
+  state across `strategies/`, `indicators/`, and `backtest/`. Build a markdown
+  table of which strategies are pickle-safe and which aren't.
+- Phase B (instrument): add a per-fold timing dict to backtest output so we
+  know the actual ROI of parallelization (currently we're guessing).
+- Phase C (smaller scope first): implement parallel folds for ONE strategy
+  (the simplest stateless one — likely `mean_reversion` or `consecutive_down_days`).
+  Validate against the same strategy's serial result for byte-equality. Only
+  then expand.
+- Phase D (general): add a `parallel_safe: bool` class attribute on
+  `BaseStrategy` and propagate to `--parallel-folds`. Default False.
+
+### Out of scope for this audit because
+
+  - Time budget for the audit is "simplest fix" — this is L-effort.
+  - Risk-asymmetric: a wrong fix corrupts research; a deferred fix only
+    leaves a known-slow path that already works.
+
+Owner: TBD. Estimated 2-3 sessions of focused work.
