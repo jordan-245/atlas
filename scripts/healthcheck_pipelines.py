@@ -380,11 +380,10 @@ def run_once(
     Returns:
         0 if all healthy, 1 if any stale (alert fired or --no-alert with stale).
     """
-    if not quiet:
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        )
+    logging.basicConfig(
+        level=logging.WARNING if quiet else logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
 
     now = _now if _now is not None else datetime.now(timezone.utc)
     active_pipelines = pipelines if pipelines is not None else PIPELINES
@@ -409,8 +408,15 @@ def run_once(
         else:
             logger.debug("OK %s (days_ago=%.2f)", name, days_ago)
 
+    n_stale = len(stale_results)
+    n_healthy = len(active_pipelines) - n_stale
+    n_total = len(active_pipelines)
+    logger.warning(
+        "healthcheck_pipelines complete: %d/%d healthy, %d stale",
+        n_healthy, n_total, n_stale,
+    )
+
     if not stale_results:
-        logger.info("All %d pipelines are fresh.", len(active_pipelines))
         return 0
 
     # Fire consolidated alert (respects cooldown)
