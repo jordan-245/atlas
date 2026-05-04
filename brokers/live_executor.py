@@ -2809,6 +2809,32 @@ class LiveExecutor:
         except (RuntimeError, ValueError, OSError, KeyError, AttributeError):
             _recon_exit_regime = None
 
+        # Hoist LivePortfolio construction out of per-order loop.
+        # A fresh LivePortfolio has broker_data_valid=False which causes
+        # save_state() to be silently skipped.  Inject the already-connected
+        # broker and call _refresh_from_broker() so the flag is correctly set.
+        from brokers.live_portfolio import LivePortfolio as _LP
+        _market_id = self.config.get("market_id", "sp500")
+        _portfolio = _LP(self.config, market_id=_market_id)
+        _portfolio_valid = False
+        try:
+            if self._broker:
+                _portfolio._broker = self._broker
+                _portfolio._connected = True
+                _portfolio._refresh_from_broker()
+                _portfolio_valid = _portfolio.broker_data_valid
+                if not _portfolio_valid:
+                    logger.warning(
+                        "reconcile_exit_fills: LivePortfolio broker refresh returned "
+                        "invalid data for %s — closed_trade writes will be skipped "
+                        "(TradeLedger still updated)", _market_id,
+                    )
+        except Exception as _lp_init_exc:
+            logger.warning(
+                "reconcile_exit_fills: LivePortfolio init failed (non-fatal): %s",
+                _lp_init_exc,
+            )
+
         reconciled = []
         for order in orders:
             order_id = str(order.id)
@@ -2915,32 +2941,32 @@ class LiveExecutor:
                     "Failed to reconcile exit for %s: %s", ticker, e,
                 )
 
-            # Also record to LivePortfolio.closed_trades (broker state JSON)
-            try:
-                from brokers.live_portfolio import LivePortfolio
-                _market_id = self.config.get("market_id", "sp500")
-                _portfolio = LivePortfolio(self.config, market_id=_market_id)
-                _closed_trade = {
-                    "ticker": ticker,
-                    "strategy": strategy,
-                    "entry_price": entry_price,
-                    "exit_price": fill_price,
-                    "shares": qty,
-                    "pnl": pnl,
-                    "pnl_pct": pnl_pct,
-                    "holding_days": entry.get("holding_days"),
-                    "exit_reason": reason,
-                    "exit_date": str(getattr(order, "filled_at", ""))[:10],
-                    "order_id": order_id,
-                    "reconciled": True,
-                }
-                _portfolio.record_closed_trade(_closed_trade)
-                logger.debug("Recorded reconciled exit to LivePortfolio: %s", ticker)
-            except Exception as _port_exc:
-                logger.error(
-                    "Failed to record reconciled exit to LivePortfolio for %s: %s",
-                    ticker, _port_exc, exc_info=True,
-                )
+            # Also record to LivePortfolio.closed_trades (broker state JSON).
+            # _portfolio is constructed once above the loop with the live broker
+            # already injected — so broker_data_valid=True when the broker is healthy.
+            if _portfolio_valid:
+                try:
+                    _closed_trade = {
+                        "ticker": ticker,
+                        "strategy": strategy,
+                        "entry_price": entry_price,
+                        "exit_price": fill_price,
+                        "shares": qty,
+                        "pnl": pnl,
+                        "pnl_pct": pnl_pct,
+                        "holding_days": entry.get("holding_days"),
+                        "exit_reason": reason,
+                        "exit_date": str(getattr(order, "filled_at", ""))[:10],
+                        "order_id": order_id,
+                        "reconciled": True,
+                    }
+                    _portfolio.record_closed_trade(_closed_trade)
+                    logger.debug("Recorded reconciled exit to LivePortfolio: %s", ticker)
+                except Exception as _port_exc:
+                    logger.error(
+                        "Failed to record reconciled exit to LivePortfolio for %s: %s",
+                        ticker, _port_exc, exc_info=True,
+                    )
 
         if reconciled:
             logger.info(
@@ -2992,3 +3018,5 @@ class LiveExecutor:
             "entries": [],
             "exits": [],
         }
+
+# TEST_MARKER_1234
