@@ -5,6 +5,26 @@ Runs a quick backtest on last 6 months of data, compares to stored baseline,
 and flags degradation. Exits 0 (healthy) or 1 (degraded).
 
 Usage: python3 scripts/health_check.py
+
+NOTE — INFORMATIONAL ONLY: this script is not consumed by alerters or watchdogs.
+The BASELINE strategy mix below (v9.3 robust blend) predates the live v3.2.1 config
+which runs momentum_breakout + connors_rsi2 only.  build_strategies() instantiates
+only the 4 legacy strategies (mean_reversion / trend_following / bb_squeeze /
+opening_gap), all of which are disabled in config/active/sp500.json — so the
+sp500 backtest always produces 0 trades, CAGR=0%, and trips the DEGRADED flag.
+
+The only active consumers of this file are:
+  - _check_overlay_backlog()  — imported by healthz_hourly.sh (unrelated to DEGRADED)
+  - check_equity_config_sum() — imported by check_equity_config_sum.py (unrelated to DEGRADED)
+
+auto_reoptimize.py reads the health_check JSON and would act on DEGRADED, but that
+script has no cron entry, systemd timer, or caller — it is not scheduled.
+
+Do NOT update the BASELINE constant in response to DEGRADED output; treat any
+DEGRADED for sp500 as a stale-comparison artifact.  Source of truth for the live
+strategy mix is config/active/<market>.json.
+
+Last reviewed: 2026-05-04 (Validation audit closeout — Diag B).
 """
 import sys, json, time, argparse
 from pathlib import Path
