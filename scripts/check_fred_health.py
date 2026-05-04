@@ -28,13 +28,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from utils.telegram import notify
-
 # ── Path bootstrap ─────────────────────────────────────────────────────────────
 _HERE = Path(__file__).resolve()
 _ATLAS_ROOT = _HERE.parent.parent
 if str(_ATLAS_ROOT) not in sys.path:
     sys.path.insert(0, str(_ATLAS_ROOT))
+
+from utils.telegram import notify
 
 # ── Optional top-level import (enables test patching) ────────────────────────
 # Imported at module level so tests can patch scripts.check_fred_health.FREDClient.
