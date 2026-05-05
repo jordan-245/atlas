@@ -46,4 +46,10 @@ export const qk = {
     filterOptions: () => [...qk.all, 'pnl', 'filter-options'] as const,
     trades: (filters: Record<string, string>) => [...qk.all, 'pnl', 'trades', filters] as const,
   },
+  admin: {
+    all: () => [...qk.all, 'admin'] as const,
+    universes: () => [...qk.admin.all(), 'universes'] as const,
+    strategies: () => [...qk.admin.all(), 'strategies'] as const,
+    audit: (params: Record<string, unknown> = {}) => [...qk.admin.all(), 'audit', params] as const,
+  },
 } as const
