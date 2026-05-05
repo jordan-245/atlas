@@ -5,24 +5,24 @@
     {
       "ticker": "XLE",
       "strategy": "momentum_breakout",
-      "entry_date": "2026-05-01",
+      "entry_date": "2026-05-05",
       "entry_price": 59.06,
       "shares": 8,
       "stop_price": 57.56,
       "order_id": "",
       "stop_order_id": "a52b73c2-2a71-44f6-825f-aa3d6c095cf4",
-      "tp_order_id": "1e28b0e9-c22f-4133-99e1-d4e9c1863741"
+      "tp_order_id": ""
     },
     {
       "ticker": "XLI",
       "strategy": "momentum_breakout",
-      "entry_date": "2026-04-30",
+      "entry_date": "2026-05-05",
       "entry_price": 173.97,
       "shares": 9,
       "stop_price": 170.07,
       "order_id": "",
       "stop_order_id": "5d4cc2c2-4115-4e1e-b480-c145f6f29e3f",
-      "tp_order_id": "f5e9b55c-a9ec-4ccd-862b-bd999eaa9bba"
+      "tp_order_id": ""
     }
   ],
   "closed_trades": [],
@@ -169,11 +169,110 @@
           "holding_days": -1
         }
       ]
+    },
+    {
+      "date": "2026-05-04",
+      "equity": 3191.73,
+      "cash": 1178.86,
+      "positions_value": 2012.87,
+      "num_positions": 2,
+      "total_realized_pnl": 0,
+      "total_closed_trades": 0,
+      "positions": [
+        {
+          "ticker": "XLE",
+          "strategy": "momentum_breakout",
+          "shares": 8,
+          "entry_price": 59.06,
+          "current_price": 59.39,
+          "unrealized_pnl": 2.64,
+          "mae": 0.0,
+          "mfe": 0.56,
+          "holding_days": -1
+        },
+        {
+          "ticker": "XLI",
+          "strategy": "momentum_breakout",
+          "shares": 9,
+          "entry_price": 173.97,
+          "current_price": 170.98,
+          "unrealized_pnl": -26.91,
+          "mae": -1.72,
+          "mfe": 0.0,
+          "holding_days": -1
+        }
+      ]
+    },
+    {
+      "date": "2026-05-05",
+      "equity": 3191.73,
+      "cash": 1178.86,
+      "positions_value": 2012.87,
+      "num_positions": 2,
+      "total_realized_pnl": 0,
+      "total_closed_trades": 0,
+      "positions": [
+        {
+          "ticker": "XLE",
+          "strategy": "momentum_breakout",
+          "shares": 8,
+          "entry_price": 59.06,
+          "current_price": 59.39,
+          "unrealized_pnl": 2.64,
+          "mae": 0.0,
+          "mfe": 0.56,
+          "holding_days": 0
+        },
+        {
+          "ticker": "XLI",
+          "strategy": "momentum_breakout",
+          "shares": 9,
+          "entry_price": 173.97,
+          "current_price": 170.98,
+          "unrealized_pnl": -26.91,
+          "mae": -1.72,
+          "mfe": 0.0,
+          "holding_days": 0
+        }
+      ]
+    },
+    {
+      "date": "2026-05-05",
+      "equity": 3191.73,
+      "cash": 1178.86,
+      "positions_value": 2012.87,
+      "num_positions": 2,
+      "total_realized_pnl": 0,
+      "total_closed_trades": 0,
+      "positions": [
+        {
+          "ticker": "XLE",
+          "strategy": "momentum_breakout",
+          "shares": 8,
+          "entry_price": 59.06,
+          "current_price": 59.39,
+          "unrealized_pnl": 2.64,
+          "mae": 0.0,
+          "mfe": 0.56,
+          "holding_days": 0
+        },
+        {
+          "ticker": "XLI",
+          "strategy": "momentum_breakout",
+          "shares": 9,
+          "entry_price": 173.97,
+          "current_price": 170.98,
+          "unrealized_pnl": -26.91,
+          "mae": -1.72,
+          "mfe": 0.0,
+          "holding_days": 0
+        }
+      ]
     }
   ],
-  "daily_high_water": 1791.6200000000001,
-  "daily_high_water_date": "2026-05-01",
+  "daily_high_water": 2637.57,
+  "daily_high_water_date": "2026-05-05",
   "halted": false,
-  "halt_reason": "",
-  "last_saved": "2026-05-04T11:06:25.749331"
+  "halt_reason": "Daily drawdown 49.78% >= 2.00%",
+  "last_saved": "2026-05-05T15:06:06.847862"
 }
