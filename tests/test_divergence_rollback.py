@@ -1,0 +1,477 @@
+#!/usr/bin/env python3
+"""Tests for Sub-phase 1.4: auto-rollback on divergence breach.
+
+Covers scripts/check_live_research_divergence.py consecutive-day breach
+tracking, PAPER auto-rollback, LIVE escalation, idempotency, and --no-rollback.
+
+Run:
+    python3 -m pytest tests/test_divergence_rollback.py -v --timeout=30
+"""
+from __future__ import annotations
+
+import json
+import sys
+from datetime import date, timedelta
+from pathlib import Path
+from typing import Any, Dict, List
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+ATLAS_ROOT = Path(__file__).resolve().parent.parent
+if str(ATLAS_ROOT) not in sys.path:
+    sys.path.insert(0, str(ATLAS_ROOT))
+
+import scripts.check_live_research_divergence as _mod
+from scripts.check_live_research_divergence import (
+    _compute_updated_entry,
+    _load_state,
+    _save_state_atomic,
+    process_rollbacks,
+    run_divergence_check,
+    ROLLBACK_CONSECUTIVE_DAYS,
+)
+from monitor.strategy_lifecycle import PromotionState
+
+
+# ── Date helpers ───────────────────────────────────────────────────────────────
+
+def _today() -> str:
+    return date.today().isoformat()
+
+
+def _yesterday() -> str:
+    return (date.today() - timedelta(days=1)).isoformat()
+
+
+def _days_ago(n: int) -> str:
+    return (date.today() - timedelta(days=n)).isoformat()
+
+
+# ── Shared fixtures ────────────────────────────────────────────────────────────
+
+@pytest.fixture()
+def state_file(tmp_path: Path) -> Path:
+    """Temporary divergence state file (not pre-created — matches prod behaviour)."""
+    return tmp_path / "divergence_state.json"
+
+
+@pytest.fixture()
+def rollback_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Redirect PROMOTION_LOG_PATH to a temp file so tests don't touch prod."""
+    log = tmp_path / "promotion_log.json"
+    monkeypatch.setattr(_mod, "PROMOTION_LOG_PATH", log)
+    return log
+
+
+@pytest.fixture()
+def no_telegram(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    """Patch utils.telegram.notify to prevent real sends."""
+    mock = MagicMock(return_value=True)
+    monkeypatch.setattr("utils.telegram.notify", mock, raising=False)
+    return mock
+
+
+def _make_breach_entry(
+    streak: int, last_check: str, last_breach: str, state: str = "PAPER"
+) -> Dict[str, Any]:
+    """Build a per-combo state dict simulating an existing breach streak."""
+    return {
+        "consecutive_breach_days": streak,
+        "last_breach_date": last_breach,
+        "last_check_date": last_check,
+        "current_state": state,
+    }
+
+
+def _seed_lifecycle(db_conn, strategy: str, universe: str, state: str) -> None:
+    """Seed a row into strategy_lifecycle in the isolated test DB."""
+    from datetime import datetime, timezone
+    entered_at = datetime.now(timezone.utc).isoformat()
+    db_conn.execute(
+        "INSERT OR REPLACE INTO strategy_lifecycle "
+        "(strategy, universe, state, entered_state_at) VALUES (?, ?, ?, ?)",
+        (strategy, universe, state, entered_at),
+    )
+    db_conn.commit()
+
+
+# ── Pnl data that produces gap > 0.5 vs research_sharpe=1.0 ──────────────────
+# live_sharpe ≈ 0.44 → gap ≈ 0.56 > 0.5
+_BREACH_PNL = [0.10, 0.05, -0.10, 0.15, -0.05, 0.08, -0.02, 0.12, 0.20, -0.08]
+
+# Pnl data that produces gap < 0.5 (live_sharpe ≈ 1.05 → gap ≈ −0.05)
+_CLEAN_PNL = [0.20, 0.15, 0.18, 0.22, 0.10, 0.17, 0.19, 0.14, 0.21, 0.16]
+
+_STRATEGY = "momentum_breakout"
+_UNIVERSE = "sp500"
+_KEY = f"{_STRATEGY}:{_UNIVERSE}"
+_RESEARCH_ROW = [
+    {
+        "strategy": _STRATEGY,
+        "universe": _UNIVERSE,
+        "sharpe": 1.0,
+        "trades": 10,
+        "updated_at": _today(),
+    }
+]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Test 1 — consecutive breach counter increments
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestConsecutiveBreachCounter:
+    """Unit tests for _compute_updated_entry streak logic."""
+
+    def test_counter_increments_on_back_to_back_breach(self) -> None:
+        """Day1 breach (streak=1 yesterday) → day2 breach → streak becomes 2."""
+        today = _today()
+        yesterday = _yesterday()
+        entry = _make_breach_entry(streak=1, last_check=yesterday, last_breach=yesterday)
+
+        updated = _compute_updated_entry(entry, is_breach=True, today_str=today, yesterday_str=yesterday)
+
+        assert updated["consecutive_breach_days"] == 2
+        assert updated["last_breach_date"] == today
+        assert updated["last_check_date"] == today
+
+    def test_counter_increments_from_3_to_4(self) -> None:
+        """Existing streak of 3 → 4 after another breach day."""
+        today = _today()
+        yesterday = _yesterday()
+        entry = _make_breach_entry(streak=3, last_check=yesterday, last_breach=yesterday)
+
+        updated = _compute_updated_entry(entry, is_breach=True, today_str=today, yesterday_str=yesterday)
+
+        assert updated["consecutive_breach_days"] == 4
+
+    def test_new_breach_after_no_prior_state_starts_at_1(self) -> None:
+        """Empty entry + breach → streak = 1."""
+        today = _today()
+        yesterday = _yesterday()
+        updated = _compute_updated_entry({}, is_breach=True, today_str=today, yesterday_str=yesterday)
+
+        assert updated["consecutive_breach_days"] == 1
+        assert updated["last_breach_date"] == today
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Test 2 — reset on clean day
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestResetOnCleanDay:
+    """Streak resets when gap falls below threshold."""
+
+    def test_counter_resets_on_clean_day(self) -> None:
+        """Streak at 3 → clean day → counter becomes 0."""
+        today = _today()
+        yesterday = _yesterday()
+        entry = _make_breach_entry(streak=3, last_check=yesterday, last_breach=yesterday)
+
+        updated = _compute_updated_entry(entry, is_breach=False, today_str=today, yesterday_str=yesterday)
+
+        assert updated["consecutive_breach_days"] == 0
+        assert updated["last_check_date"] == today
+        # last_breach_date is NOT updated on a clean day
+        assert updated["last_breach_date"] == yesterday
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Test 3 — PAPER rollback fires at 5 consecutive days
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestPaperRollback:
+    """Integration test: PAPER → RESEARCH rollback after 5-day breach."""
+
+    def test_paper_rollback_fires_at_5_consecutive_days(
+        self, state_file: Path, rollback_log: Path, no_telegram: MagicMock
+    ) -> None:
+        """5th consecutive breach triggers PAPER → RESEARCH via real lifecycle DB."""
+        today = _today()
+        yesterday = _yesterday()
+
+        # Pre-seed state: 4 days of breach (yesterday was the 4th)
+        pre_state = {
+            _KEY: _make_breach_entry(streak=4, last_check=yesterday, last_breach=yesterday),
+        }
+        _save_state_atomic(pre_state, state_file)
+
+        # Seed PAPER row in the isolated lifecycle DB
+        from db.atlas_db import get_db
+        with get_db() as conn:
+            _seed_lifecycle(conn, _STRATEGY, _UNIVERSE, "PAPER")
+
+        with (
+            patch("scripts.check_live_research_divergence._fetch_research_best_rows",
+                  return_value=_RESEARCH_ROW),
+            patch("scripts.check_live_research_divergence._fetch_live_trades",
+                  return_value=_BREACH_PNL),
+        ):
+            rc = run_divergence_check(
+                gap_threshold=0.5,
+                state_file=state_file,
+                no_rollback=False,
+                dry_run_telegram=True,
+                no_telegram=False,
+                today=today,
+            )
+
+        assert rc == 0
+
+        # Promotion state should now be RESEARCH
+        from monitor.strategy_lifecycle import get_state
+        assert get_state(_STRATEGY, _UNIVERSE) == PromotionState.RESEARCH
+
+        # Rollback log entry written
+        assert rollback_log.exists()
+        entries = json.loads(rollback_log.read_text())
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry["from_state"] == "PAPER"
+        assert entry["to_state"] == "RESEARCH"
+        assert entry["strategy"] == _STRATEGY
+        assert entry["universe"] == _UNIVERSE
+
+        # Streak reset to 0 in state file after rollback
+        saved = _load_state(state_file)
+        assert saved[_KEY]["consecutive_breach_days"] == 0
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Test 4 — no rollback at 4 consecutive days
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestPaperNoRollbackAt4Days:
+    def test_no_rollback_at_4_consecutive_days(
+        self, state_file: Path, rollback_log: Path
+    ) -> None:
+        """Streak reaches 4 today → no transition fired (threshold is 5)."""
+        today = _today()
+        yesterday = _yesterday()
+
+        # Pre-seed state: 3 days of breach (yesterday was 3rd)
+        pre_state = {
+            _KEY: _make_breach_entry(streak=3, last_check=yesterday, last_breach=yesterday),
+        }
+        _save_state_atomic(pre_state, state_file)
+
+        # Seed PAPER row in the isolated lifecycle DB
+        from db.atlas_db import get_db
+        with get_db() as conn:
+            _seed_lifecycle(conn, _STRATEGY, _UNIVERSE, "PAPER")
+
+        with (
+            patch("scripts.check_live_research_divergence._fetch_research_best_rows",
+                  return_value=_RESEARCH_ROW),
+            patch("scripts.check_live_research_divergence._fetch_live_trades",
+                  return_value=_BREACH_PNL),
+        ):
+            rc = run_divergence_check(
+                gap_threshold=0.5,
+                state_file=state_file,
+                no_rollback=False,
+                dry_run_telegram=True,
+                no_telegram=True,
+                today=today,
+            )
+
+        assert rc == 0
+
+        # Promotion state should remain PAPER (no transition yet)
+        from monitor.strategy_lifecycle import get_state
+        assert get_state(_STRATEGY, _UNIVERSE) == PromotionState.PAPER
+
+        # No rollback log written
+        assert not rollback_log.exists()
+
+        # Streak should have incremented to 4
+        saved = _load_state(state_file)
+        assert saved[_KEY]["consecutive_breach_days"] == 4
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Test 5 — intermittent breach resets counter
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestIntermittentBreach:
+    def test_intermittent_breach_resets_counter(self) -> None:
+        """Unit test: streak at 3, clean day today → counter resets to 0."""
+        today = _today()
+        yesterday = _yesterday()
+        entry = _make_breach_entry(streak=3, last_check=yesterday, last_breach=yesterday)
+
+        updated = _compute_updated_entry(entry, is_breach=False, today_str=today, yesterday_str=yesterday)
+
+        assert updated["consecutive_breach_days"] == 0
+
+    def test_skipped_day_resets_streak_even_on_breach(self) -> None:
+        """Breach today but last check was 2+ days ago → streak broken → set to 1."""
+        today = _today()
+        yesterday = _yesterday()
+        two_days_ago = _days_ago(2)
+
+        entry = _make_breach_entry(streak=3, last_check=two_days_ago, last_breach=two_days_ago)
+
+        updated = _compute_updated_entry(entry, is_breach=True, today_str=today, yesterday_str=yesterday)
+
+        # Streak broken by the skip — new streak starts at 1
+        assert updated["consecutive_breach_days"] == 1
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Test 6 — LIVE state: escalation only, no promotion state change
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestLiveStateEscalation:
+    """LIVE strategies get Telegram alert only — promotion state unchanged."""
+
+    _LIVE_STRATEGY = "trend_following"
+    _LIVE_UNIVERSE = "sp500"
+    _LIVE_KEY = "trend_following:sp500"
+    _LIVE_ROW = [
+        {
+            "strategy": "trend_following",
+            "universe": "sp500",
+            "sharpe": 1.0,
+            "trades": 10,
+            "updated_at": _today(),
+        }
+    ]
+
+    def test_live_5_day_breach_alert_no_transition(
+        self, state_file: Path, rollback_log: Path
+    ) -> None:
+        """5 consecutive breach days for LIVE → alert emitted, state stays LIVE."""
+        today = _today()
+        yesterday = _yesterday()
+
+        # Pre-seed state: 4 days breach
+        pre_state = {
+            self._LIVE_KEY: _make_breach_entry(streak=4, last_check=yesterday, last_breach=yesterday, state="LIVE"),
+        }
+        _save_state_atomic(pre_state, state_file)
+
+        # Seed LIVE row in the isolated lifecycle DB
+        from db.atlas_db import get_db
+        with get_db() as conn:
+            _seed_lifecycle(conn, self._LIVE_STRATEGY, self._LIVE_UNIVERSE, "LIVE")
+
+        with (
+            patch("scripts.check_live_research_divergence._fetch_research_best_rows",
+                  return_value=self._LIVE_ROW),
+            patch("scripts.check_live_research_divergence._fetch_live_trades",
+                  return_value=_BREACH_PNL),
+        ):
+            rc = run_divergence_check(
+                gap_threshold=0.5,
+                state_file=state_file,
+                no_rollback=False,
+                dry_run_telegram=True,   # print alert, don't send
+                no_telegram=True,
+                today=today,
+            )
+
+        assert rc == 0
+
+        # Promotion state must remain LIVE (no transition)
+        from monitor.strategy_lifecycle import get_state
+        assert get_state(self._LIVE_STRATEGY, self._LIVE_UNIVERSE) == PromotionState.LIVE
+
+        # No rollback log entry (escalation only)
+        assert not rollback_log.exists()
+
+        # Streak should now be 5 in state file (kept — not reset for LIVE)
+        saved = _load_state(state_file)
+        assert saved[self._LIVE_KEY]["consecutive_breach_days"] == 5
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Test 7 — idempotent same-day run
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestIdempotency:
+    def test_same_day_run_is_no_op(self, state_file: Path) -> None:
+        """Second run on the same calendar day exits immediately (no DB calls)."""
+        today = _today()
+
+        # Pre-seed state as already run today
+        existing = {"_last_run_date": today}
+        _save_state_atomic(existing, state_file)
+
+        compute_called = []
+
+        def _spy_compute(*a: Any, **kw: Any) -> List:
+            compute_called.append(True)
+            return []
+
+        with (
+            patch("scripts.check_live_research_divergence.compute_divergences",
+                  side_effect=_spy_compute),
+        ):
+            rc = run_divergence_check(
+                state_file=state_file,
+                dry_run_telegram=True,
+                no_telegram=True,
+                today=today,
+            )
+
+        assert rc == 0
+        # compute_divergences should NOT have been called
+        assert compute_called == [], "Second run must be a no-op (idempotency)"
+
+        # State file unchanged
+        saved = _load_state(state_file)
+        assert saved["_last_run_date"] == today
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Test 8 — --no-rollback flag prevents transition
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestNoRollbackFlag:
+    def test_no_rollback_prevents_transition_at_5_days(
+        self, state_file: Path, rollback_log: Path
+    ) -> None:
+        """--no-rollback: streak reaches 5, but no transition and no log entry."""
+        today = _today()
+        yesterday = _yesterday()
+
+        # Pre-seed: 4 consecutive breach days (5th would normally trigger rollback)
+        pre_state = {
+            _KEY: _make_breach_entry(streak=4, last_check=yesterday, last_breach=yesterday),
+        }
+        _save_state_atomic(pre_state, state_file)
+
+        # Seed PAPER row in isolated DB
+        from db.atlas_db import get_db
+        with get_db() as conn:
+            _seed_lifecycle(conn, _STRATEGY, _UNIVERSE, "PAPER")
+
+        with (
+            patch("scripts.check_live_research_divergence._fetch_research_best_rows",
+                  return_value=_RESEARCH_ROW),
+            patch("scripts.check_live_research_divergence._fetch_live_trades",
+                  return_value=_BREACH_PNL),
+        ):
+            rc = run_divergence_check(
+                gap_threshold=0.5,
+                state_file=state_file,
+                no_rollback=True,       # ← key: no rollback
+                dry_run_telegram=True,
+                no_telegram=True,
+                today=today,
+            )
+
+        assert rc == 0
+
+        # Promotion state should remain PAPER
+        from monitor.strategy_lifecycle import get_state
+        assert get_state(_STRATEGY, _UNIVERSE) == PromotionState.PAPER
+
+        # No log entry written
+        assert not rollback_log.exists()
+
+        # Counter should have incremented to 5 (tracking still works)
+        saved = _load_state(state_file)
+        assert saved[_KEY]["consecutive_breach_days"] == 5
