@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { useAdminUniverses, useAdminStrategies } from '../../api/admin-queries'
+import { useLifecycle } from '../../api/lifecycle'
 import { SectionBoundary } from '../layout/SectionBoundary'
 import { UniverseRow } from './UniverseRow'
 import { StrategyRow } from './StrategyRow'
 import { RecentChangesPanel } from './RecentChangesPanel'
 import type { StrategyAdminRow } from '../../api/admin-types'
+import type { LifecycleRow } from '../../api/lifecycle'
 
 function UniversesSection() {
   const { data, isLoading, error } = useAdminUniverses(true)
@@ -28,6 +30,10 @@ function UniversesSection() {
 
 function StrategiesSection() {
   const { data, isLoading, error } = useAdminStrategies(true)
+
+  // Fetch lifecycle data in parallel — lifecycle rows are optional (degrade gracefully)
+  const { data: lcData } = useLifecycle(true)
+
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
   if (isLoading) {
@@ -43,6 +49,12 @@ function StrategiesSection() {
         Failed: {(error as Error).message}
       </div>
     )
+  }
+
+  // Build lifecycle lookup map: "${strategy}.${universe}" → LifecycleRow
+  const lcMap: Record<string, LifecycleRow> = {}
+  for (const lr of lcData?.rows ?? []) {
+    lcMap[`${lr.strategy}.${lr.universe}`] = lr
   }
 
   // Group by universe
@@ -78,7 +90,11 @@ function StrategiesSection() {
               {open && (
                 <div className="space-y-1 mt-1 pl-4">
                   {rows.map((s) => (
-                    <StrategyRow key={`${s.market_id}.${s.strategy}`} row={s} />
+                    <StrategyRow
+                      key={`${s.market_id}.${s.strategy}`}
+                      row={s}
+                      lifecycleRow={lcMap[`${s.strategy}.${s.market_id}`]}
+                    />
                   ))}
                 </div>
               )}

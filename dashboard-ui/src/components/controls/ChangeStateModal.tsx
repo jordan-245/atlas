@@ -10,7 +10,10 @@
  */
 
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { fmtSignedCcy } from '../../lib/format'
+import { fmtSignedCcy, fmtNum } from '../../lib/format'
+import { transition as lifecycleTransition, promotePaper } from '../../api/lifecycle'
+import { ApiError } from '../../api/client'
+import type { LifecycleActionType, LifecycleRow, LifecycleState, PromotionResponse } from '../../api/lifecycle'
 
 // ─── Public types ─────────────────────────────────────────────
 
@@ -536,6 +539,436 @@ export function ChangeStateModal(props: ChangeStateModalProps) {
 
         </div>{/* end form steps */}
       </div>{/* end modal box */}
+    </div>
+  )
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// LifecycleTransitionModal — lifecycle-specific transition confirmation
+// ═══════════════════════════════════════════════════════════════════
+
+// ── Action configuration ────────────────────────────────────────────
+
+interface ActionConfig {
+  label: string
+  desc: string
+  /** Show "I understand" checkbox */
+  requiresUnderstand: boolean
+  /** Uses POST /promote-paper instead of POST /transition */
+  usesPromotePaper: boolean
+  /** Target lifecycle state */
+  targetState: LifecycleState
+}
+
+const ACTION_CFG: Record<LifecycleActionType, ActionConfig> = {
+  promote_paper: {
+    label: 'Promote to PAPER',
+    desc:  'Begin paper trading. The strategy will simulate trades without real capital.',
+    requiresUnderstand: false,
+    usesPromotePaper:   false,
+    targetState:        'PAPER',
+  },
+  promote_live: {
+    label: 'Promote to LIVE',
+    desc:  'Gate checks will run automatically. If all pass, the strategy goes live.',
+    requiresUnderstand: false,
+    usesPromotePaper:   true,
+    targetState:        'LIVE',
+  },
+  rollback: {
+    label: 'Rollback to RESEARCH',
+    desc:  'Return the strategy to research mode. Paper trading will stop.',
+    requiresUnderstand: false,
+    usesPromotePaper:   false,
+    targetState:        'RESEARCH',
+  },
+  retire: {
+    label: 'Demote to RETIRED',
+    desc:  'Retire this strategy permanently. It will no longer trade in any mode.',
+    requiresUnderstand: true,
+    usesPromotePaper:   false,
+    targetState:        'RETIRED',
+  },
+  revive: {
+    label: 'Revive to RESEARCH',
+    desc:  'Restore this retired strategy to research mode.',
+    requiresUnderstand: false,
+    usesPromotePaper:   false,
+    targetState:        'RESEARCH',
+  },
+  rollback_paper: {
+    label: 'Soft rollback to PAPER',
+    desc:  'Move the strategy from LIVE to PAPER. Existing live positions are unaffected.',
+    requiresUnderstand: false,
+    usesPromotePaper:   false,
+    targetState:        'PAPER',
+  },
+}
+
+// ── Lifecycle state badge helper ────────────────────────────────────
+
+function lcStateBadge(state: LifecycleState): string {
+  switch (state) {
+    case 'RESEARCH': return 'bg-blue-500/15 text-blue-400 border-blue-500/30'
+    case 'PAPER':    return 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+    case 'LIVE':     return 'bg-green-500/15 text-green-400 border-green-500/30'
+    case 'RETIRED':  return 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30'
+  }
+}
+
+// ── Gate failure display ────────────────────────────────────────────
+
+function GateFailures({ resp }: { resp: PromotionResponse }) {
+  const failed = resp.gates
+    ? Object.entries(resp.gates).filter(([, v]) => !v).map(([k]) => k)
+    : []
+  return (
+    <div className="bg-red-500/10 border border-red-500/30 rounded p-3 text-sm text-red-400 space-y-1">
+      <div className="font-medium">⚠ Promotion blocked</div>
+      <div>{resp.reason ?? 'Gate checks failed'}</div>
+      {failed.length > 0 && (
+        <div className="text-xs">Failed gates: <span className="font-mono">{failed.join(', ')}</span></div>
+      )}
+      {resp.paper_sharpe != null && (
+        <div className="text-xs text-[var(--color-text-muted)]">
+          Paper σ {fmtNum(resp.paper_sharpe, 2)}
+          {resp.research_sharpe != null && ` · Research σ ${fmtNum(resp.research_sharpe, 2)}`}
+          {resp.gap != null && ` · Gap ${fmtNum(resp.gap, 2)}`}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Per-action metrics display ──────────────────────────────────────
+
+function ActionMetrics({ action, row }: { action: LifecycleActionType; row: LifecycleRow }) {
+  const m = (v: number | null | undefined, digits = 2) =>
+    v != null ? fmtNum(v, digits) : '—'
+
+  const gapClass = (gap: number | null) => {
+    if (gap == null) return 'text-[var(--color-text-muted)]'
+    if (gap > 0.5) return 'text-red-400'
+    if (gap > 0.3) return 'text-amber-400'
+    return 'text-green-400'
+  }
+
+  switch (action) {
+    case 'promote_paper':
+      return (
+        <div className="text-xs text-[var(--color-text-muted)] bg-[var(--color-surface-alt)] rounded p-2">
+          Research σ <span className="font-mono text-[var(--color-text)]">{m(row.research_sharpe)}</span>
+        </div>
+      )
+    case 'promote_live':
+      return (
+        <div className="text-xs text-[var(--color-text-muted)] bg-[var(--color-surface-alt)] rounded p-2 space-y-0.5">
+          <div>
+            Paper σ <span className="font-mono text-[var(--color-text)]">{m(row.paper_sharpe)}</span>
+            {' · '}Gap{' '}
+            <span className={`font-mono ${gapClass(row.gap)}`}>{m(row.gap)}</span>
+          </div>
+          <div>
+            Paper trades <span className="font-mono text-[var(--color-text)]">{m(row.paper_trades_count, 0)}</span>
+            {' · '}Days in paper <span className="font-mono text-[var(--color-text)]">{m(row.days_in_paper, 0)}</span>
+          </div>
+        </div>
+      )
+    case 'rollback':
+      return (
+        <div className="text-xs text-[var(--color-text-muted)] bg-[var(--color-surface-alt)] rounded p-2">
+          Paper σ <span className="font-mono text-[var(--color-text)]">{m(row.paper_sharpe)}</span>
+          {' · '}Gap <span className={`font-mono ${gapClass(row.gap)}`}>{m(row.gap)}</span>
+        </div>
+      )
+    case 'retire':
+    case 'rollback_paper':
+      return (
+        <div className="text-xs text-[var(--color-text-muted)] bg-[var(--color-surface-alt)] rounded p-2">
+          Live σ <span className="font-mono text-[var(--color-text)]">{m(row.live_sharpe)}</span>
+          {' · '}Live trades <span className="font-mono text-[var(--color-text)]">{m(row.live_trades_count, 0)}</span>
+        </div>
+      )
+    default:
+      return null
+  }
+}
+
+// ── Public types ─────────────────────────────────────────────────────
+
+export interface LifecycleTransitionModalProps {
+  open: boolean
+  onClose: () => void
+  action: LifecycleActionType
+  row: LifecycleRow
+  /** Called after a successful transition so parent can invalidate cache. */
+  onSuccess: () => void
+}
+
+// ── Component ────────────────────────────────────────────────────────
+
+export function LifecycleTransitionModal({
+  open,
+  onClose,
+  action,
+  row,
+  onSuccess,
+}: LifecycleTransitionModalProps) {
+  const cfg = ACTION_CFG[action]
+
+  // ── Local state ─────────────────────────────────────────────────
+  const [reason,          setReason]          = useState('')
+  const [iUnderstand,     setIUnderstand]     = useState(false)
+  const [busy,            setBusy]            = useState(false)
+  const [error,           setError]           = useState<string | null>(null)
+  const [disallowedMsg,   setDisallowedMsg]   = useState<string | null>(null)
+  const [forceOverride,   setForceOverride]   = useState(false)
+  const [gateFailure,     setGateFailure]     = useState<PromotionResponse | null>(null)
+  const [success,         setSuccess]         = useState(false)
+
+  const reasonRef = useRef<HTMLTextAreaElement>(null)
+
+  // ── Auto-focus reason textarea on mount ─────────────────────────
+  // NOTE: No reset useEffect needed — this component is conditionally rendered
+  // and unmounts (activeAction=null) on close, giving fresh state each open.
+  useEffect(() => {
+    const t = setTimeout(() => reasonRef.current?.focus(), 50)
+    return () => clearTimeout(t)
+  }, [])
+
+  // ── ESC to close ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (!open) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape' && !busy) onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open, busy, onClose])
+
+  // ── Submit gate ──────────────────────────────────────────────────
+  const canSubmit = useMemo<boolean>(() => {
+    if (reason.length < 10 || reason.length > 500) return false
+    if (cfg.requiresUnderstand && !iUnderstand) return false
+    if (busy) return false
+    return true
+  }, [reason, cfg.requiresUnderstand, iUnderstand, busy])
+
+  // ── Submit handler ────────────────────────────────────────────────
+  async function handleSubmit() {
+    if (!canSubmit) return
+    setBusy(true)
+    setError(null)
+    setDisallowedMsg(null)
+    setGateFailure(null)
+
+    try {
+      if (cfg.usesPromotePaper) {
+        // promote_live: POST /promote-paper (gates enforced by backend)
+        // Note: reason is for operator record-keeping; backend doesn't accept it in body per API spec
+        const resp = await promotePaper(row.strategy, row.universe)
+        if (!resp.promoted) {
+          setGateFailure(resp)
+          setBusy(false)
+          return
+        }
+      } else {
+        // All other actions: POST /transition
+        await lifecycleTransition({
+          strategy:  row.strategy,
+          universe:  row.universe,
+          new_state: cfg.targetState,
+          reason,
+          ...(forceOverride ? { force: true } : {}),
+        })
+      }
+      setSuccess(true)
+      onSuccess()
+      setTimeout(() => onClose(), 2000)
+    } catch (e: unknown) {
+      const isApiError = e instanceof ApiError
+      const status     = isApiError ? e.status : 0
+      const msg        = isApiError ? e.detail  : (e instanceof Error ? e.message : String(e))
+
+      if (status === 400 && msg.includes('Disallowed')) {
+        setDisallowedMsg(msg)
+      } else {
+        setError(msg)
+      }
+      setBusy(false)
+    }
+  }
+
+  // ── Early exit ────────────────────────────────────────────────────
+  if (!open) return null
+
+  // ── Success state ─────────────────────────────────────────────────
+  if (success) {
+    return (
+      <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-8 shadow-2xl flex flex-col items-center gap-4 max-w-md w-full">
+          <div className="text-5xl text-green-400">✓</div>
+          <div className="text-base font-mono text-green-400 text-center">
+            {row.strategy} · {row.universe} → {cfg.targetState}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Normal modal ──────────────────────────────────────────────────
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={e => { if (!busy && e.target === e.currentTarget) onClose() }}
+    >
+      <div
+        className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5 shadow-2xl max-w-md md:max-w-lg w-full"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between gap-2 mb-4">
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold leading-snug">{cfg.label}</h2>
+            <div className="mt-1 text-xs text-[var(--color-text-muted)] font-mono">
+              {row.strategy} · {row.universe}
+            </div>
+            <div className="mt-1 flex items-center gap-1.5 flex-wrap text-xs text-[var(--color-text-muted)]">
+              <span>Current:</span>
+              <span
+                className={`px-1.5 py-0.5 rounded font-mono border text-[10px] ${lcStateBadge(row.state)}`}
+                data-testid="lifecycle-current-state"
+              >
+                {row.state}
+              </span>
+              <span>→</span>
+              <span
+                className={`px-1.5 py-0.5 rounded font-mono border text-[10px] ${lcStateBadge(cfg.targetState)}`}
+                data-testid="lifecycle-target-state"
+              >
+                {cfg.targetState}
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => { if (!busy) onClose() }}
+            className="flex-shrink-0 text-[var(--color-text-muted)] hover:text-[var(--color-text)] text-xl leading-none mt-0.5"
+            aria-label="Close modal"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          {/* Description */}
+          <p className="text-sm text-[var(--color-text-muted)]">{cfg.desc}</p>
+
+          {/* Per-action metrics */}
+          <ActionMetrics action={action} row={row} />
+
+          {/* Gate failure display (promote_live only) */}
+          {gateFailure && <GateFailures resp={gateFailure} />}
+
+          {/* Reason textarea — always shown; note for promote_live: not sent to backend */}
+          <div>
+            <label className="block text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1">
+              Reason (required, ≥10 chars)
+              {action === 'promote_live' && (
+                <span className="ml-1 normal-case">(for operator audit log)</span>
+              )}
+            </label>
+            <textarea
+              ref={reasonRef}
+              rows={3}
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') e.stopPropagation() }}
+              placeholder="Describe why you are making this change…"
+              className="w-full bg-[var(--color-surface-alt)] border border-[var(--color-border)] rounded p-2 text-sm font-mono resize-none focus:outline-none focus:ring-1 focus:ring-[var(--color-border)]"
+            />
+            <div className={`text-xs mt-0.5 text-right tabular-nums ${charCountClass(reason.length)}`}>
+              {reason.length} / 500
+            </div>
+          </div>
+
+          {/* "I understand" checkbox — retire only */}
+          {cfg.requiresUnderstand && (
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={iUnderstand}
+                onChange={e => setIUnderstand(e.target.checked)}
+                data-testid="i-understand-checkbox"
+              />
+              <span className="text-sm text-amber-400">
+                I understand this permanently retires the strategy.
+              </span>
+            </label>
+          )}
+
+          {/* Force-override section — shown after "Disallowed" 400 */}
+          {disallowedMsg && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded p-3 space-y-2">
+              <div className="text-sm text-red-400">{disallowedMsg}</div>
+              <label
+                className="flex items-center gap-2 cursor-pointer select-none"
+                data-testid="force-override-section"
+              >
+                <input
+                  type="checkbox"
+                  checked={forceOverride}
+                  onChange={e => setForceOverride(e.target.checked)}
+                  data-testid="force-override-checkbox"
+                />
+                <span className="text-sm text-amber-400">
+                  Override anyway (force=true)
+                </span>
+              </label>
+            </div>
+          )}
+
+          {/* Generic error banner */}
+          {error !== null && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded p-2 text-xs text-red-400">
+              {error}
+            </div>
+          )}
+
+          {/* Action row */}
+          <div className="flex items-center justify-end gap-3 pt-2 border-t border-[var(--color-border)]">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => { if (!busy) onClose() }}
+              className="text-[var(--color-text-muted)] hover:text-[var(--color-text)] px-4 py-2 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={!canSubmit}
+              onClick={() => { void handleSubmit() }}
+              data-testid="lifecycle-submit-btn"
+              className={[
+                'px-4 py-2 rounded text-sm font-medium',
+                'disabled:opacity-40 disabled:cursor-not-allowed',
+                action === 'retire'
+                  ? 'bg-red-500/15 text-red-400 border border-red-500/30 hover:bg-red-500/25'
+                  : 'bg-green-500/15 text-green-400 border border-green-500/30 hover:bg-green-500/25',
+              ].join(' ')}
+            >
+              {busy ? (
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block animate-spin">⟳</span>
+                  Submitting…
+                </span>
+              ) : cfg.label}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
