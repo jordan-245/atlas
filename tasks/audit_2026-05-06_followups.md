@@ -5,14 +5,31 @@ gate fixes (Rec 1.1-1.4, 1.6) were shipped in commit A of the same session.
 
 ## Pending
 
-- [ ] **Audit Rec 1.5 — Paper-trade executor (sub-phases 1.2–1.5)**: paper executor broker plumbing, auto-promotion cron, auto-rollback, dashboard Controls tab. Full spec in `tasks/strategy_lifecycle_remaining.md`. Est 1–2 days. **Pre-condition RESOLVED** (2026-05-06): `ALPACA_PAPER_API_KEY` + `ALPACA_PAPER_SECRET_KEY` + `ALPACA_PAPER_ENDPOINT` are all present in `.atlas-secrets.json`. Next step: fix `execute_approved.py` paper mode gate (Issue 2 in Phase B section below), then per-strategy routing (Issue 1), then pick sp500 candidate (short_term_mr/sp500 Sharpe=1.27 is best candidate).
+- [ ] **Audit Rec 1.5 — Paper-trade executor (sub-phases 1.3–1.5)**: auto-promotion cron, auto-rollback wiring to paper executor, dashboard Controls tab. Full spec in `tasks/strategy_lifecycle_remaining.md`. Est 1 day remaining. **Sub-phases 1.1+1.2 COMPLETE** — lifecycle state machine, paper broker routing, and `short_term_mr/sp500` dogfood activation all shipped 2026-05-06.
 
 
 ## Phase B — Paper-trading dogfood activation (2026-05-06 audit)
 
-### Status: ❌ BLOCKED — two design issues prevent safe activation
+### Status: ✅ ACTIVATED — `short_term_mr/sp500` live on paper broker
 
-**Investigated 2026-05-06.** No clean candidate found. Phase B activation deferred.
+**Activated 2026-05-06** (see commit `feat(phase-b): per-strategy paper routing + activate short_term_mr/sp500 dogfood`).
+Blockers 1+2 resolved; per-strategy routing implemented; dogfood combo transitioned.
+
+**Active dogfood combo**: `short_term_mr / sp500`
+- lifecycle state: `PAPER` (entered 2026-05-06T06:23:35)
+- research Sharpe: 1.27, 294 trades
+- First plan cycle: next premarket cron run (~23:15 AEST)
+- Auto-promote-to-LIVE eligible: 30 days from now (~2026-06-05)
+- No universe mode flip needed — per-strategy routing handles it
+
+**Implementation**: `scripts/execute_approved.py` refactored with:
+- `_split_by_lifecycle(entries, universe)` — splits by `monitor.strategy_lifecycle.is_paper()`
+- `_run_executor(config, plan, entries, exits, ...)` — extracted executor helper
+- `mode == "passive"` → skip (was `mode != "live"` — Blocker 2 fix)
+- `mode == "paper"` → all entries to paper executor
+- `mode == "live"` → split by lifecycle state (PAPER strategies → paper; others → live)
+
+**Tests**: `tests/test_execute_approved_paper_routing.py` — 9 tests all passing.
 
 ---
 

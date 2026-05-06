@@ -9,6 +9,12 @@ If no approved plan exists for today, exits cleanly (not an error).
 
 Usage:
     python3 scripts/execute_approved.py --market sp500 [--dry-run]
+
+Per-strategy routing (Phase B):
+    When universe mode is "live", strategies in PAPER lifecycle state are
+    routed to the Alpaca paper broker automatically — no universe-level config
+    change needed.  Universe mode "passive" skips entirely.  Universe mode
+    "paper" sends ALL strategies to the paper broker regardless of lifecycle.
 """
 import sys
 import os
@@ -51,6 +57,121 @@ def _is_market_halted(market_id: str) -> tuple[bool, str, str]:
         return False, "", ""
 
 
+def _split_by_lifecycle(entries: list, universe: str) -> tuple[list, list]:
+    """Split plan entries into (live_entries, paper_entries) by lifecycle state.
+
+    Entries whose originating strategy is currently in PAPER lifecycle state
+    are routed to the paper executor.  All other entries (LIVE, RESEARCH,
+    RETIRED, or unknown/missing strategy) are routed to the live executor.
+
+    This is the per-strategy routing mechanism for Phase B dogfood testing:
+    a single sp500 plan can simultaneously execute some strategies on real
+    capital (LIVE lifecycle) and others on the virtual paper account (PAPER
+    lifecycle) without any universe-level config change.
+
+    Args:
+        entries: List of entry/exit dicts from the plan.
+        universe: Universe / market_id string (e.g. "sp500").
+
+    Returns:
+        Tuple (live_entries, paper_entries).
+    """
+    try:
+        from monitor.strategy_lifecycle import is_paper as _lc_is_paper
+    except ImportError:
+        log.warning(
+            "_split_by_lifecycle: strategy_lifecycle import failed — "
+            "routing all %d entries to live (safe fallback)",
+            len(entries),
+        )
+        return entries, []
+
+    live_es: list = []
+    paper_es: list = []
+    for e in entries:
+        strategy = e.get("strategy", "")
+        if strategy and _lc_is_paper(strategy, universe):
+            paper_es.append(e)
+        else:
+            live_es.append(e)
+    return live_es, paper_es
+
+
+def _run_executor(
+    config: dict,
+    plan: dict,
+    entries: list,
+    exits: list,
+    market_id: str,
+    trade_date: str,
+    dry_run: bool,
+    label: str,
+) -> dict | None:
+    """Create a LiveExecutor with *config* and execute *entries* / *exits*.
+
+    A shallow-copy of *plan* is used so the caller's plan dict is not mutated.
+    Returns the execution report dict, or None on connection failure / crash.
+
+    Args:
+        config:     Active config dict (with ``trading.mode`` already set to
+                    "live" or "paper" as appropriate).
+        plan:       Full plan dict (status must already be "APPROVED").
+        entries:    Subset of proposed_entries to execute.
+        exits:      Subset of proposed_exits to execute.
+        market_id:  Universe / market id string.
+        trade_date: YYYY-MM-DD string.
+        dry_run:    If True, no real orders are submitted.
+        label:      Log prefix: "[live]" or "[paper]".
+
+    Returns:
+        Execution report dict or None.
+    """
+    if not entries and not exits:
+        log.info("%s No entries or exits — skipping executor", label)
+        return None
+
+    from brokers.live_executor import LiveExecutor
+
+    # Build a plan copy restricted to this subset of entries/exits
+    sub_plan = dict(plan)
+    sub_plan["proposed_entries"] = entries
+    sub_plan["proposed_exits"] = exits
+
+    mode_val = config.get("trading", {}).get("mode", "?")
+    executor = LiveExecutor(config)
+    if dry_run:
+        executor.is_dry_run = True
+
+    if not executor.connect():
+        log.error("%s Failed to connect to broker (mode=%s) — skipping", label, mode_val)
+        _notify_error(market_id, trade_date, f"{label} Broker connection failed")
+        return None
+
+    try:
+        log.info(
+            "%s Executing: mode=%s entries=%d exits=%d dry_run=%s",
+            label, mode_val, len(entries), len(exits), dry_run,
+        )
+        report = executor.execute_plan(sub_plan, trade_date)
+
+        ok_entries = report.get("successful_entries", 0)
+        ok_exits = report.get("successful_exits", 0)
+        total_entries = report.get("total_entries", 0)
+        total_exits = report.get("total_exits", 0)
+        log.info(
+            "%s Execution complete: entries=%d/%d exits=%d/%d dry_run=%s",
+            label, ok_entries, total_entries, ok_exits, total_exits, dry_run,
+        )
+        return report
+
+    except Exception as e:
+        log.error("%s Execution failed: %s", label, e, exc_info=True)
+        _notify_error(market_id, trade_date, f"{label} {e}")
+        return None
+    finally:
+        executor.disconnect()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Execute approved plan")
     parser.add_argument("-m", "--market", default="sp500")
@@ -69,8 +190,9 @@ def main():
     config = get_active_config(market_id)
 
     mode = config.get("trading", {}).get("mode", "")
-    if mode != "live":
-        log.info("Trading mode is '%s', not 'live' — skipping", mode)
+    # "passive" → skip entirely.  "live" and "paper" both proceed.
+    if mode == "passive":
+        log.info("Trading mode is 'passive' — skipping")
         return
 
     from brokers.plan import TradePlanGenerator
@@ -201,34 +323,72 @@ def main():
             log.warning("Halt-abort Telegram notification failed: %s", _tg_exc)
         sys.exit(2)
 
-    # ── Execute via LiveExecutor ─────────────────────────────
-    from brokers.live_executor import LiveExecutor
+    # ── Route by lifecycle state (per-strategy paper vs live) ────────────
+    #
+    # mode == "passive" → bailed out earlier
+    # mode == "paper"   → whole universe in paper mode; all strategies → paper
+    # mode == "live"    → split by lifecycle state:
+    #                        PAPER-state strategies → paper executor
+    #                        all others             → live executor
+    #
+    live_report: dict | None = None
+    paper_report: dict | None = None
 
-    executor = LiveExecutor(config)
-    if args.dry_run:
-        executor.is_dry_run = True
+    if mode == "paper":
+        # Entire universe is in paper mode — route everything to paper executor
+        log.info("[paper] Universe mode=paper — routing all %d entries, %d exits to paper",
+                 len(entries), len(exits))
+        paper_report = _run_executor(
+            config, plan, entries, exits,
+            market_id, trade_date, args.dry_run, "[paper]",
+        )
 
-    if not executor.connect():
-        log.error("Failed to connect to broker — aborting")
-        _notify_error(market_id, trade_date, "Broker connection failed")
-        return
+    else:
+        # mode == "live" — split by per-strategy lifecycle state
+        live_entries, paper_entries = _split_by_lifecycle(entries, market_id)
+        live_exits, paper_exits = _split_by_lifecycle(exits, market_id)
 
-    try:
-        report = executor.execute_plan(plan, trade_date)
+        if paper_entries or paper_exits:
+            log.info(
+                "lifecycle_split: live_entries=%d paper_entries=%d "
+                "live_exits=%d paper_exits=%d",
+                len(live_entries), len(paper_entries),
+                len(live_exits), len(paper_exits),
+            )
 
-        # ── Update plan status ───────────────────────────────
-        if not args.dry_run:
-            plan["status"] = "EXECUTED"
-            plan["executed_at"] = datetime.now().isoformat()
-            plan["execution_report"] = {
-                "successful_entries": report.get("successful_entries", 0),
-                "successful_exits": report.get("successful_exits", 0),
-                "total_entries": report.get("total_entries", 0),
-                "total_exits": report.get("total_exits", 0),
+        if live_entries or live_exits:
+            live_report = _run_executor(
+                config, plan, live_entries, live_exits,
+                market_id, trade_date, args.dry_run, "[live]",
+            )
+
+        if paper_entries or paper_exits:
+            paper_config = {
+                **config,
+                "trading": {**config.get("trading", {}), "mode": "paper"},
             }
-            plan_gen._save_plan(plan, trade_date)
+            paper_report = _run_executor(
+                paper_config, plan, paper_entries, paper_exits,
+                market_id, trade_date, args.dry_run, "[paper]",
+            )
 
-        # ── Summary ──────────────────────────────────────────
+    # ── Combine reports and update plan status ───────────────────────────
+    # Use the live report as primary (higher-fidelity); fall back to paper.
+    report = live_report or paper_report or {}
+
+    if not args.dry_run and report:
+        plan["status"] = "EXECUTED"
+        plan["executed_at"] = datetime.now().isoformat()
+        plan["execution_report"] = {
+            "successful_entries": report.get("successful_entries", 0),
+            "successful_exits": report.get("successful_exits", 0),
+            "total_entries": report.get("total_entries", 0),
+            "total_exits": report.get("total_exits", 0),
+        }
+        plan_gen._save_plan(plan, trade_date)
+
+    # ── Summary ──────────────────────────────────────────────────────────
+    if report:
         ok_entries = report.get("successful_entries", 0)
         ok_exits = report.get("successful_exits", 0)
         total_entries = report.get("total_entries", 0)
@@ -239,15 +399,10 @@ def main():
             ok_entries, total_entries, ok_exits, total_exits, args.dry_run,
         )
 
-        # ── Telegram notification ────────────────────────────
         if not args.dry_run:
             _notify_execution(market_id, trade_date, report)
-
-    except Exception as e:
-        log.error("Execution failed: %s", e, exc_info=True)
-        _notify_error(market_id, trade_date, str(e))
-    finally:
-        executor.disconnect()
+    else:
+        log.info("No executor produced a report (empty plan or connection failures)")
 
 
 def _notify_execution(market_id: str, trade_date: str, report: dict):
