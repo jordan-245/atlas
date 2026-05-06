@@ -271,7 +271,8 @@ echo "$REMAINING_ISSUES" >> "$LOG_FILE"
 # ── Step 5: Spawn pi agent to fix remaining issues ───────────
 log "Spawning pi agent for autofix..." 
 
-PROMPT="You are the Atlas infrastructure watchdog. The hourly health check found these issues:
+PROMPT=$(cat <<PROMPT_EOF
+You are the Atlas infrastructure watchdog. The hourly health check found these issues:
 
 $REMAINING_ISSUES
 
@@ -316,9 +317,11 @@ Do NOT Telegram for:
 If in doubt: SILENT. The Telegram channel is for things that wake the operator.
 
 Use:
-  python3 -c \"import sys; sys.path.insert(0,'/root/atlas'); from utils.telegram import send_message; send_message(\'\'\'YOUR_MSG\'\'\')\"
+  python3 -c "import sys; sys.path.insert(0,'/root/atlas'); from utils.telegram import send_message; send_message('''YOUR_MSG''')"
 
-Keep messages under 8 lines, use HTML (<b>, <code>)."
+Keep messages under 8 lines, use HTML (<b>, <code>).
+PROMPT_EOF
+)
 
 SKILLS_ROOT="$PROJECT/pi-package/atlas-ops/skills"
 
