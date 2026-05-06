@@ -24,9 +24,9 @@
       "description": "Weekly strategy health check — runs Fridays 23:00 UTC (09:00 AEST Saturday)"
     },
     "sync_broker_orders": {
-      "expected_cron": "0 4 * * *",
-      "threshold_hours": 26,
-      "description": "Daily broker order sync — runs 04:00 UTC (14:00 AEST)"
+      "expected_cron": "0 */4 * * *",
+      "threshold_hours": 6,
+      "description": "Daily broker order sync — runs every 4h to keep broker_orders fresh for reconcile_ledger / reconcile_entry_fills; plus 09:25 AEST Tue-Sat (5 min before reconcile_ledger) to guarantee P1 fill prices. Watchdog alerts if no heartbeat within threshold_hours."
     },
     "sync_protective_orders": {
       "expected_cron": "*/15 * * * *",

@@ -82,8 +82,11 @@ TZ=Australia/Brisbane
 # ── Daily ops ──────────────────────────────────────────────────────────────────
 # verify_dual_write: 10:00 AEST Tue-Sat (= 00:00 UTC Tue-Sat)
 0 10 * * 2-6 cd /root/atlas && python3 scripts/verify_dual_write.py --source=cron >> /root/atlas/logs/dual_write_check.log 2>&1
-# sync_broker_orders: 14:00 AEST daily (= 04:00 UTC)
-0 14 * * * /usr/bin/flock -n /tmp/sync_broker_orders.lock bash -c 'cd /root/atlas && timeout 10m python3 scripts/sync_broker_orders.py' >> /root/atlas/logs/sync_broker_orders.log 2>&1
+# sync_broker_orders: runs every 4h to keep broker_orders cache fresh + once at 09:25 AEST Tue-Sat
+# (5 min before reconcile_ledger at 09:30) to guarantee P1 fill prices are available.
+# TZ=Australia/Brisbane: 09:25 AEST = 23:25 UTC Mon-Fri; */4 UTC = 00:00/04:00/08:00/12:00/16:00/20:00 daily
+25 9 * * 2-6 /usr/bin/flock -n /tmp/sync_broker_orders.lock bash -c 'cd /root/atlas && timeout 10m python3 scripts/sync_broker_orders.py' >> /root/atlas/logs/sync_broker_orders.log 2>&1
+0 */4 * * * /usr/bin/flock -n /tmp/sync_broker_orders.lock bash -c 'cd /root/atlas && timeout 10m python3 scripts/sync_broker_orders.py --days 7' >> /root/atlas/logs/sync_broker_orders.log 2>&1
 # cleanup research locks + papers TTL: 07:00 AEST daily
 0 7 * * * /root/atlas/scripts/cleanup_research_locks.sh >> /root/atlas/logs/cleanup_research_locks.log 2>&1
 # cleanup stale plans: 17:00 AEST daily (= 07:00 UTC)
