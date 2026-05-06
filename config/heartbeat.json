@@ -87,6 +87,11 @@
       "expected_cron": "0 19 * * *",
       "threshold_hours": 26,
       "description": "Nightly research window sweep (crypto) — systemd timer, 19:00 UTC (05:00 AEST)"
+    },
+    "check_live_research_divergence": {
+      "expected_cron": "30 20 * * *",
+      "threshold_hours": 26,
+      "description": "Daily live-vs-research Sharpe divergence monitor — 20:30 UTC (06:30 AEST). Per audit 2026-05-06 Rec 4."
     }
   },
   "ignored_prefixes": [

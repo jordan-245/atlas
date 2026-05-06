@@ -97,6 +97,9 @@ TZ=Australia/Brisbane
 # 0 6 * * * cd /root/atlas && /usr/bin/python3 research/discovery/run.py >> /root/atlas/research/discovery/logs/cron.log 2>&1
 # macro freshness check: 09:30 AEST daily
 30 9 * * * python3 /root/atlas/scripts/check_macro_freshness.py >> /root/atlas/logs/check_macro_freshness.log 2>&1
+# Live-vs-research Sharpe divergence monitor (per audit 2026-05-06 Rec 4)
+# 06:30 AEST = 20:30 UTC — after all nightly sweeps (last crypto sweep 19:00 UTC = 05:00 AEST)
+30 6 * * * cd /root/atlas && /usr/bin/python3 scripts/check_live_research_divergence.py >> /root/atlas/logs/live_research_divergence.log 2>&1
 
 # ── Weekly ops ─────────────────────────────────────────────────────────────────
 # Saturday 09:00 AEST (Fri 23:00 UTC) — weekly strategy health check (sp500)
