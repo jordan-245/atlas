@@ -829,3 +829,71 @@ Per the audit findings, the discovery pipeline was disabled rather than fixed.
 **Re-enable criteria**: discovery pipeline should not be re-enabled until (a) the JSON-parsing failure is fixed in a sandbox/test environment with verified ≥1 paper successfully filtered, AND (b) at least one historical generated-strategy file is reviewed and confirmed to provide novel actionable insight that current sweep+brain workflow cannot produce.
 
 **Related cleanup deferred**: `atlas-research-runner.service` (the director queue executor) remains disabled. Wave 1 `queue.json` items remain orphaned (10 entries in `queued` status). These can be cleaned up in a follow-up task if needed.
+
+---
+
+## Follow-up TASK: Sub-rec 1.5 — 30-day Paper-Trade Phase
+
+Per CEO direction in the audit fix-up, the gate fixes (Sub-recs 1.1-1.4) ship
+immediately. The paper-trade workflow (Sub-rec 1.5) is significant new
+infrastructure — deferred to a dedicated TASK to avoid shipping a half-baked
+implementation.
+
+### Spec for the follow-up
+
+**Goal**: After `auto_promote()` passes all gates, the strategy enters PAPER
+state (not LIVE). After 30 days of paper trading with live-vs-research Sharpe
+gap < 0.5, an explicit `auto_promote_paper_to_live()` step advances to LIVE.
+
+### Required components
+
+1. **`strategy_lifecycle` table** (new) — schema:
+   ```sql
+   CREATE TABLE strategy_lifecycle (
+       strategy TEXT NOT NULL,
+       universe TEXT NOT NULL,
+       state TEXT NOT NULL,  -- RESEARCH | PAPER | LIVE | RETIRED | WATCH
+       entered_state_at TEXT NOT NULL,
+       paper_start_date TEXT,
+       paper_end_date TEXT,
+       PRIMARY KEY (strategy, universe)
+   );
+   ```
+
+2. **`paper_trades` table** (new) — same shape as `trades` but `account='paper'`.
+   Or: reuse `trades` table with a `mode` column.
+
+3. **Paper-trading mode in broker layer** — add `mode: paper` to universe
+   config. Live executor switches to Alpaca paper API or simulated fills
+   based on mode.
+
+4. **Daily promotion check** — new cron `scripts/check_paper_promotion.py`:
+   for each (strategy, universe) in PAPER state for ≥30 days, compute
+   live Sharpe from `paper_trades`, compare to research_best Sharpe. If gap
+   < 0.5 for 30 consecutive days AND Sharpe ≥ 0.3, advance to LIVE via
+   `auto_promote_paper_to_live()`.
+
+5. **Auto-rollback** — if PAPER state strategy's gap > 0.5 for 5+
+   consecutive days (driven by Rec 4 divergence monitor), revert to
+   RESEARCH and surface in Telegram.
+
+6. **Tests** — full lifecycle: RESEARCH → PAPER (via auto_promote) → LIVE
+   (via paper-promotion gate) → RETIRED.
+
+### Estimated effort
+
+2-3 days. Touches: db schema, broker abstraction, executor, cron, monitor,
+multiple consumers of `load_best`.
+
+### Why not now
+
+The gate fixes (1.1-1.4) and pre-commit hook (1.6) close the immediate
+operator-bypass risk. The paper-trade phase prevents the next class of
+mistakes (rushed activation), but is independent of the gate-tightening.
+Better to ship gates today and design paper-trading carefully than to
+half-build it now.
+
+### Tracking
+
+Logged as TASK in `tasks/audit_2026-05-06_followups.md` (this delegation also
+adds that line). Reference the spec above for implementation details.
