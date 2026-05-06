@@ -300,6 +300,7 @@ CREATE INDEX IF NOT EXISTS idx_experiments_status ON research_experiments(status
 CREATE TABLE IF NOT EXISTS research_best (
     strategy         TEXT    NOT NULL,
     universe         TEXT    NOT NULL,
+    regime_state     TEXT,              -- NULL = cross-regime fallback (legacy); non-NULL = per-regime best (Rec 5 2026-05-06)
     params           TEXT    NOT NULL,  -- JSON: best known parameters
     -- sharpe REAL,  -- DEPRECATED: whole-portfolio Sharpe; see solo_sharpe / portfolio_sharpe (M2 2026-04-28)
     sharpe           REAL,
@@ -309,8 +310,13 @@ CREATE TABLE IF NOT EXISTS research_best (
     solo_sharpe      REAL,              -- strategy-standalone Sharpe (M2 2026-04-28)
     portfolio_sharpe REAL,              -- whole-portfolio Sharpe with this strategy (M2 2026-04-28)
     metric_type      TEXT    NOT NULL DEFAULT 'unknown',  -- 'solo','portfolio','both','legacy_portfolio','portfolio_diversifier','unknown'
-    PRIMARY KEY (strategy, universe)
+    PRIMARY KEY (strategy, universe, regime_state)
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_research_best_cross_regime
+    ON research_best (strategy, universe)
+    WHERE regime_state IS NULL;
+CREATE INDEX IF NOT EXISTS idx_research_best_regime
+    ON research_best (strategy, universe, regime_state);
 
 -- ═══════════════════════════════════════════════════════════
 -- SYSTEM

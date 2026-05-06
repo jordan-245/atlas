@@ -690,6 +690,24 @@ def get_current_regime() -> Optional[Dict]:
         return None
 
 
+def get_current_regime_state() -> Optional[str]:
+    """Return only the regime_state string from the most recent regime_history row.
+
+    Unlike get_current_regime() (which returns the full Dict), this returns just the
+    string label, suitable for regime-conditioned research_best lookups.
+
+    Returns None if regime_history is empty or an error occurs.
+    """
+    try:
+        with get_db() as db:
+            row = db.execute(
+                "SELECT regime_state FROM regime_history ORDER BY date DESC LIMIT 1"
+            ).fetchone()
+            return row["regime_state"] if row else None
+    except Exception:
+        return None
+
+
 def get_regime_history(days: Optional[int] = None, limit: int = 10000) -> List[Dict]:
     """Return regime history, optionally limited to recent *days*."""
     with get_db() as db:
@@ -1868,8 +1886,9 @@ def upsert_research_best(
     solo_sharpe: Optional[float] = None,
     portfolio_sharpe: Optional[float] = None,
     metric_type: Optional[str] = None,
+    regime_state: Optional[str] = None,
 ) -> None:
-    """Insert or replace the best known parameters for (strategy, universe).
+    """Insert or replace the best known parameters for (strategy, universe[, regime_state]).
 
     New columns (M2 2026-04-28):
         solo_sharpe      — strategy-standalone backtest Sharpe
@@ -1879,6 +1898,12 @@ def upsert_research_best(
                            'portfolio_diversifier' = solo Sharpe is weak/negative
                            but combo contributes positively to portfolio Sharpe;
                            kept in active config for diversification value.
+
+    Per Rec 5 (2026-05-06):
+        regime_state     — NULL = cross-regime fallback (legacy behavior preserved).
+                           Non-NULL = per-regime row (bull_risk_on, recovery_early, …).
+                           When regime_state=None, upserts the cross-regime row via
+                           DELETE+INSERT to handle SQLite NULL PK uniqueness correctly.
 
     The legacy ``sharpe`` column is preserved for backwards compat but is
     DEPRECATED (use solo_sharpe / portfolio_sharpe).  A DEBUG log is emitted
@@ -1904,46 +1929,68 @@ def upsert_research_best(
             strategy, universe,
         )
 
+    params_json = json.dumps(params)
+
     with get_db() as db:
-        db.execute(
-            """
-            INSERT INTO research_best
-                (strategy, universe, params, sharpe, trades, max_dd_pct,
-                 solo_sharpe, portfolio_sharpe, metric_type, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 'unknown'), datetime('now'))
-            ON CONFLICT(strategy, universe) DO UPDATE SET
-                params           = excluded.params,
-                sharpe           = excluded.sharpe,
-                trades           = excluded.trades,
-                max_dd_pct       = excluded.max_dd_pct,
-                solo_sharpe      = COALESCE(excluded.solo_sharpe, solo_sharpe),
-                portfolio_sharpe = COALESCE(excluded.portfolio_sharpe, portfolio_sharpe),
-                metric_type      = COALESCE(excluded.metric_type, metric_type, 'unknown'),
-                updated_at       = datetime('now')
-            """,
-            (
-                strategy, universe, json.dumps(params), sharpe, trades, max_dd_pct,
-                solo_sharpe, portfolio_sharpe, metric_type,
-            ),
-        )
+        if regime_state is None:
+            # Cross-regime (NULL) row — SQLite NULL != NULL in a PK, so
+            # ON CONFLICT won't fire for NULL.  Use DELETE + INSERT instead.
+            db.execute(
+                "DELETE FROM research_best "
+                "WHERE strategy=? AND universe=? AND regime_state IS NULL",
+                (strategy, universe),
+            )
+            db.execute(
+                "INSERT INTO research_best "
+                "(strategy, universe, regime_state, params, sharpe, trades, max_dd_pct, "
+                " solo_sharpe, portfolio_sharpe, metric_type, updated_at) "
+                "VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, COALESCE(?, 'unknown'), datetime('now'))",
+                (strategy, universe, params_json, sharpe, trades, max_dd_pct,
+                 solo_sharpe, portfolio_sharpe, metric_type),
+            )
+        else:
+            # Per-regime row — PK is (strategy, universe, regime_state) with non-NULL
+            # regime_state, so INSERT OR REPLACE fires correctly on conflict.
+            db.execute(
+                "INSERT OR REPLACE INTO research_best "
+                "(strategy, universe, regime_state, params, sharpe, trades, max_dd_pct, "
+                " solo_sharpe, portfolio_sharpe, metric_type, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 'unknown'), datetime('now'))",
+                (strategy, universe, regime_state, params_json, sharpe, trades, max_dd_pct,
+                 solo_sharpe, portfolio_sharpe, metric_type),
+            )
 
 
 def get_research_best(
     strategy: Optional[str] = None,
     universe: Optional[str] = None,
+    regime_state: Optional[str] = None,
+    fallback_to_cross_regime: bool = True,
 ) -> List[Dict]:
-    """Return research_best rows, optionally filtered."""
-    with get_db() as db:
+    """Return research_best rows, optionally filtered.
+
+    Per Rec 5 (2026-05-06):
+        regime_state             — when set, first queries the per-regime row(s).
+                                   If no rows found AND fallback_to_cross_regime=True,
+                                   re-queries with regime_state IS NULL (legacy fallback).
+        fallback_to_cross_regime — only meaningful when regime_state is not None.
+
+    When regime_state is None (default), returns the cross-regime (NULL) rows only —
+    exactly the legacy behavior.
+    """
+    def _fetch(db: Any, extra_clause: str, extra_params: List[Any]) -> List[Dict]:
         query = "SELECT * FROM research_best WHERE 1=1"
-        params: List[Any] = []
+        qparams: List[Any] = []
         if strategy:
             query += " AND strategy=?"
-            params.append(strategy)
+            qparams.append(strategy)
         if universe:
             query += " AND universe=?"
-            params.append(universe)
+            qparams.append(universe)
+        query += extra_clause
+        qparams.extend(extra_params)
         query += " ORDER BY strategy, universe"
-        rows = db.execute(query, params).fetchall()
+        rows = db.execute(query, qparams).fetchall()
         result = []
         for row in rows:
             r = dict(row)
@@ -1954,6 +2001,17 @@ def get_research_best(
                     pass
             result.append(r)
         return result
+
+    with get_db() as db:
+        if regime_state is None:
+            # Legacy path: return cross-regime (NULL) rows only.
+            return _fetch(db, " AND regime_state IS NULL", [])
+        else:
+            # Regime-specific path: prefer per-regime row.
+            rows = _fetch(db, " AND regime_state=?", [regime_state])
+            if not rows and fallback_to_cross_regime:
+                rows = _fetch(db, " AND regime_state IS NULL", [])
+            return rows
 
 
 # ── System ────────────────────────────────────────────────────────────────────
