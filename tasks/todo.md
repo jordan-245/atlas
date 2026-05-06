@@ -521,4 +521,4 @@ Owner: TBD. Estimated 2-3 sessions of focused work.
 - [x] Task #300 — plan generator skips non-live/paper universes: `cmd_plan` early-exit when `trading.mode != live|paper`. commodity_etfs (mode=passive) no longer generates plans.
 - [x] Phase B dogfood — short_term_mr/sp500 included in plan generation via lifecycle-aware `get_strategies`: strategies in PAPER lifecycle state are instantiated with research_best params. short_term_mr now appears in sp500 daily plan.
 
-Files changed: `scripts/cli.py`, `tests/test_plan_generator_lifecycle.py` (8 tests).
+Files changed: `scripts/cli.py`, `tests/test_plan_generator_lifecycle.py` (8 tests). Commit: 963e20a1
