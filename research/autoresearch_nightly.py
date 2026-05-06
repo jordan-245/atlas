@@ -62,6 +62,24 @@ RUNNER_SCRIPT = ATLAS_ROOT / "research" / "autoresearch_runner.py"
 LOGS_DIR = ATLAS_ROOT / "logs"
 RESULTS_DIR = ATLAS_ROOT / "research" / "results"
 
+import logging
+_logger = logging.getLogger(__name__)
+
+# Per-universe minimum row counts for silent-failure detection.
+# Below these floors, the sweep is presumed to have crashed silently.
+# Values calibrated per audit 2026-05-06 (see docs/audits/research-system-audit-2026-05-06.md Rec 3).
+MIN_ROWS_PER_UNIVERSE = {
+    "sp500": 50,
+    "commodity_etfs": 20,
+    "sector_etfs": 20,
+    "gold_etfs": 10,
+    "treasury_etfs": 10,
+    "defensive_etfs": 10,
+    "crypto": 10,
+    "asx": 10,
+}
+DEFAULT_MIN_ROWS = 10
+
 
 # ─── Snapshot Discovery ─────────────────────────────────────────────────────
 
@@ -164,6 +182,31 @@ def _parse_session_results(
             break
 
     return result
+
+
+def _count_rows_added(universe: str, session_start_ts: float) -> int:
+    """Count rows inserted into research_experiments for *universe* since *session_start_ts*.
+
+    Used by silent-failure detection. Returns 0 on any DB error (caller treats
+    that as silent failure, which is the correct conservative behavior).
+
+    NOTE: queries the ``universe`` column (the schema column is named ``universe``,
+    not ``market`` — log_experiment maps its ``market`` param to this column).
+    """
+    try:
+        from db.atlas_db import get_db
+        cutoff = datetime.fromtimestamp(session_start_ts, tz=timezone.utc).isoformat()
+        with get_db() as db:
+            cur = db.execute(
+                "SELECT COUNT(*) FROM research_experiments "
+                "WHERE universe = ? AND created_at > ?",
+                (universe, cutoff),
+            )
+            row = cur.fetchone()
+            return int(row[0]) if row else 0
+    except Exception as exc:
+        _logger.error("_count_rows_added failed: %s", exc)
+        return 0
 
 
 # ─── Worker Management ───────────────────────────────────────────────────────
@@ -478,6 +521,7 @@ def run_nightly(
     notify: bool = False,
     snapshot_id: Optional[str] = None,
     universe: str = "sp500",
+    dry_run_telegram: bool = False,
 ) -> Dict:
     """Run parallel autoresearch sessions for multiple strategies.
 
@@ -493,6 +537,11 @@ def run_nightly(
         Summary dict with per-strategy results and aggregate counts.
     """
     session_start = time.time()
+
+    _logger.info(
+        "RESEARCH_NIGHTLY_START universe=%s market=%s timestamp=%s",
+        universe, market, datetime.now(timezone.utc).isoformat(),
+    )
 
     # When sweeping a non-sp500 universe, treat universe as the effective market so
     # downstream config loads (get_active_config) hit the universe's config file.
@@ -619,6 +668,46 @@ def run_nightly(
             "runtime_s": round(runtime_s, 1),
             "snapshot_id": snapshot_id,
         }
+
+        # ─── Silent-failure detection ────────────────────────────────────────────
+        # Verify rows were actually inserted into research_experiments.
+        # Catches the Apr 22-30 0-byte-log silent failures.
+        rows_added = _count_rows_added(universe, session_start)
+        min_rows = MIN_ROWS_PER_UNIVERSE.get(universe, DEFAULT_MIN_ROWS)
+        silent_failure = rows_added < min_rows
+
+        status_str = "SILENT_FAILURE" if silent_failure else "OK"
+        _logger.info(
+            "RESEARCH_NIGHTLY_END universe=%s rows_added=%d min_required=%d status=%s",
+            universe, rows_added, min_rows, status_str,
+        )
+        result["rows_added"] = rows_added
+        result["silent_failure"] = silent_failure
+
+        if silent_failure:
+            msg = (
+                f"🚨 Research sweep silent failure: "
+                f"universe={universe} rows={rows_added} threshold={min_rows} "
+                f"(see {LOGS_DIR}/autoresearch_*_{datetime.now().strftime('%Y%m%d')}.log)"
+            )
+            _logger.error(msg)
+            if dry_run_telegram:
+                print(f"[TELEGRAM-DRY-RUN] {msg}")
+            else:
+                try:
+                    from utils.telegram import notify as _tg_notify
+                    _tg_notify(msg, category="autoresearch_silent_failure")
+                except Exception as exc:
+                    _logger.warning("Telegram silent-failure alert failed: %s", exc)
+            if session_id is not None:
+                try:
+                    end_session(session_id, experiments_run=total_screened,
+                                experiments_kept=total_kept, status="silent_failure")
+                except Exception:
+                    pass
+            return result
+
+        # Normal completion path
         if session_id is not None:
             end_session(session_id, experiments_run=total_screened,
                         experiments_kept=total_kept, status="completed")
@@ -693,6 +782,15 @@ def _parse_args(argv=None) -> argparse.Namespace:
         default=False,
         help="Print config and exit without spawning workers.",
     )
+    parser.add_argument(
+        "--dry-run-telegram",
+        action="store_true",
+        default=False,
+        help=(
+            "Replace Telegram silent-failure alerts with stdout prints. "
+            "Used by the test harness to verify alert dispatch without spamming."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -721,6 +819,13 @@ if __name__ == "__main__":
         notify=args.notify,
         snapshot_id=args.snapshot,
         universe=args.universe,
+        dry_run_telegram=args.dry_run_telegram,
     )
     failures = result.get("failures", 0)
-    sys.exit(1 if failures == len(result.get("strategies", [])) else 0)
+    silent_failure = result.get("silent_failure", False)
+    if silent_failure:
+        sys.exit(2)  # distinct exit code so systemd journal shows failure mode
+    elif failures == len(result.get("strategies", [])):
+        sys.exit(1)
+    else:
+        sys.exit(0)
