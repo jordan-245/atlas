@@ -105,3 +105,5 @@ TZ=Australia/Brisbane
 # Saturday 09:00 AEST (Fri 23:00 UTC) — weekly strategy health check (sp500)
 # NOTE: heartbeat.json expected_cron="0 23 * * 5" is in UTC; this line is in AEST.
 0 9 * * 6 /root/atlas/scripts/pi-cron.sh health-check sp500
+# Sunday 22:00 AEST (Sun 12:00 UTC) — verify weekly health reports exist
+0 22 * * 0 /usr/bin/flock -n /tmp/verify_health_reports.lock bash -c 'cd /root/atlas && timeout 5m python3 scripts/verify_weekly_health_reports.py' >> /root/atlas/logs/verify_health_reports.log 2>&1
