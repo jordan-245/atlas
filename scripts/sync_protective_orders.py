@@ -1167,6 +1167,7 @@ def sync_market(
             _exec._broker = broker
             _exec._connected = True
             _exec.config = config
+            _exec._mode = config.get("trading", {}).get("mode", "live")
 
             reconciled_entries = _exec.reconcile_entry_fills(plan=plan)
             if reconciled_entries:
@@ -1810,6 +1811,21 @@ def main() -> int:
         logger.debug("Quiet mode: all positions protected, nothing to report")
 
     logger.info("=== sync_protective_orders done (errors=%s) ===", any_error)
+
+    # ── Heartbeat ─────────────────────────────────────────────────────
+    try:
+        from db.atlas_db import record_heartbeat
+        record_heartbeat(
+            "sync_protective_orders",
+            "completed",
+            {
+                "markets_processed": [r["market_id"] for r in market_results],
+                "errors": total_errors,
+            },
+        )
+    except Exception as _hb_exc:  # noqa: BLE001 — heartbeat is non-fatal
+        logger.debug("sync_protective_orders: heartbeat write failed (non-fatal): %s", _hb_exc)
+
     return 1 if any_error else 0
 
 
@@ -1828,4 +1844,13 @@ if __name__ == "__main__":
             )
         except (ImportError, OSError, ConnectionError, RuntimeError) as e:  # Telegram in crash guard
             logger.warning("Crash-alert Telegram notification failed: %s", e)
+        try:
+            from db.atlas_db import record_heartbeat
+            record_heartbeat(
+                "sync_protective_orders",
+                "failed",
+                {"error": str(exc)[:200]},
+            )
+        except Exception as _hb_exc2:  # noqa: BLE001
+            logger.debug("sync_protective_orders: failed heartbeat write error: %s", _hb_exc2)
         raise
