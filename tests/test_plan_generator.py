@@ -308,3 +308,194 @@ class TestPlanPersistence:
         text = gen.format_plan_text(plan)
         assert isinstance(text, str)
         assert len(text) > 0
+
+
+# ---------------------------------------------------------------------------
+# Portfolio exposure formula regression tests (2026-05-06 negative-leverage bug)
+# ---------------------------------------------------------------------------
+
+class TestPortfolioExposureFormula:
+    """Regression tests for portfolio_exposure_pct formula fix.
+
+    Bug: (current_eq - cash + proposed_cost) / current_eq assumed
+    current_eq - cash = positions_value, true only for single-account
+    global accounting. Under per-market accounting, cash is the FULL
+    broker balance (>> per-market equity), producing negative leverage.
+
+    Fix: (current_positions_value + proposed_cost) / current_eq
+    """
+
+    def test_portfolio_exposure_long_only_no_existing_positions(self, mock_config):
+        """No open positions, cash >> equity: must NOT produce negative leverage.
+
+        OLD formula: (1000 - 4000 + 500) / 1000 * 100 = -250%
+        NEW formula: (0 + 500) / 1000 * 100 = 50%
+        """
+        # cash=4000 (full broker), equity=1000 (per-market slice)
+        portfolio = _make_mock_portfolio(cash=4000.0, equity=1000.0, n_positions=0)
+        gen = TradePlanGenerator(portfolio=portfolio, config=mock_config)
+
+        # Signal with position_value=500
+        sig = _make_signal(ticker="SPY", entry_price=100.0)
+        sig = Signal(
+            ticker="SPY",
+            strategy="mean_reversion",
+            direction="long",
+            entry_price=100.0,
+            stop_price=95.0,
+            take_profit=110.0,
+            position_size=5,
+            position_value=500.0,
+            risk_amount=25.0,
+            confidence=0.80,
+            rationale="Test",
+            features={},
+        )
+
+        with patch.object(gen, "_save_plan"):
+            plan = gen.generate_plan([sig], [], {}, "2026-05-06")
+
+        exposure = plan["risk_summary"]["portfolio_exposure_pct"]
+        assert exposure > 0, f"Exposure must be positive, got {exposure}%"
+        assert abs(exposure - 50.0) < 1.0, f"Expected ~50%, got {exposure}%"
+
+    def test_portfolio_exposure_with_existing_positions(self, mock_config):
+        """Two open positions totaling $1100 MV, new signal $400: expect 100%.
+
+        (1100 + 400) / 1500 * 100 = 100.0%
+        """
+        # Build two real-ish positions
+        pos_aapl = MagicMock(shares=5, ticker="AAPL", entry_price=100.0, strategy="mean_reversion")
+        pos_msft = MagicMock(shares=3, ticker="MSFT", entry_price=200.0, strategy="mean_reversion")
+
+        portfolio = _make_mock_portfolio(cash=4000.0, equity=1500.0, n_positions=0)
+        portfolio.positions = [pos_aapl, pos_msft]
+        portfolio.atlas_positions = [pos_aapl, pos_msft]
+        # Update summary for 2 positions
+        portfolio.portfolio_summary.return_value = {
+            "open_positions": [
+                {"ticker": "AAPL", "strategy": "mean_reversion"},
+                {"ticker": "MSFT", "strategy": "mean_reversion"},
+            ],
+            "total_pnl": 0.0,
+            "total_pnl_pct": 0.0,
+        }
+
+        gen = TradePlanGenerator(portfolio=portfolio, config=mock_config)
+
+        # Signal $400 proposed cost: 4 shares @ $100
+        sig = Signal(
+            ticker="GS",
+            strategy="mean_reversion",
+            direction="long",
+            entry_price=100.0,
+            stop_price=95.0,
+            take_profit=110.0,
+            position_size=4,
+            position_value=400.0,
+            risk_amount=20.0,
+            confidence=0.85,
+            rationale="Test",
+            features={},
+        )
+
+        prices = {"AAPL": 100.0, "MSFT": 200.0}
+        with patch.object(gen, "_save_plan"):
+            plan = gen.generate_plan([sig], [], prices, "2026-05-06")
+
+        exposure = plan["risk_summary"]["portfolio_exposure_pct"]
+        # positions_value = 5*100 + 3*200 = 500+600 = 1100; proposed=400; eq=1500
+        assert abs(exposure - 100.0) < 1.0, f"Expected ~100%, got {exposure}%"
+
+    def test_portfolio_exposure_zero_equity_returns_zero(self, mock_config):
+        """Zero equity guard: must return 0, not raise ZeroDivisionError."""
+        portfolio = _make_mock_portfolio(cash=0.0, equity=0.0, n_positions=0)
+        gen = TradePlanGenerator(portfolio=portfolio, config=mock_config)
+
+        with patch.object(gen, "_save_plan"):
+            plan = gen.generate_plan([], [], {}, "2026-05-06")
+
+        assert plan["risk_summary"]["portfolio_exposure_pct"] == 0
+
+    def test_portfolio_exposure_per_market_account_realism(self, mock_config):
+        """REGRESSION: today's commodity_etfs scenario that produced -224.69%.
+
+        cash=$4042.88 (global broker), equity=$956.82 (per-market),
+        0 open positions, proposed=$936.21.
+        Expected: 936.21/956.82*100 ≈ 97.85%  (OLD: -224.69%)
+        """
+        portfolio = _make_mock_portfolio(cash=4042.88, equity=956.82, n_positions=0)
+        gen = TradePlanGenerator(portfolio=portfolio, config=mock_config)
+
+        # Signal matching today's commodity_etfs proposed cost of 936.21
+        # position_size * entry_price = 936.21  → use size=9, price=104.0 ≈ 936
+        sig = Signal(
+            ticker="GLD",
+            strategy="momentum_breakout",
+            direction="long",
+            entry_price=104.02,
+            stop_price=98.82,
+            take_profit=114.42,
+            position_size=9,
+            position_value=936.18,
+            risk_amount=46.98,
+            confidence=0.80,
+            rationale="Test",
+            features={},
+        )
+
+        with patch.object(gen, "_save_plan"):
+            plan = gen.generate_plan([sig], [], {}, "2026-05-06")
+
+        exposure = plan["risk_summary"]["portfolio_exposure_pct"]
+        assert exposure > 0, f"Must be positive, got {exposure}% (OLD formula: -224.69%)"
+        assert 88 < exposure < 110, f"Expected ~97.85%, got {exposure}%"
+
+    def test_portfolio_exposure_sp500_today_scenario(self, mock_config):
+        """REGRESSION: today's sp500 scenario that produced -121%.
+
+        cash=$4042.88 (global), equity=$1334.05 (per-market),
+        2 positions: CAT 1sh $835.24, SYK 1sh $294.65.
+        Proposed: $1092.50.
+        Expected: (835.24+294.65+1092.50)/1334.05*100 ≈ 166.96%  (OLD: -121%)
+        """
+        pos_cat = MagicMock(shares=1, ticker="CAT", entry_price=835.24, strategy="trend_following")
+        pos_syk = MagicMock(shares=1, ticker="SYK", entry_price=294.65, strategy="trend_following")
+
+        portfolio = _make_mock_portfolio(cash=4042.88, equity=1334.05, n_positions=0)
+        portfolio.positions = [pos_cat, pos_syk]
+        portfolio.atlas_positions = [pos_cat, pos_syk]
+        portfolio.portfolio_summary.return_value = {
+            "open_positions": [
+                {"ticker": "CAT", "strategy": "trend_following"},
+                {"ticker": "SYK", "strategy": "trend_following"},
+            ],
+            "total_pnl": 0.0,
+            "total_pnl_pct": 0.0,
+        }
+
+        gen = TradePlanGenerator(portfolio=portfolio, config=mock_config)
+
+        # Signal matching today's sp500 proposed cost of $1092.50
+        sig = Signal(
+            ticker="NVDA",
+            strategy="momentum_breakout",
+            direction="long",
+            entry_price=109.25,
+            stop_price=103.79,
+            take_profit=120.18,
+            position_size=10,
+            position_value=1092.50,
+            risk_amount=54.60,
+            confidence=0.82,
+            rationale="Test",
+            features={},
+        )
+
+        prices = {"CAT": 835.24, "SYK": 294.65}
+        with patch.object(gen, "_save_plan"):
+            plan = gen.generate_plan([sig], [], prices, "2026-05-06")
+
+        exposure = plan["risk_summary"]["portfolio_exposure_pct"]
+        assert exposure > 0, f"Must be positive, got {exposure}% (OLD formula: -121%)"
+        assert 150 < exposure < 200, f"Expected ~166.96%, got {exposure}%"

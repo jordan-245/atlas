@@ -374,6 +374,17 @@ class TradePlanGenerator:
                       if op.get("strategy", "unknown") not in ("unknown", "")]
         n_atlas = len(atlas_positions)
 
+        # Per-market portfolio exposure: (current open MV + proposed cost) / per-market equity.
+        # NOTE: prior formula assumed current_eq - cash = positions_value, which is only
+        # true for single-account global accounting. Under per-market accounting, current_eq
+        # is the per-market slice while self.portfolio.cash is the FULL broker cash, so the
+        # subtraction produced negative leverage values (e.g. -121% sp500 on 2026-05-06).
+        # Compute positions_value directly from open positions instead.
+        current_positions_value = sum(
+            p.shares * prices.get(p.ticker, p.entry_price)
+            for p in self.portfolio.positions
+        )
+
         market_id = self.config.get("market", "")
         plan = {
             "trade_date": trade_date,
@@ -398,7 +409,7 @@ class TradePlanGenerator:
                 "risk_pct_of_equity": round(proposed_risk / current_eq * 100, 2) if current_eq > 0 else 0,
                 "positions_after": n_atlas + len(proposed_entries) - len(proposed_exits),
                 "cash_after_entries": round(self.portfolio.cash - proposed_cost, 2),
-                "portfolio_exposure_pct": round((current_eq - self.portfolio.cash + proposed_cost) / current_eq * 100, 2) if current_eq > 0 else 0,
+                "portfolio_exposure_pct": round((current_positions_value + proposed_cost) / current_eq * 100, 2) if current_eq > 0 else 0,
             },
             "open_positions": atlas_open if atlas_open else summary["open_positions"],
             "allocation_summary": allocation_pool.counts_summary(
