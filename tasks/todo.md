@@ -512,3 +512,13 @@ considered adding a `--parallel-folds` flag wrapping fold execution in
     leaves a known-slow path that already works.
 
 Owner: TBD. Estimated 2-3 sessions of focused work.
+
+
+---
+
+## Task #300 — Plan generator passive-universe skip + PAPER lifecycle inclusion (completed 2026-05-06)
+
+- [x] Task #300 — plan generator skips non-live/paper universes: `cmd_plan` early-exit when `trading.mode != live|paper`. commodity_etfs (mode=passive) no longer generates plans.
+- [x] Phase B dogfood — short_term_mr/sp500 included in plan generation via lifecycle-aware `get_strategies`: strategies in PAPER lifecycle state are instantiated with research_best params. short_term_mr now appears in sp500 daily plan.
+
+Files changed: `scripts/cli.py`, `tests/test_plan_generator_lifecycle.py` (8 tests).

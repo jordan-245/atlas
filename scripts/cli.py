@@ -42,6 +42,21 @@ from strategies.bb_squeeze import BBSqueeze
 from strategies.opening_gap import OpeningGap
 from strategies.mtf_momentum import MTFMomentum
 from strategies.connors_rsi2 import ConnorsRSI2
+
+# Registry mapping strategy name → class.  Used by get_strategies() to
+# instantiate both live-config-enabled and PAPER-lifecycle strategies without
+# a long if/elif chain.  Keep in sync with the import block above.
+_STRATEGY_REGISTRY: dict = {
+    "momentum_breakout": MomentumBreakout,
+    "mean_reversion":    MeanReversion,
+    "trend_following":   TrendFollowing,
+    "sector_rotation":   SectorRotation,
+    "short_term_mr":     ShortTermMR,
+    "bb_squeeze":        BBSqueeze,
+    "opening_gap":       OpeningGap,
+    "mtf_momentum":      MTFMomentum,
+    "connors_rsi2":      ConnorsRSI2,
+}
 from backtest.engine import BacktestEngine
 from brokers.plan import TradePlanGenerator
 from brokers.live_portfolio import LivePortfolio
@@ -77,27 +92,102 @@ def get_latest_prices(data):
 
 
 def get_strategies(config):
-    """Instantiate enabled strategies."""
+    """Instantiate strategies for plan generation.
+
+    Includes:
+      * Strategies enabled in ``config["strategies"]`` (live trading set).
+      * Strategies in PAPER lifecycle state for ``config["market"]`` (Phase B
+        dogfood / paper-trading set). For these, research_best params are
+        merged into the strategy config block before instantiation, so the
+        strategy uses the validated paper params (not the live-config defaults).
+
+    Excludes RESEARCH and RETIRED strategies unless they are also explicitly
+    enabled in the live config (handled by the live-config branch).
+
+    The plan that gets generated will contain entries from BOTH sets.
+    Downstream ``scripts/execute_approved.py::_split_by_lifecycle()`` routes
+    each entry to the live or paper executor based on its strategy's
+    lifecycle state.
+    """
+    import copy as _copy
+
+    market_id = config.get("market", DEFAULT_MARKET)
+    sc = config.get("strategies", {})
+
+    # 1. Names enabled in live config
+    live_enabled: set = {
+        name for name, cfg in sc.items()
+        if isinstance(cfg, dict) and cfg.get("enabled", False)
+    }
+
+    # 2. Names in PAPER lifecycle state for this universe
+    paper_names: set = set()
+    paper_params_by_name: dict = {}
+    try:
+        from monitor.strategy_lifecycle import list_state, PromotionState
+        from db.atlas_db import get_research_best
+        for row in list_state(PromotionState.PAPER):
+            if row.get("universe") != market_id:
+                continue
+            name = row.get("strategy")
+            if not name or name not in _STRATEGY_REGISTRY:
+                logger.warning(
+                    "get_strategies: PAPER lifecycle row for %s/%s has unknown "
+                    "strategy class — skipping",
+                    name, market_id,
+                )
+                continue
+            paper_names.add(name)
+            # Pull research_best params for this paper strategy (validated params)
+            try:
+                rb = get_research_best(name, market_id)
+                if rb and isinstance(rb, list) and rb[0].get("params"):
+                    paper_params_by_name[name] = rb[0]["params"]
+            except Exception as exc:
+                logger.warning(
+                    "get_strategies: research_best lookup failed for %s/%s: %s",
+                    name, market_id, exc,
+                )
+    except Exception as exc:
+        logger.warning(
+            "get_strategies: strategy_lifecycle unavailable (%s) — "
+            "falling back to live-config-only set",
+            exc,
+        )
+
+    # 3. Combined set — live ∪ paper, with paper params overriding live config.
+    #    Iteration order: live-enabled first (stable, no dedup needed); then
+    #    paper-only (sorted for determinism).  If a name appears in BOTH live
+    #    and paper, the live-config instance is kept (seen-set dedup below).
     strats = []
-    sc = config["strategies"]
-    if sc["momentum_breakout"]["enabled"]:
-        strats.append(MomentumBreakout(config))
-    if sc["mean_reversion"]["enabled"]:
-        strats.append(MeanReversion(config))
-    if sc["trend_following"]["enabled"]:
-        strats.append(TrendFollowing(config))
-    if sc.get("sector_rotation", {}).get("enabled", False):
-        strats.append(SectorRotation(config))
-    if sc.get("short_term_mr", {}).get("enabled", False):
-        strats.append(ShortTermMR(config))
-    if sc.get("bb_squeeze", {}).get("enabled", False):
-        strats.append(BBSqueeze(config))
-    if sc.get("opening_gap", {}).get("enabled", False):
-        strats.append(OpeningGap(config))
-    if sc.get("mtf_momentum", {}).get("enabled", False):
-        strats.append(MTFMomentum(config))
-    if sc.get("connors_rsi2", {}).get("enabled", False):
-        strats.append(ConnorsRSI2(config))
+    seen: set = set()
+    for name in list(live_enabled) + sorted(paper_names - live_enabled):
+        if name in seen:
+            continue
+        seen.add(name)
+        cls = _STRATEGY_REGISTRY.get(name)
+        if cls is None:
+            logger.warning("get_strategies: no class registered for %s — skipping", name)
+            continue
+        # If strategy is in PAPER state (and NOT already added as live-enabled),
+        # inject research_best params over the live config block before
+        # instantiating. Deep-copy the config so the live config dict is never
+        # mutated.
+        if name in paper_names and name not in live_enabled and name in paper_params_by_name:
+            cfg_copy = _copy.deepcopy(config)
+            cfg_strats = cfg_copy.setdefault("strategies", {})
+            cfg_block = cfg_strats.setdefault(name, {})
+            cfg_block.update(paper_params_by_name[name])
+            cfg_block["enabled"] = True   # ensure strategy class doesn't no-op
+            strats.append(cls(cfg_copy))
+            logger.info(
+                "get_strategies: instantiating %s/%s in PAPER state with "
+                "research_best params %s",
+                name, market_id, paper_params_by_name[name],
+            )
+        else:
+            strats.append(cls(config))
+
     return strats
 
 
@@ -260,6 +350,23 @@ def cmd_backtest(args):
 def cmd_plan(args):
     market_id = getattr(args, "market", DEFAULT_MARKET)
     config = get_active_config(market_id)
+
+    # Skip plan generation entirely for non-trading universes (Task #300).
+    # mode == "live"  → generate plan; execute_approved.py routes per-strategy
+    #                   live vs paper via strategy_lifecycle (commit b9aab764).
+    # mode == "paper" → generate plan; execute_approved.py routes whole universe
+    #                   to paper broker.
+    # mode == "passive" → skip entirely (no LLM tokens, no Telegram noise).
+    # Any other value (e.g. "disabled") → also skip with same log line.
+    mode = config.get("trading", {}).get("mode", "live")
+    if mode not in ("live", "paper"):
+        logger.info(
+            "cmd_plan: skipping %s — trading.mode=%s (not live or paper)",
+            market_id, mode,
+        )
+        print(f"Skipping plan generation for {market_id} (trading.mode={mode})")
+        return
+
     trade_date = args.date or datetime.now().strftime("%Y-%m-%d")
     tickers = get_tickers(market_id)
     data = load_data(tickers, config)
