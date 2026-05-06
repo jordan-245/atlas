@@ -13,9 +13,9 @@ C  Paper Sharpe ≥ 0.3
 D  |paper_sharpe − research_sharpe| / max(|research_sharpe|, 0.1) < 0.5
 E  DSR per-strategy Sharpe variance gate
 F  research_best.sharpe ≥ 0.5
-G  OOS Sharpe ≥ 0.3                (BYPASSED — column absent from research_best)
-H  OOS trade count ≥ 30            (BYPASSED — column absent from research_best)
-I  OOS CAGR ≥ 5%                   (BYPASSED — column absent from research_best)
+G  OOS Sharpe ≥ 0.3
+H  OOS trade count ≥ 30
+I  OOS CAGR ≥ 5%
 
 Config-mode flip
 ----------------
@@ -57,10 +57,9 @@ GATE_B_MIN_TRADES = 30        # paper trades in last 30 days
 GATE_C_MIN_PAPER_SHARPE = 0.3
 GATE_D_MAX_GAP = 0.5          # relative gap vs research Sharpe
 GATE_F_MIN_RESEARCH_SHARPE = 0.5
-
-# Gates G, H, I are BYPASSED — columns oos_sharpe / oos_trades / oos_cagr do NOT
-# exist in research_best (schema confirmed 2026-05-06).  Each gate emits a WARN
-# so the bypass is visible in the audit log.
+GATE_G_MIN_OOS_SHARPE = 0.3
+GATE_H_MIN_OOS_TRADES = 30
+GATE_I_MIN_OOS_CAGR = 5.0       # stored as percent (e.g. 5.2 means 5.2 %)
 
 
 # ── Sharpe helper (mirrors check_live_research_divergence._compute_live_sharpe) ─
@@ -107,7 +106,8 @@ def _fetch_research_best(strategy: str, universe: str) -> Optional[Dict]:
 
     with get_db() as db:
         row = db.execute(
-            "SELECT sharpe, trades, max_dd_pct, solo_sharpe, portfolio_sharpe "
+            "SELECT sharpe, trades, max_dd_pct, solo_sharpe, portfolio_sharpe, "
+            "       oos_sharpe, oos_trades, oos_cagr, oos_max_dd "
             "FROM research_best "
             "WHERE strategy = ? AND universe = ? AND regime_state IS NULL",
             (strategy, universe),
@@ -245,26 +245,53 @@ def _evaluate_gates(
         )
     all_pass &= f_pass
 
-    # Gate G — OOS Sharpe (BYPASSED — column absent from research_best)
-    logger.warning(
-        "Gate G BYPASS (%s/%s): oos_sharpe column absent from research_best — gate skipped",
-        strategy, universe,
-    )
-    reasons.append("Gate G (BYPASS): oos_sharpe absent from research_best schema")
+    # Gate G — OOS Sharpe ≥ 0.3
+    oos_sharpe = research_row.get("oos_sharpe") if research_row else None
+    if oos_sharpe is None:
+        g_pass = False
+        reasons.append(
+            "Gate G (FAIL): oos_sharpe is NULL in research_best — "
+            "backfill required before promotion"
+        )
+    else:
+        g_pass = float(oos_sharpe) >= GATE_G_MIN_OOS_SHARPE
+        reasons.append(
+            f"Gate G ({'PASS' if g_pass else 'FAIL'}): oos_sharpe={oos_sharpe:.4f} "
+            f"(need ≥{GATE_G_MIN_OOS_SHARPE})"
+        )
+    all_pass &= g_pass
 
-    # Gate H — OOS trade count (BYPASSED — column absent from research_best)
-    logger.warning(
-        "Gate H BYPASS (%s/%s): oos_trades column absent from research_best — gate skipped",
-        strategy, universe,
-    )
-    reasons.append("Gate H (BYPASS): oos_trades absent from research_best schema")
+    # Gate H — OOS trade count ≥ 30
+    oos_trades = research_row.get("oos_trades") if research_row else None
+    if oos_trades is None:
+        h_pass = False
+        reasons.append(
+            "Gate H (FAIL): oos_trades is NULL in research_best — "
+            "backfill required before promotion"
+        )
+    else:
+        h_pass = int(oos_trades) >= GATE_H_MIN_OOS_TRADES
+        reasons.append(
+            f"Gate H ({'PASS' if h_pass else 'FAIL'}): oos_trades={oos_trades} "
+            f"(need ≥{GATE_H_MIN_OOS_TRADES})"
+        )
+    all_pass &= h_pass
 
-    # Gate I — OOS CAGR (BYPASSED — column absent from research_best)
-    logger.warning(
-        "Gate I BYPASS (%s/%s): oos_cagr column absent from research_best — gate skipped",
-        strategy, universe,
-    )
-    reasons.append("Gate I (BYPASS): oos_cagr absent from research_best schema")
+    # Gate I — OOS CAGR ≥ 5.0 %
+    oos_cagr = research_row.get("oos_cagr") if research_row else None
+    if oos_cagr is None:
+        i_pass = False
+        reasons.append(
+            "Gate I (FAIL): oos_cagr is NULL in research_best — "
+            "backfill required before promotion"
+        )
+    else:
+        i_pass = float(oos_cagr) >= GATE_I_MIN_OOS_CAGR
+        reasons.append(
+            f"Gate I ({'PASS' if i_pass else 'FAIL'}): oos_cagr={oos_cagr:.2f}% "
+            f"(need ≥{GATE_I_MIN_OOS_CAGR}%)"
+        )
+    all_pass &= i_pass
 
     metrics: Dict[str, Any] = {
         "days_in_paper": round(days_in_paper, 2),

@@ -246,6 +246,23 @@ def save_best(
     # upsert_research_best imported at module level for test patchability
     if upsert_research_best is not None:
         try:
+            # Extract OOS metrics from experiment metrics dict (gates G/H/I).
+            # Keys are populated by the OOS validation harness when present;
+            # default None → stored as NULL → gates will FAIL with "backfill required".
+            _oos_sharpe = metrics.get("oos_sharpe")
+            _oos_trades = metrics.get("oos_trades")
+            _oos_cagr   = metrics.get("oos_cagr")
+            _oos_max_dd = metrics.get("oos_max_dd")
+            # Normalise types: None stays None; numeric coerced.
+            if _oos_sharpe is not None:
+                _oos_sharpe = float(_oos_sharpe)
+            if _oos_trades is not None:
+                _oos_trades = int(_oos_trades)
+            if _oos_cagr is not None:
+                _oos_cagr = float(_oos_cagr)
+            if _oos_max_dd is not None:
+                _oos_max_dd = float(_oos_max_dd)
+
             upsert_research_best(
                 strategy=strategy,
                 universe=universe,
@@ -255,6 +272,10 @@ def save_best(
                 max_dd_pct=float(metrics.get("max_drawdown_pct", 0) or 0),
                 solo_sharpe=solo_sharpe,
                 portfolio_sharpe=portfolio_sharpe,
+                oos_sharpe=_oos_sharpe,
+                oos_trades=_oos_trades,
+                oos_cagr=_oos_cagr,
+                oos_max_dd=_oos_max_dd,
             )
         except Exception as exc:
             logger.warning("Failed to write research_best to SQLite: %s", exc)

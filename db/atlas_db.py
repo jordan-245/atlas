@@ -1887,6 +1887,10 @@ def upsert_research_best(
     portfolio_sharpe: Optional[float] = None,
     metric_type: Optional[str] = None,
     regime_state: Optional[str] = None,
+    oos_sharpe: Optional[float] = None,
+    oos_trades: Optional[int] = None,
+    oos_cagr: Optional[float] = None,
+    oos_max_dd: Optional[float] = None,
 ) -> None:
     """Insert or replace the best known parameters for (strategy, universe[, regime_state]).
 
@@ -1904,6 +1908,14 @@ def upsert_research_best(
                            Non-NULL = per-regime row (bull_risk_on, recovery_early, …).
                            When regime_state=None, upserts the cross-regime row via
                            DELETE+INSERT to handle SQLite NULL PK uniqueness correctly.
+
+    OOS columns (2026-05-06) — used by promotion gates G/H/I:
+        oos_sharpe  — OOS Sharpe from time-period-split or perturbation test
+        oos_trades  — OOS trade count
+        oos_cagr    — OOS CAGR % (e.g. 5.2 means 5.2 %)
+        oos_max_dd  — OOS max drawdown % (positive)
+        All default None / NULL.  Run backfill_oos_metrics_research_best.py to populate
+        existing rows from research_experiments.
 
     The legacy ``sharpe`` column is preserved for backwards compat but is
     DEPRECATED (use solo_sharpe / portfolio_sharpe).  A DEBUG log is emitted
@@ -1943,10 +1955,13 @@ def upsert_research_best(
             db.execute(
                 "INSERT INTO research_best "
                 "(strategy, universe, regime_state, params, sharpe, trades, max_dd_pct, "
-                " solo_sharpe, portfolio_sharpe, metric_type, updated_at) "
-                "VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, COALESCE(?, 'unknown'), datetime('now'))",
+                " solo_sharpe, portfolio_sharpe, metric_type, "
+                " oos_sharpe, oos_trades, oos_cagr, oos_max_dd, updated_at) "
+                "VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, COALESCE(?, 'unknown'), "
+                "        ?, ?, ?, ?, datetime('now'))",
                 (strategy, universe, params_json, sharpe, trades, max_dd_pct,
-                 solo_sharpe, portfolio_sharpe, metric_type),
+                 solo_sharpe, portfolio_sharpe, metric_type,
+                 oos_sharpe, oos_trades, oos_cagr, oos_max_dd),
             )
         else:
             # Per-regime row — PK is (strategy, universe, regime_state) with non-NULL
@@ -1954,10 +1969,13 @@ def upsert_research_best(
             db.execute(
                 "INSERT OR REPLACE INTO research_best "
                 "(strategy, universe, regime_state, params, sharpe, trades, max_dd_pct, "
-                " solo_sharpe, portfolio_sharpe, metric_type, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 'unknown'), datetime('now'))",
+                " solo_sharpe, portfolio_sharpe, metric_type, "
+                " oos_sharpe, oos_trades, oos_cagr, oos_max_dd, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 'unknown'), "
+                "        ?, ?, ?, ?, datetime('now'))",
                 (strategy, universe, regime_state, params_json, sharpe, trades, max_dd_pct,
-                 solo_sharpe, portfolio_sharpe, metric_type),
+                 solo_sharpe, portfolio_sharpe, metric_type,
+                 oos_sharpe, oos_trades, oos_cagr, oos_max_dd),
             )
 
 

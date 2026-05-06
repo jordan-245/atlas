@@ -310,6 +310,10 @@ CREATE TABLE IF NOT EXISTS research_best (
     solo_sharpe      REAL,              -- strategy-standalone Sharpe (M2 2026-04-28)
     portfolio_sharpe REAL,              -- whole-portfolio Sharpe with this strategy (M2 2026-04-28)
     metric_type      TEXT    NOT NULL DEFAULT 'unknown',  -- 'solo','portfolio','both','legacy_portfolio','portfolio_diversifier','unknown'
+    oos_sharpe       REAL,              -- OOS Sharpe from time-period-split (gates G/H/I 2026-05-06)
+    oos_trades       INTEGER,           -- OOS trade count
+    oos_cagr         REAL,              -- OOS CAGR % (e.g. 5.2 = 5.2 %)
+    oos_max_dd       REAL,              -- OOS max drawdown % (positive)
     PRIMARY KEY (strategy, universe, regime_state)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_research_best_cross_regime

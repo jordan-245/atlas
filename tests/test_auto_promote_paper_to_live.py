@@ -61,13 +61,23 @@ def _insert_paper_trades(
     db.commit()
 
 
-def _insert_research_best(db, strategy: str, universe: str, sharpe: float = 0.7) -> None:
+def _insert_research_best(
+    db,
+    strategy: str,
+    universe: str,
+    sharpe: float = 0.7,
+    oos_sharpe: float | None = None,
+    oos_trades: int | None = None,
+    oos_cagr: float | None = None,
+    oos_max_dd: float | None = None,
+) -> None:
     """Insert a cross-regime research_best row."""
     db.execute(
         "INSERT OR REPLACE INTO research_best "
-        "(strategy, universe, regime_state, params, sharpe, trades, metric_type) "
-        "VALUES (?, ?, NULL, '{}', ?, 50, 'sharpe')",
-        (strategy, universe, sharpe),
+        "(strategy, universe, regime_state, params, sharpe, trades, metric_type, "
+        " oos_sharpe, oos_trades, oos_cagr, oos_max_dd) "
+        "VALUES (?, ?, NULL, '{}', ?, 50, 'sharpe', ?, ?, ?, ?)",
+        (strategy, universe, sharpe, oos_sharpe, oos_trades, oos_cagr, oos_max_dd),
     )
     db.commit()
 
@@ -171,8 +181,10 @@ def test_promotes_clean_combo(db, promo_log, no_telegram, caplog):
         # research Sharpe 0.7 — close to paper Sharpe (gap ≈ 0.11 < 0.5)
         conn.execute(
             "INSERT OR REPLACE INTO research_best "
-            "(strategy, universe, regime_state, params, sharpe, trades, metric_type) "
-            "VALUES ('connors_rsi2', 'commodity_etfs', NULL, '{}', 0.7, 50, 'sharpe')"
+            "(strategy, universe, regime_state, params, sharpe, trades, metric_type, "
+            " oos_sharpe, oos_trades, oos_cagr, oos_max_dd) "
+            "VALUES ('connors_rsi2', 'commodity_etfs', NULL, '{}', 0.7, 50, 'sharpe', "
+            "        0.5, 40, 6.5, 20.0)"
         )
         conn.commit()
 
@@ -344,8 +356,10 @@ def test_force_evaluates_single_combo_only(db, promo_log, no_telegram, caplog):
             )
         conn.execute(
             "INSERT OR REPLACE INTO research_best "
-            "(strategy, universe, regime_state, params, sharpe, trades, metric_type) "
-            "VALUES ('momentum_breakout', 'sp500', NULL, '{}', 0.65, 50, 'sharpe')"
+            "(strategy, universe, regime_state, params, sharpe, trades, metric_type, "
+            " oos_sharpe, oos_trades, oos_cagr, oos_max_dd) "
+            "VALUES ('momentum_breakout', 'sp500', NULL, '{}', 0.65, 50, 'sharpe', "
+            "        0.5, 40, 6.5, 20.0)"
         )
         # Combo 2 — also in PAPER but NOT forced
         _insert_lifecycle_row(conn, "bb_squeeze", "sp500", days_ago=40)
@@ -360,8 +374,10 @@ def test_force_evaluates_single_combo_only(db, promo_log, no_telegram, caplog):
             )
         conn.execute(
             "INSERT OR REPLACE INTO research_best "
-            "(strategy, universe, regime_state, params, sharpe, trades, metric_type) "
-            "VALUES ('bb_squeeze', 'sp500', NULL, '{}', 0.65, 50, 'sharpe')"
+            "(strategy, universe, regime_state, params, sharpe, trades, metric_type, "
+            " oos_sharpe, oos_trades, oos_cagr, oos_max_dd) "
+            "VALUES ('bb_squeeze', 'sp500', NULL, '{}', 0.65, 50, 'sharpe', "
+            "        0.5, 40, 6.5, 20.0)"
         )
         conn.commit()
 
@@ -444,3 +460,221 @@ def test_rejects_low_research_sharpe_gate_f(db, promo_log, no_telegram, caplog):
     assert not promo_log.exists()
     combined = " ".join(caplog.messages)
     assert "Gate F" in combined and "FAIL" in combined
+
+
+# ── Helpers for OOS gate tests ────────────────────────────────────────────────
+
+def _setup_oos_test_combo(
+    db,
+    strategy: str = "opening_gap",
+    universe: str = "sp500",
+    *,
+    oos_sharpe: float | None = None,
+    oos_trades: int | None = None,
+    oos_cagr: float | None = None,
+    days_ago: float = 40,
+) -> None:
+    """Seed lifecycle + 40 deterministic paper trades + research_best with OOS fields.
+
+    Uses alternating pnl [1.6, -0.4] → Sharpe ≈ 0.62, research Sharpe 0.65 →
+    gate D gap ≈ 0.046 < 0.5.  Gates A/B/C/D/E/F all pass when research Sharpe = 0.65.
+    """
+    pnl_values = [1.6, -0.4] * 20  # 40 values, Sharpe ≈ 0.62
+    entry_date = _iso(5)[:10]
+    exit_date = _iso(2)[:10]
+    with db() as conn:
+        _insert_lifecycle_row(conn, strategy, universe, days_ago=days_ago)
+        for i, pnl in enumerate(pnl_values):
+            conn.execute(
+                "INSERT INTO paper_trades "
+                "(ticker, strategy, universe, direction, entry_date, entry_price, shares, "
+                " exit_date, exit_price, pnl, pnl_pct, status, superseded) "
+                "VALUES (?, ?, ?, 'long', ?, 100.0, 10, ?, 101.0, ?, ?, 'closed', 0)",
+                (f"T{i:02d}", strategy, universe, entry_date, exit_date, pnl * 10, pnl),
+            )
+        # research Sharpe 0.65 → gap ≈ 0.046; Gate F passes (0.65 ≥ 0.5)
+        _insert_research_best(
+            conn, strategy, universe,
+            sharpe=0.65,
+            oos_sharpe=oos_sharpe,
+            oos_trades=oos_trades,
+            oos_cagr=oos_cagr,
+        )
+        conn.commit()
+
+
+# ── Tests: Gate G (OOS Sharpe) ────────────────────────────────────────────────
+
+def test_gate_g_pass_when_oos_sharpe_above_threshold(db, promo_log, no_telegram, caplog):
+    """oos_sharpe=0.5 ≥ 0.3 → Gate G PASS (combined with passing H/I)."""
+    _setup_oos_test_combo(
+        db, "opening_gap", "sp500",
+        oos_sharpe=0.5,
+        oos_trades=35,
+        oos_cagr=6.0,
+    )
+    import scripts.auto_promote_paper_to_live as mod
+    result = mod.evaluate_and_promote("opening_gap", "sp500", dry_run=True, no_telegram=True)
+    combined_reasons = " ".join(result.get("gates", {}).values())
+    assert result["gates"].get("G") == "PASS", (
+        f"Expected Gate G=PASS, got {result['gates']}\nReasons: {result}"
+    )
+
+
+def test_gate_g_fail_when_oos_sharpe_below_threshold(db, promo_log, no_telegram, caplog):
+    """oos_sharpe=0.1 < 0.3 → Gate G FAIL."""
+    _setup_oos_test_combo(
+        db, "opening_gap", "sp500",
+        oos_sharpe=0.1,
+        oos_trades=35,
+        oos_cagr=6.0,
+    )
+    import scripts.auto_promote_paper_to_live as mod
+    result = mod.evaluate_and_promote("opening_gap", "sp500", dry_run=True, no_telegram=True)
+    assert result["gates"].get("G") == "FAIL", (
+        f"Expected Gate G=FAIL, got {result['gates']}"
+    )
+    # Gate G must be FAIL; the reason is in the evaluate_gates log not the result dict
+    assert result.get("promoted") is False
+
+
+def test_gate_g_fail_when_oos_sharpe_null(db, promo_log, no_telegram, caplog):
+    """oos_sharpe=NULL → Gate G FAIL with 'backfill required' message."""
+    _setup_oos_test_combo(
+        db, "opening_gap", "sp500",
+        oos_sharpe=None,
+        oos_trades=None,
+        oos_cagr=None,
+    )
+    import scripts.auto_promote_paper_to_live as mod
+    result = mod.evaluate_and_promote("opening_gap", "sp500", dry_run=True, no_telegram=True)
+    assert result["gates"].get("G") == "FAIL"
+    # The reason text should mention "backfill"
+    from monitor.strategy_lifecycle import PromotionState, list_state
+    # evaluate_and_promote uses _evaluate_gates internally; verify via run_promotion log
+    with caplog.at_level("INFO", logger="auto_promote_paper"):
+        import scripts.auto_promote_paper_to_live as m2
+        m2.run_promotion(dry_run=True, no_telegram=True)
+    combined = " ".join(caplog.messages)
+    # Gate G fail reason should mention backfill
+    assert "backfill" in combined.lower() or "NULL" in combined or "Gate G" in combined
+
+
+# ── Tests: Gate H (OOS trade count) ──────────────────────────────────────────
+
+def test_gate_h_pass_when_oos_trades_above_threshold(db, promo_log, no_telegram, caplog):
+    """oos_trades=50 ≥ 30 → Gate H PASS."""
+    _setup_oos_test_combo(
+        db, "opening_gap", "sp500",
+        oos_sharpe=0.5,
+        oos_trades=50,
+        oos_cagr=6.0,
+    )
+    import scripts.auto_promote_paper_to_live as mod
+    result = mod.evaluate_and_promote("opening_gap", "sp500", dry_run=True, no_telegram=True)
+    assert result["gates"].get("H") == "PASS", (
+        f"Expected Gate H=PASS, got {result['gates']}"
+    )
+
+
+def test_gate_h_fail_when_oos_trades_below_threshold(db, promo_log, no_telegram, caplog):
+    """oos_trades=10 < 30 → Gate H FAIL."""
+    _setup_oos_test_combo(
+        db, "opening_gap", "sp500",
+        oos_sharpe=0.5,
+        oos_trades=10,
+        oos_cagr=6.0,
+    )
+    import scripts.auto_promote_paper_to_live as mod
+    result = mod.evaluate_and_promote("opening_gap", "sp500", dry_run=True, no_telegram=True)
+    assert result["gates"].get("H") == "FAIL", (
+        f"Expected Gate H=FAIL, got {result['gates']}"
+    )
+
+
+def test_gate_h_fail_when_oos_trades_null(db, promo_log, no_telegram, caplog):
+    """oos_trades=NULL → Gate H FAIL."""
+    _setup_oos_test_combo(
+        db, "opening_gap", "sp500",
+        oos_sharpe=0.5,
+        oos_trades=None,
+        oos_cagr=6.0,
+    )
+    import scripts.auto_promote_paper_to_live as mod
+    result = mod.evaluate_and_promote("opening_gap", "sp500", dry_run=True, no_telegram=True)
+    assert result["gates"].get("H") == "FAIL"
+
+
+# ── Tests: Gate I (OOS CAGR) ─────────────────────────────────────────────────
+
+def test_gate_i_pass_when_oos_cagr_above_threshold(db, promo_log, no_telegram, caplog):
+    """oos_cagr=7.5 ≥ 5.0 → Gate I PASS."""
+    _setup_oos_test_combo(
+        db, "opening_gap", "sp500",
+        oos_sharpe=0.5,
+        oos_trades=35,
+        oos_cagr=7.5,
+    )
+    import scripts.auto_promote_paper_to_live as mod
+    result = mod.evaluate_and_promote("opening_gap", "sp500", dry_run=True, no_telegram=True)
+    assert result["gates"].get("I") == "PASS", (
+        f"Expected Gate I=PASS, got {result['gates']}"
+    )
+
+
+def test_gate_i_fail_when_oos_cagr_below_threshold(db, promo_log, no_telegram, caplog):
+    """oos_cagr=2.0 < 5.0 → Gate I FAIL."""
+    _setup_oos_test_combo(
+        db, "opening_gap", "sp500",
+        oos_sharpe=0.5,
+        oos_trades=35,
+        oos_cagr=2.0,
+    )
+    import scripts.auto_promote_paper_to_live as mod
+    result = mod.evaluate_and_promote("opening_gap", "sp500", dry_run=True, no_telegram=True)
+    assert result["gates"].get("I") == "FAIL", (
+        f"Expected Gate I=FAIL, got {result['gates']}"
+    )
+
+
+def test_gate_i_fail_when_oos_cagr_null(db, promo_log, no_telegram, caplog):
+    """oos_cagr=NULL → Gate I FAIL."""
+    _setup_oos_test_combo(
+        db, "opening_gap", "sp500",
+        oos_sharpe=0.5,
+        oos_trades=35,
+        oos_cagr=None,
+    )
+    import scripts.auto_promote_paper_to_live as mod
+    result = mod.evaluate_and_promote("opening_gap", "sp500", dry_run=True, no_telegram=True)
+    assert result["gates"].get("I") == "FAIL"
+
+
+# ── Test: promotion blocked when only OOS gates fail ─────────────────────────
+
+def test_promotion_blocked_when_only_oos_gates_fail(db, promo_log, no_telegram, caplog):
+    """A-F all pass but G/H/I all NULL → not promoted.
+
+    Uses alternating pnl [1.6, -0.4] (Sharpe ≈ 0.62) with research_sharpe=0.65
+    so gates A-F pass; OOS fields are all NULL so G/H/I fail.
+    """
+    _setup_oos_test_combo(
+        db, "keltner_reversion", "sp500",
+        oos_sharpe=None,
+        oos_trades=None,
+        oos_cagr=None,
+    )
+    import scripts.auto_promote_paper_to_live as mod
+    result = mod.evaluate_and_promote(
+        "keltner_reversion", "sp500", dry_run=False, no_telegram=True
+    )
+    assert result["promoted"] is False, (
+        "Expected promotion to be BLOCKED when G/H/I are NULL"
+    )
+    gates = result["gates"]
+    assert gates.get("G") == "FAIL"
+    assert gates.get("H") == "FAIL"
+    assert gates.get("I") == "FAIL"
+    # Lifecycle must remain PAPER
+    from monitor.strategy_lifecycle import get_state, PromotionState
+    assert get_state("keltner_reversion", "sp500") == PromotionState.PAPER
