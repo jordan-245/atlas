@@ -320,11 +320,11 @@ class TestIntermittentBreach:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Test 6 — LIVE state: escalation only, no promotion state change
+# Test 6 — LIVE state: Telegram escalation + force_to_watch (Item 3)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class TestLiveStateEscalation:
-    """LIVE strategies get Telegram alert only — promotion state unchanged."""
+    """LIVE strategies get Telegram alert + health-state demotion to WATCH."""
 
     _LIVE_STRATEGY = "trend_following"
     _LIVE_UNIVERSE = "sp500"
@@ -339,10 +339,10 @@ class TestLiveStateEscalation:
         }
     ]
 
-    def test_live_5_day_breach_alert_no_transition(
+    def test_live_5_day_breach_alert_and_health_demotion(
         self, state_file: Path, rollback_log: Path
     ) -> None:
-        """5 consecutive breach days for LIVE → alert emitted, state stays LIVE."""
+        """5 consecutive breach days for LIVE → Telegram alert + force_to_watch called; promo state unchanged."""
         today = _today()
         yesterday = _yesterday()
 
@@ -357,17 +357,26 @@ class TestLiveStateEscalation:
         with get_db() as conn:
             _seed_lifecycle(conn, self._LIVE_STRATEGY, self._LIVE_UNIVERSE, "LIVE")
 
+        # Track force_to_watch calls; mock class to avoid real lifecycle file writes
+        force_to_watch_calls = []
+        mock_lcm = MagicMock()
+        mock_lcm.force_to_watch = MagicMock(
+            side_effect=lambda s, r: (force_to_watch_calls.append((s, r)), True)[1]
+        )
+
         with (
             patch("scripts.check_live_research_divergence._fetch_research_best_rows",
                   return_value=self._LIVE_ROW),
             patch("scripts.check_live_research_divergence._fetch_live_trades",
                   return_value=_BREACH_PNL),
+            patch("monitor.lifecycle.StrategyLifecycleManager", return_value=mock_lcm),
+            patch("utils.config.get_active_config", return_value={}),
         ):
             rc = run_divergence_check(
                 gap_threshold=0.5,
                 state_file=state_file,
                 no_rollback=False,
-                dry_run_telegram=True,   # print alert, don't send
+                dry_run_telegram=True,   # print alert, don't send Telegram
                 no_telegram=True,
                 today=today,
             )
@@ -378,8 +387,17 @@ class TestLiveStateEscalation:
         from monitor.strategy_lifecycle import get_state
         assert get_state(self._LIVE_STRATEGY, self._LIVE_UNIVERSE) == PromotionState.LIVE
 
-        # No rollback log entry (escalation only)
-        assert not rollback_log.exists()
+        # force_to_watch was called exactly once for the LIVE strategy
+        assert len(force_to_watch_calls) == 1
+        assert force_to_watch_calls[0][0] == self._LIVE_STRATEGY
+
+        # Rollback log written because force_to_watch returned True
+        assert rollback_log.exists()
+        entries = json.loads(rollback_log.read_text())
+        assert len(entries) == 1
+        assert entries[0]["health_state_to"] == "WATCH"
+        assert entries[0]["from_state"] == "LIVE"
+        assert entries[0]["to_state"] == "LIVE"   # promotion state unchanged
 
         # Streak should now be 5 in state file (kept — not reset for LIVE)
         saved = _load_state(state_file)
@@ -475,3 +493,104 @@ class TestNoRollbackFlag:
         # Counter should have incremented to 5 (tracking still works)
         saved = _load_state(state_file)
         assert saved[_KEY]["consecutive_breach_days"] == 5
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Test 9 — LIVE breach calls force_to_watch AND sends Telegram (Item 3)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def test_live_breach_calls_force_to_watch_and_sends_telegram(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    state_file: Path,
+    rollback_log: Path,
+) -> None:
+    """LIVE-state divergence breach for 5+ days → force_to_watch + Telegram.
+
+    Both the Telegram escalation alert AND force_to_watch must fire.
+    Promotion state remains LIVE.
+    """
+    today = _today()
+    yesterday = _yesterday()
+
+    _LIVE_STRATEGY = "sector_rotation"
+    _LIVE_UNIVERSE = "sp500"
+    _LIVE_KEY = f"{_LIVE_STRATEGY}:{_LIVE_UNIVERSE}"
+    _LIVE_ROW = [
+        {
+            "strategy": _LIVE_STRATEGY,
+            "universe": _LIVE_UNIVERSE,
+            "sharpe": 1.0,
+            "trades": 10,
+            "updated_at": today,
+        }
+    ]
+
+    # Pre-seed state: 4 days breach (5th fires rollback gate)
+    pre_state = {
+        _LIVE_KEY: _make_breach_entry(
+            streak=4, last_check=yesterday, last_breach=yesterday, state="LIVE"
+        ),
+    }
+    _save_state_atomic(pre_state, state_file)
+
+    # Seed LIVE row in isolated lifecycle DB
+    from db.atlas_db import get_db
+    with get_db() as conn:
+        _seed_lifecycle(conn, _LIVE_STRATEGY, _LIVE_UNIVERSE, "LIVE")
+
+    # Track calls to Telegram notify
+    telegram_calls: list = []
+
+    # Track force_to_watch calls; mock class to avoid real lifecycle file writes
+    force_to_watch_calls: list = []
+    mock_lcm = MagicMock()
+    mock_lcm.force_to_watch = MagicMock(
+        side_effect=lambda s, r: (force_to_watch_calls.append((s, r)), True)[1]
+    )
+
+    with (
+        patch("scripts.check_live_research_divergence._fetch_research_best_rows",
+              return_value=_LIVE_ROW),
+        patch("scripts.check_live_research_divergence._fetch_live_trades",
+              return_value=_BREACH_PNL),
+        patch("monitor.lifecycle.StrategyLifecycleManager", return_value=mock_lcm),
+        patch("utils.config.get_active_config", return_value={}),
+        patch("utils.telegram.notify",
+              side_effect=lambda m, **kw: telegram_calls.append(m)),
+    ):
+        rc = run_divergence_check(
+            gap_threshold=0.5,
+            state_file=state_file,
+            no_rollback=False,
+            dry_run_telegram=False,   # real send path (intercepted by mock)
+            no_telegram=False,
+            today=today,
+        )
+
+    assert rc == 0
+
+    # Telegram alert MUST still fire (escalation alert + digest)
+    assert len(telegram_calls) >= 1, "Telegram notify must be called"
+
+    # force_to_watch MUST be called with the correct strategy name
+    assert len(force_to_watch_calls) == 1, "force_to_watch must be called exactly once"
+    assert force_to_watch_calls[0][0] == _LIVE_STRATEGY
+
+    # Promotion state must remain LIVE (no promotion-state transition)
+    from monitor.strategy_lifecycle import get_state
+    assert get_state(_LIVE_STRATEGY, _LIVE_UNIVERSE) == PromotionState.LIVE
+
+    # Rollback log entry written (force_to_watch returned True)
+    assert rollback_log.exists()
+    entries = json.loads(rollback_log.read_text())
+    assert len(entries) >= 1
+    entry = entries[0]
+    assert entry["from_state"] == "LIVE"
+    assert entry["to_state"] == "LIVE"
+    assert entry["health_state_to"] == "WATCH"
+    assert entry["strategy"] == _LIVE_STRATEGY
+
+    # Breach streak is kept at 5 (not reset for LIVE — operator must act)
+    saved = _load_state(state_file)
+    assert saved[_LIVE_KEY]["consecutive_breach_days"] == 5

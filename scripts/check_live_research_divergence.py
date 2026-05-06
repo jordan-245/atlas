@@ -8,11 +8,10 @@ Telegram if the gap exceeds threshold.
 Sub-phase 1.4 extension: consecutive-day breach tracking with auto-rollback.
   - PAPER state: gap > threshold for 5+ consecutive days → PAPER → RESEARCH
   - LIVE state:  gap > threshold for 5+ consecutive days → Telegram escalation
-    only (no promotion state change — operator action required via Controls tab).
-    NOTE: monitor/lifecycle.py StrategyLifecycleManager has no standalone
-    external API for force-setting health state to WATCH from outside code (it
-    requires a config dict + HealthReport object).  Telegram alert is the
-    correct action per spec.
+    alert + health state demoted to WATCH via force_to_watch (Item 3).
+    Sub-phase 1.4 + Item 3: LIVE breach demotes health state to WATCH via
+    force_to_watch + Telegram alert. Promotion state remains LIVE (operator
+    action via Controls tab still required for full rollback).
 
 Per audit 2026-05-06 Recommendation 4.
 
@@ -314,11 +313,10 @@ def process_rollbacks(
     Returns list of alert message strings that were sent/printed.
 
     LIVE state handling:
-        monitor/lifecycle.py StrategyLifecycleManager has no standalone external
-        API for force-setting health state to WATCH from outside code — it
-        requires a config dict + HealthReport object.  We emit a Telegram
-        escalation alert so the operator can act via the Controls tab.
-        Promotion state stays LIVE.
+        Sub-phase 1.4 + Item 3: LIVE breach for ROLLBACK_CONSECUTIVE_DAYS also
+        demotes the health state to WATCH via StrategyLifecycleManager.force_to_watch.
+        Promotion state stays LIVE (operator action via Controls tab still required
+        for full rollback). Telegram escalation alert also fires.
     """
     yesterday_str = (
         datetime.strptime(today_str, "%Y-%m-%d").date() - timedelta(days=1)
@@ -465,10 +463,9 @@ def process_rollbacks(
             )
 
         elif promo_state == _PromotionState.LIVE:
-            # ── LIVE: escalation alert only, no promotion-state change ─────────
-            # monitor/lifecycle.py has no external API for force-transitioning
-            # the health state to WATCH from outside code.  The correct action
-            # is an operator review via the Controls tab.
+            # ── LIVE: escalation alert + health-state demotion to WATCH ─────────
+            # Sub-phase 1.4 + Item 3: Telegram alert fires AND health state is
+            # demoted to WATCH via force_to_watch. Promotion state stays LIVE.
             alert = (
                 f"⚠️ <b>{strategy}/{universe}</b> LIVE divergence persistent "
                 f"({n_days} days, gap {gap_val:.2f}). "
@@ -481,9 +478,51 @@ def process_rollbacks(
             )
             logger.warning(
                 "LIVE divergence escalation for %s/%s: gap=%.2f for %d days. "
-                "No automated state change — operator action required.",
+                "Health state demoted to WATCH via force_to_watch.",
                 strategy, universe, gap_val, n_days,
             )
+
+            # Auto-demote LIVE → WATCH on health state machine
+            try:
+                from monitor.lifecycle import StrategyLifecycleManager
+                from utils.config import get_active_config
+                _cfg = get_active_config(universe)
+                _lcm = StrategyLifecycleManager(_cfg, market_id=universe)
+                _watch_reason = (
+                    f"divergence_breach: gap > {gap_threshold} for {n_days} consecutive days "
+                    f"(live_sharpe vs research_sharpe)"
+                )
+                _transitioned = _lcm.force_to_watch(strategy, _watch_reason)
+                if _transitioned:
+                    logger.info(
+                        "force_to_watch: %s health state demoted to WATCH (universe=%s)",
+                        strategy, universe,
+                    )
+                    # Append rollback log entry too (mirroring the PAPER → RESEARCH path)
+                    log_entry: Dict[str, Any] = {
+                        "ts": datetime.now(timezone.utc).isoformat(),
+                        "strategy": strategy,
+                        "universe": universe,
+                        "from_state": "LIVE",
+                        "to_state": "LIVE",  # promotion state stays LIVE
+                        "health_state_to": "WATCH",
+                        "gap": round(gap_val, 4),
+                        "consecutive_breach_days": n_days,
+                        "auto_promotion_id": str(uuid.uuid4()),
+                        "reason": _watch_reason,
+                        "note": "Promotion state remains LIVE; health state demoted to WATCH for operator review.",
+                    }
+                    try:
+                        _append_rollback_log(log_entry)
+                    except Exception as exc:
+                        logger.warning("Could not write rollback log: %s", exc)
+                else:
+                    logger.info(
+                        "force_to_watch: %s already in WATCH-or-worse, no health transition",
+                        strategy,
+                    )
+            except Exception as exc:
+                logger.error("force_to_watch failed for %s/%s: %s", strategy, universe, exc)
 
     return alerts
 

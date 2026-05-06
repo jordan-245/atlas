@@ -38,6 +38,18 @@ class LifecycleState(str, Enum):
     SUSPENDED  = "SUSPENDED"   # 4+ reports degraded, pool_cap=0
 
 
+# Allowed health-state transitions for force_to_state.
+# Note: This is the OPERATIONAL HEALTH state machine (separate from the
+# promotion lifecycle in monitor/strategy_lifecycle.py).
+ALLOWED_TRANSITIONS_HEALTH: Dict[LifecycleState, set] = {
+    LifecycleState.RAMP_UP:   {LifecycleState.ACTIVE, LifecycleState.WATCH},
+    LifecycleState.ACTIVE:    {LifecycleState.WATCH, LifecycleState.PROBATION, LifecycleState.SUSPENDED},
+    LifecycleState.WATCH:     {LifecycleState.ACTIVE, LifecycleState.PROBATION, LifecycleState.SUSPENDED},
+    LifecycleState.PROBATION: {LifecycleState.ACTIVE, LifecycleState.WATCH, LifecycleState.SUSPENDED},
+    LifecycleState.SUSPENDED: {LifecycleState.PROBATION},
+}
+
+
 # ── Record dataclass ──────────────────────────────────────────────────────────
 
 @dataclass
@@ -219,6 +231,123 @@ class StrategyLifecycleManager:
 
         self._save_state()
         return transitions
+
+    # ── Force-transition public API ───────────────────────────────────────────────
+
+    def force_to_watch(self, strategy: str, reason: str) -> bool:
+        """Force ACTIVE → WATCH for a strategy outside the normal health-report flow.
+
+        Used by scripts/check_live_research_divergence.py to demote a LIVE-state
+        strategy when divergence breaches persist for ROLLBACK_CONSECUTIVE_DAYS.
+
+        Behavior:
+            - Strategy not tracked yet → initialise as ACTIVE, then transition to WATCH.
+            - Strategy currently ACTIVE  → transition to WATCH, set pool_cap_override = max(1, default - 1).
+            - Strategy currently RAMP_UP → transition to WATCH (treat ramp_up as active).
+            - Strategy currently WATCH/PROBATION/SUSPENDED → no-op, return False.
+
+        A history entry is appended with timestamp, reason, and 'force_to_watch' marker.
+        State is persisted to disk via _save_state().
+
+        Args:
+            strategy: Strategy name (e.g. 'momentum_breakout').
+            reason:   Human-readable justification (logged + persisted).
+
+        Returns:
+            True if a transition occurred. False if already WATCH-or-worse (no-op).
+        """
+        rec = self.records.get(strategy)
+        if rec is None:
+            # Initialise as ACTIVE first (matches _load_state new-strategy behavior)
+            rec = LifecycleRecord(
+                strategy=strategy,
+                state=LifecycleState.ACTIVE,
+                entered_at=datetime.now().isoformat(),
+            )
+            self.records[strategy] = rec
+
+        if rec.state in (LifecycleState.WATCH, LifecycleState.PROBATION, LifecycleState.SUSPENDED):
+            logger.info(
+                "force_to_watch: %s already %s, no-op (reason=%s)",
+                strategy, rec.state.value, reason,
+            )
+            return False
+
+        return self.force_to_state(strategy, LifecycleState.WATCH, reason)
+
+    def force_to_state(self, strategy: str, target_state: LifecycleState, reason: str) -> bool:
+        """Force a strategy to target_state, with graph validation.
+
+        This is a generic version of force_to_watch — used for any externally-
+        triggered state change. Validates against ALLOWED_TRANSITIONS_HEALTH and
+        refuses disallowed transitions (logs WARNING + returns False).
+
+        pool_cap_override is updated according to the target_state:
+            WATCH      → max(1, default_pool_cap - 1)
+            PROBATION  → 1
+            SUSPENDED  → 0
+            ACTIVE     → None (restore default)
+
+        history is appended; state persisted.
+
+        Args:
+            strategy:     Strategy name.
+            target_state: LifecycleState enum value.
+            reason:       Human-readable justification.
+
+        Returns:
+            True if transition occurred. False on no-op (already in target) or refused (disallowed).
+        """
+        rec = self.records.get(strategy)
+        if rec is None:
+            rec = LifecycleRecord(
+                strategy=strategy,
+                state=LifecycleState.ACTIVE,
+                entered_at=datetime.now().isoformat(),
+            )
+            self.records[strategy] = rec
+
+        if rec.state == target_state:
+            logger.info("force_to_state: %s already %s, no-op", strategy, target_state.value)
+            return False
+
+        # Validate against allowed transitions
+        allowed = ALLOWED_TRANSITIONS_HEALTH.get(rec.state, set())
+        if target_state not in allowed:
+            logger.warning(
+                "force_to_state: refused %s → %s (not in allowed graph). reason=%r",
+                rec.state.value, target_state.value, reason,
+            )
+            return False
+
+        # Apply pool_cap_override
+        if target_state == LifecycleState.WATCH:
+            default_cap = self._get_default_pool_cap(strategy)
+            rec.pool_cap_override = max(1, default_cap - 1)
+        elif target_state == LifecycleState.PROBATION:
+            rec.pool_cap_override = 1
+        elif target_state == LifecycleState.SUSPENDED:
+            rec.pool_cap_override = 0
+        elif target_state == LifecycleState.ACTIVE:
+            rec.pool_cap_override = None
+
+        transition = {
+            "strategy": strategy,
+            "from": rec.state.value,
+            "to": target_state.value,
+            "reason": f"force_to_state: {reason}",
+            "timestamp": datetime.now().isoformat(),
+        }
+        rec.history.append(transition)
+        rec.state = target_state
+        rec.entered_at = datetime.now().isoformat()
+        logger.info(
+            "Forced lifecycle transition: %s %s → %s (reason=%s)",
+            strategy, transition["from"], target_state.value, reason,
+        )
+
+        self._save_state()
+        return True
 
     # ── Transition logic ──────────────────────────────────────────────────────
 
