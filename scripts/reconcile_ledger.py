@@ -290,38 +290,146 @@ def reconcile_ledger(market_id: str, dry_run: bool = False, broker=None, mode_ov
                     else int(bp.shares)
                 )
 
-                # No-zero-stop guard: look up actual broker stop order before INSERT.
-                # Never use synthetic entry_price * 0.95 — that's a ghost risk value.
-                # Check open orders for a SELL stop targeting this ticker.
+                # ── Stop-price fallback chain (P1 → P2 → P3 → P4) ──────────────────
+                # OCO bracket stop legs often have status='held' and are NOT returned
+                # by broker.get_open_orders() — so we use a multi-source fallback
+                # chain instead of relying solely on the live order list.
                 _broker_stop: float = 0.0
-                try:
-                    for _ord in broker.get_open_orders():
-                        _is_sell = getattr(_ord, "side", None)
-                        _is_sell_str = (
-                            _is_sell.value.upper()
-                            if hasattr(_is_sell, "value")
-                            else str(_is_sell).upper()
-                        )
-                        _ord_type = str(getattr(_ord, "type", "") or "").lower()
-                        if (
-                            _ord.ticker == ticker
-                            and _is_sell_str == "SELL"
-                            and _ord_type in ("stop", "trailing_stop", "stop_limit")
-                        ):
-                            _broker_stop = float(getattr(_ord, "stop_price", 0) or 0)
-                            if _broker_stop > 0:
-                                break
-                except Exception as _stop_exc:
-                    log.debug("reconcile_ledger: stop lookup failed for %s: %s", ticker, _stop_exc)
 
+                # P1: broker_orders table — most authoritative; includes held/oco rows
+                try:
+                    with atlas_db.get_db() as _bo_db:
+                        _bo_rows = _bo_db.execute(
+                            """
+                            SELECT raw_alpaca_json, submitted_at
+                            FROM broker_orders
+                            WHERE symbol = ?
+                              AND side = 'sell'
+                              AND order_class IN ('oco', 'bracket', 'simple')
+                              AND status IN ('held', 'new', 'accepted', 'pending_new')
+                              AND raw_alpaca_json LIKE '%stop_price%'
+                            ORDER BY submitted_at DESC
+                            LIMIT 5
+                            """,
+                            (ticker,),
+                        ).fetchall()
+                    for _bo_row in _bo_rows:
+                        _raw_j = _bo_row[0]
+                        if not _raw_j:
+                            continue
+                        try:
+                            _parsed_j = json.loads(_raw_j)
+                        except (json.JSONDecodeError, TypeError):
+                            continue
+                        _sp_raw = _parsed_j.get("stop_price")
+                        if _sp_raw and str(_sp_raw).lower() not in ("none", "null", ""):
+                            try:
+                                _candidate = float(_sp_raw)
+                                if _candidate > 0:
+                                    _broker_stop = _candidate
+                                    log.info(
+                                        "reconcile_ledger: [P1] stop_price=%.4f for %s "
+                                        "from broker_orders (status=%s)",
+                                        _broker_stop, ticker,
+                                        _parsed_j.get("status", "?"),
+                                    )
+                                    break
+                            except (ValueError, TypeError):
+                                continue
+                except Exception as _p1_exc:
+                    log.debug(
+                        "reconcile_ledger: P1 broker_orders lookup failed for %s: %s",
+                        ticker, _p1_exc,
+                    )
+
+                # P2: position_protective_orders table
+                if _broker_stop <= 0:
+                    try:
+                        with atlas_db.get_db() as _ppo_db:
+                            _ppo_row = _ppo_db.execute(
+                                """
+                                SELECT stop_price FROM position_protective_orders
+                                WHERE market_id = ? AND ticker = ? AND status = 'active'
+                                ORDER BY created_at DESC
+                                LIMIT 1
+                                """,
+                                (market_id, ticker),
+                            ).fetchone()
+                        if _ppo_row and _ppo_row[0] is not None:
+                            _ppo_stop = float(_ppo_row[0])
+                            if _ppo_stop > 0:
+                                _broker_stop = _ppo_stop
+                                log.info(
+                                    "reconcile_ledger: [P2] stop_price=%.4f for %s "
+                                    "from position_protective_orders",
+                                    _broker_stop, ticker,
+                                )
+                    except Exception as _p2_exc:
+                        log.debug(
+                            "reconcile_ledger: P2 position_protective_orders lookup "
+                            "failed for %s: %s",
+                            ticker, _p2_exc,
+                        )
+
+                # P3: most recent plan files for this market (entry_price within ±2%)
+                if _broker_stop <= 0:
+                    try:
+                        import glob as _glob_p3
+                        _plan_pattern = str(PROJECT / "plans" / f"plan_{market_id}_*.json")
+                        _plan_paths = sorted(
+                            _glob_p3.glob(_plan_pattern),
+                            key=lambda _pp: Path(_pp).stat().st_mtime,
+                            reverse=True,
+                        )
+                        for _plan_path in _plan_paths[:5]:
+                            try:
+                                with open(_plan_path) as _pf:
+                                    _plan_data = json.load(_pf)
+                                for _pe in _plan_data.get("proposed_entries", []) or []:
+                                    if _pe.get("ticker") != ticker:
+                                        continue
+                                    _plan_ep = float(_pe.get("entry_price", 0) or 0)
+                                    _plan_sp = float(_pe.get("stop_price", 0) or 0)
+                                    if _plan_sp > 0 and _plan_ep > 0 and entry_price > 0:
+                                        _diff_pct = abs(_plan_ep - entry_price) / entry_price
+                                        if _diff_pct <= 0.02:
+                                            _broker_stop = _plan_sp
+                                            log.info(
+                                                "reconcile_ledger: [P3] stop_price=%.4f "
+                                                "for %s from plan %s "
+                                                "(plan_entry=%.4f broker_fill=%.4f "
+                                                "diff=%.2f%%)",
+                                                _broker_stop, ticker,
+                                                Path(_plan_path).name,
+                                                _plan_ep, entry_price,
+                                                _diff_pct * 100,
+                                            )
+                                            break
+                                if _broker_stop > 0:
+                                    break
+                            except (json.JSONDecodeError, OSError, ValueError, KeyError) as _pfe:
+                                log.debug(
+                                    "reconcile_ledger: P3 plan file %s error: %s",
+                                    _plan_path, _pfe,
+                                )
+                    except Exception as _p3_exc:
+                        log.debug(
+                            "reconcile_ledger: P3 plan glob failed for %s: %s",
+                            ticker, _p3_exc,
+                        )
+
+                # P4: no stop_price found in any source — defer backfill
                 if _broker_stop <= 0:
                     log.warning(
-                        "reconcile_ledger: skipping backfill for %s — "
-                        "no broker stop order found (stop_price=0 would create ghost row). "
-                        "Run sync_protective_orders to place stop, then re-run reconcile_ledger.",
+                        "reconcile_ledger: backfill deferred for %s — "
+                        "no stop_price found in P1 (broker_orders) / "
+                        "P2 (position_protective_orders) / P3 (plans/). "
+                        "Will retry next cycle.",
                         ticker,
                     )
-                    stats["errors"].append(f"{ticker}: no broker stop (skipped INSERT)")
+                    stats["errors"].append(
+                        f"{ticker}: backfill deferred (no stop_price found in P1/P2/P3)"
+                    )
                     continue
 
                 # Direction sanity-check: for long positions, stop must be BELOW entry.
@@ -594,51 +702,90 @@ def main() -> int:
         action="store_true",
         help="Preview what would change without writing to DB",
     )
+    parser.add_argument(
+        "--no-fix",
+        action="store_true",
+        help="Alias for --dry-run: report without writing (matches reconcile_positions.py convention)",
+    )
     args = parser.parse_args()
+    # --no-fix is an alias for --dry-run
+    if args.no_fix:
+        args.dry_run = True
 
     log.info("=" * 50)
     log.info("LEDGER-BROKER RECONCILIATION [%s]", args.market.upper())
     log.info("Mode: %s", "DRY RUN" if args.dry_run else "LIVE")
     log.info("=" * 50)
 
-    # ── LIVE pass ─────────────────────────────────────────────
-    result_live = reconcile_ledger(args.market, dry_run=args.dry_run, mode_override="live")
-    if "error" in result_live:
-        log.error("LIVE reconciliation failed: %s", result_live["error"])
-        return 1
-    log.info("LIVE pass complete: backfilled=%d closed=%d matched=%d",
-             len(result_live.get("backfilled", [])),
-             len(result_live.get("closed_phantom", [])),
-             result_live.get("matched", 0))
-
-    # ── PAPER pass (only if open paper trades exist) ───────────────
-    result_paper: dict = {}
     try:
-        from db.atlas_db import get_open_paper_trades as _gopt
-        _paper_open = [r for r in _gopt() if r.get("universe") == args.market]
-    except Exception as _e:
-        log.debug("Paper trades check failed (non-fatal): %s", _e)
-        _paper_open = []
+        # ── LIVE pass ─────────────────────────────────────────────
+        result_live = reconcile_ledger(args.market, dry_run=args.dry_run, mode_override="live")
+        if "error" in result_live:
+            log.error("LIVE reconciliation failed: %s", result_live["error"])
+            return 1
+        log.info("LIVE pass complete: backfilled=%d closed=%d matched=%d",
+                 len(result_live.get("backfilled", [])),
+                 len(result_live.get("closed_phantom", [])),
+                 result_live.get("matched", 0))
 
-    if _paper_open:
-        log.info("Paper trades detected (%d) for %s — running PAPER reconcile pass",
-                 len(_paper_open), args.market)
-        result_paper = reconcile_ledger(args.market, dry_run=args.dry_run, mode_override="paper")
-        if "error" in result_paper:
-            log.error("PAPER reconciliation failed: %s", result_paper["error"])
+        # ── PAPER pass (only if open paper trades exist) ───────────────
+        result_paper: dict = {}
+        try:
+            from db.atlas_db import get_open_paper_trades as _gopt
+            _paper_open = [r for r in _gopt() if r.get("universe") == args.market]
+        except Exception as _e:
+            log.debug("Paper trades check failed (non-fatal): %s", _e)
+            _paper_open = []
+
+        if _paper_open:
+            log.info("Paper trades detected (%d) for %s — running PAPER reconcile pass",
+                     len(_paper_open), args.market)
+            result_paper = reconcile_ledger(args.market, dry_run=args.dry_run, mode_override="paper")
+            if "error" in result_paper:
+                log.error("PAPER reconciliation failed: %s", result_paper["error"])
+            else:
+                log.info("PAPER pass complete: backfilled=%d closed=%d matched=%d",
+                         len(result_paper.get("backfilled", [])),
+                         len(result_paper.get("closed_phantom", [])),
+                         result_paper.get("matched", 0))
         else:
-            log.info("PAPER pass complete: backfilled=%d closed=%d matched=%d",
-                     len(result_paper.get("backfilled", [])),
-                     len(result_paper.get("closed_phantom", [])),
-                     result_paper.get("matched", 0))
-    else:
-        log.debug("No open paper trades for %s — skipping PAPER reconcile pass", args.market)
+            log.debug("No open paper trades for %s — skipping PAPER reconcile pass", args.market)
 
-    combined = {"live": result_live}
-    if result_paper:
-        combined["paper"] = result_paper
-    print(json.dumps(combined, indent=2, default=str))
-    return 0
+        combined = {"live": result_live}
+        if result_paper:
+            combined["paper"] = result_paper
+        print(json.dumps(combined, indent=2, default=str))
+
+        # ── Heartbeat: success ───────────────────────────────────
+        _total_errors = (
+            len(result_live.get("errors", []))
+            + len(result_paper.get("errors", []))
+        )
+        try:
+            from db.atlas_db import record_heartbeat as _hb
+            _hb(
+                "reconcile_ledger",
+                "completed",
+                {"markets": [args.market], "errors": _total_errors},
+            )
+        except Exception as _hb_exc:
+            log.debug("reconcile_ledger: heartbeat write failed (non-fatal): %s", _hb_exc)
+
+        return 0
+
+    except Exception as _main_exc:
+        log.error("Unexpected error in reconcile_ledger main: %s", _main_exc, exc_info=True)
+        # ── Heartbeat: failure ───────────────────────────────────
+        try:
+            from db.atlas_db import record_heartbeat as _hb_fail
+            _hb_fail(
+                "reconcile_ledger",
+                "failed",
+                {"error": str(_main_exc)},
+            )
+        except Exception as _hb_fail_exc:
+            log.debug("reconcile_ledger: failure heartbeat write failed (non-fatal): %s", _hb_fail_exc)
+        return 1
 
 
 if __name__ == "__main__":

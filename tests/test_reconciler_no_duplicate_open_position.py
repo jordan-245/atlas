@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -94,6 +95,47 @@ def _open_strategies(ticker: str, universe: str = "sp500") -> list[str]:
             (ticker, universe),
         ).fetchall()
     return [r[0] for r in rows]
+
+
+def _seed_broker_stop_db(
+    ticker: str,
+    stop_price: float,
+    order_id: str | None = None,
+    order_class: str = "oco",
+    status: str = "held",
+) -> None:
+    """Insert a SELL stop row into broker_orders so P1 fallback finds it.
+
+    Required by tests that previously relied on broker.get_open_orders() to
+    supply the stop_price (old guard).  The new P1/P2/P3 chain queries the DB
+    instead of the live order list, so test stop data must live in broker_orders.
+    """
+    oid = order_id or f"test-stop-{ticker.lower()}-001"
+    raw = json.dumps({
+        "id": oid,
+        "symbol": ticker,
+        "side": "OrderSide.SELL",
+        "order_class": f"OrderClass.{order_class.upper()}",
+        "order_type": "OrderType.STOP",
+        "type": "OrderType.STOP",
+        "stop_price": str(stop_price),
+        "status": f"OrderStatus.{status.upper()}",
+        "qty": "2",
+        "filled_qty": "0",
+        "submitted_at": "2026-05-06 13:46:06.437854+00:00",
+    })
+    with get_db() as db:
+        db.execute(
+            """
+            INSERT OR REPLACE INTO broker_orders
+                (order_id, symbol, side, qty, filled_qty, fill_price,
+                 status, submitted_at, filled_at, order_class,
+                 parent_id, raw_alpaca_json, last_synced_at)
+            VALUES (?, ?, 'sell', 2, 0, NULL, ?, '2026-05-06 13:46:06', NULL,
+                    ?, NULL, ?, datetime('now'))
+            """,
+            (oid, ticker, status, order_class, raw),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +235,9 @@ class TestScenarioB_NewUnknownPosition:
         """AMD at broker but not in DB → exactly 1 row inserted."""
         assert _open_count("AMD") == 0
 
+        # New P1 fallback: stop_price must be in broker_orders DB (not live orders)
+        _seed_broker_stop_db("AMD", stop_price=260.0)
+
         broker_pos = [_make_broker_position("AMD", entry_price=278.25, shares=2)]
         broker_orders = [_make_broker_order("AMD", stop_price=260.0)]
 
@@ -255,6 +300,9 @@ class TestScenarioC_BackToBackCalls:
     def test_two_calls_leave_one_open_row(self):
         """reconcile_ledger called twice → still exactly 1 open AMD row."""
         assert _open_count("AMD") == 0
+
+        # New P1 fallback: stop_price must be in broker_orders DB (not live orders)
+        _seed_broker_stop_db("AMD", stop_price=260.0)
 
         broker_pos = [_make_broker_position("AMD", entry_price=278.25, shares=2)]
         broker_orders = [_make_broker_order("AMD", stop_price=260.0)]
