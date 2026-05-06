@@ -195,7 +195,8 @@ def _trades_30d_and_pnl(market_id: str, strategy: str) -> tuple[int, float]:
                 "SELECT COUNT(*) AS n, COALESCE(SUM(pnl), 0) AS pnl "
                 "FROM trades "
                 "WHERE exit_date IS NOT NULL AND universe=? AND strategy=? "
-                "  AND exit_date >= ?",
+                "  AND exit_date >= ? "
+                "  AND (superseded=0 OR superseded IS NULL)",
                 (market_id, strategy, cutoff),
             ).fetchone()
         return int(row["n"]), float(row["pnl"])

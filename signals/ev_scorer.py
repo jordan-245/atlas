@@ -20,6 +20,7 @@ def compute_strategy_ev(strategy: str, min_trades: int = 5) -> dict:
             SELECT ticker, pnl, pnl_pct, entry_date, exit_date
             FROM trades
             WHERE strategy = ? AND exit_date IS NOT NULL AND pnl IS NOT NULL
+              AND (superseded=0 OR superseded IS NULL)
             ORDER BY exit_date
         """, (strategy,)).fetchall()
     

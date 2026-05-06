@@ -146,7 +146,9 @@ class StrategyHealthMonitor:
         trades: List[dict] = []
         with get_db() as db:
             rows = db.execute(
-                "SELECT * FROM trades ORDER BY entry_date"
+                """SELECT * FROM trades
+                   WHERE (superseded=0 OR superseded IS NULL)
+                   ORDER BY entry_date"""
             ).fetchall()
             for row in rows:
                 r = dict(row)
@@ -198,6 +200,7 @@ class StrategyHealthMonitor:
             rows = db.execute(
                 """SELECT * FROM trades
                    WHERE strategy = ? AND status = 'closed' AND exit_date >= ?
+                     AND (superseded=0 OR superseded IS NULL)
                    ORDER BY exit_date""",
                 (strategy, cutoff),
             ).fetchall()
