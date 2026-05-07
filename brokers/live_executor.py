@@ -747,7 +747,14 @@ class LiveExecutor:
                         else:
                             # Enforce: actually apply the multiplier (mutate entry_rec)
                             original_qty = entry_rec.get("position_size", 0)
-                            new_qty = int(original_qty * effective_multiplier)
+                            # Floor at 1 share when multiplier > 0 — prevents
+                            # silent truncation of int(1 * 0.8) → 0.  See #308.
+                            # Explicit-zero (overlay block) AND zero-input still
+                            # produce 0 (no fractional revival).
+                            if effective_multiplier == 0.0 or original_qty == 0:
+                                new_qty = 0
+                            else:
+                                new_qty = max(1, int(original_qty * effective_multiplier))
                             if new_qty <= 0:
                                 logger.info(
                                     "overlay_applied: ticker=%s sizing=%s "
