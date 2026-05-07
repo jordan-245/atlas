@@ -41,6 +41,7 @@ from telegram.ext import (
 from utils.config import get_active_config
 from brokers.plan import TradePlanGenerator
 from utils.telegram import _load_credentials, _esc, _build_portfolio_snapshot
+from utils.notification_tags import REASON_TAGS, format_reason_tag as _format_reason_tag
 
 # ── Regime state emoji mapping ────────────────────────────────
 REGIME_EMOJI: dict[str, str] = {
@@ -474,7 +475,8 @@ def _execute_live(plan: dict, trade_date: str, config: dict, market_id: str) -> 
         if oid:
             detail += f" (#{oid})"
         if not entry.get("success"):
-            detail += f" — {_esc(msg)}"
+            _tag = _format_reason_tag(entry)
+            detail += f" {_esc(_tag)}" if _tag != "[?]" or not msg else f" — {_esc(msg)}"
         lines.append(detail)
 
     for exit_ in report.get("exits", []):

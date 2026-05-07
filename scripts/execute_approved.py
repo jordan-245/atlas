@@ -31,6 +31,7 @@ from utils.logging_config import setup_logging
 log = setup_logging("execute_approved", extra_log_file="execute_approved")
 
 from brokers.routing_policy import BrokerRoutingPolicy
+from utils.notification_tags import REASON_TAGS, format_reason_tag as _format_reason_tag  # noqa: F401
 
 
 def _is_market_halted(market_id: str) -> tuple[bool, str, str]:
@@ -393,11 +394,11 @@ def _notify_execution(market_id: str, trade_date: str, report: dict):
         # Entry details
         for e in report.get("entries", []):
             ticker = e.get("ticker", "?")
-            status = e.get("status", "?")
             price = e.get("price", 0)
             qty = e.get("qty", 0)
             emoji = "✅" if e.get("success") else "❌"
-            lines.append(f"  {emoji} BUY {_tge(ticker)} {qty}x @ ${price:.2f} [{_tge(status)}]")
+            tag = _format_reason_tag(e)
+            lines.append(f"  {emoji} BUY {_tge(ticker)} {qty}x @ ${price:.2f} {_tge(tag)}")
 
         vol_gate = report.get("volatility_gate", {})
         if vol_gate.get("action") not in (None, "none"):
