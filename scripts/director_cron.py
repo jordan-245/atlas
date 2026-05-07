@@ -69,26 +69,21 @@ def _write_heartbeat(
     activity: str = "reviewing",
     detail: str = "",
 ) -> None:
-    """Write director state to heartbeat file (atomic)."""
-    hb = {
-        "timestamp": datetime.now(timezone.utc).astimezone().isoformat(),
-        "status": status,
-        "phase": phase,
-        "queue_depth": queue_depth,
-        "experiments_queued": experiments_queued,
-        "portfolio_sharpe": portfolio_sharpe,
-        "coverage_pct": coverage_pct,
-        "activity": activity,
-        "detail": detail,
-    }
-    tmp = HEARTBEAT_PATH.with_suffix(".tmp")
-    try:
-        with open(tmp, "w") as f:
-            json.dump(hb, f, indent=2, default=str)
-        os.replace(tmp, HEARTBEAT_PATH)
-        logger.debug("Heartbeat written: phase=%s detail=%s", phase, detail)
-    except Exception as e:
-        logger.warning("Heartbeat write failed: %s", e)
+    """Delegate director heartbeat to monitor.health_writer (DB-backed)."""
+    from monitor.health_writer import heartbeat as _hb
+    _hb(
+        service="director_cron",
+        status=status,
+        detail={
+            "phase": phase,
+            "queue_depth": queue_depth,
+            "experiments_queued": experiments_queued,
+            "portfolio_sharpe": portfolio_sharpe,
+            "coverage_pct": coverage_pct,
+            "activity": activity,
+            "detail": detail,
+        },
+    )
 
 
 # ── State persistence ────────────────────────────────────────────────────────
