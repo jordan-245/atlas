@@ -613,28 +613,40 @@ class LiveExecutor:
                     except Exception as _e:
                         logger.warning("overlay_resolve: decision lookup failed: %s", _e)
                 else:
-                    # Fallback: look up latest overlay_decision for trade_date
-                    try:
-                        from db.atlas_db import get_db as _get_db
-                        with _get_db() as _db:
-                            _row = _db.execute(
-                                """
-                                SELECT id, action, reasoning, sizing_override
-                                FROM overlay_decisions
-                                WHERE date(timestamp) = ?
-                                  AND sizing_override IS NOT NULL
-                                ORDER BY timestamp DESC
-                                LIMIT 1
-                                """,
-                                (trade_date,),
-                            ).fetchone()
-                            if _row and _row["sizing_override"] is not None:
-                                effective_multiplier = float(_row["sizing_override"])
-                                overlay_decision_id = _row["id"]
-                                overlay_action = _row["action"]
-                                overlay_reasoning = _row["reasoning"]
-                    except Exception as _e:
-                        logger.warning("overlay_resolve: decision lookup failed: %s", _e)
+                    # Fallback: look up latest overlay_decision for trade_date —
+                    # but ONLY if overlay is enabled in active config.  Without
+                    # this gate, the executor silently enforces a sizing override
+                    # written by the overlay vision cron even when
+                    # config["overlay"]["enabled"] = false.  See #307 (2026-05-07).
+                    if not self.config.get("overlay", {}).get("enabled", True):
+                        logger.info(
+                            "overlay_resolve: skipping DB-fallback lookup — "
+                            "overlay.enabled=false in active config "
+                            "(market=%s)",
+                            self.config.get("market_id", "unknown"),
+                        )
+                    else:
+                        try:
+                            from db.atlas_db import get_db as _get_db
+                            with _get_db() as _db:
+                                _row = _db.execute(
+                                    """
+                                    SELECT id, action, reasoning, sizing_override
+                                    FROM overlay_decisions
+                                    WHERE date(timestamp) = ?
+                                      AND sizing_override IS NOT NULL
+                                    ORDER BY timestamp DESC
+                                    LIMIT 1
+                                    """,
+                                    (trade_date,),
+                                ).fetchone()
+                                if _row and _row["sizing_override"] is not None:
+                                    effective_multiplier = float(_row["sizing_override"])
+                                    overlay_decision_id = _row["id"]
+                                    overlay_action = _row["action"]
+                                    overlay_reasoning = _row["reasoning"]
+                        except Exception as _e:
+                            logger.warning("overlay_resolve: decision lookup failed: %s", _e)
 
                 if effective_multiplier is not None:
                     logger.info(
