@@ -276,6 +276,14 @@ NOTE: A Telegram summary is sent automatically after this workflow completes —
         SKILL_FLAGS=$(build_skill_flags "$SKILL_DIR" "$SKILL_STATE" "$SKILL_INCIDENT" "$SKILL_LESSONS")
         ;;
     postclose)
+        # Prevent concurrent same-market postclose runs (race causes duplicate DB writes, #303).
+        # Per-market lock allows sp500/commodity_etfs/sector_etfs to run in parallel,
+        # while preventing same-market double-execution.
+        exec 9>"/tmp/atlas-postclose-${MARKET}.lock"
+        if ! flock -n 9; then
+            echo "$(date -Iseconds) postclose $MARKET: another instance already running — exiting" >> "$LOG_DIR/pi-cron.log"
+            exit 0
+        fi
         hb "postclose" "started" '{"market":"'"$MARKET"'"}'
         # Canonical prompt: .pi/prompts/postclose.md
         # This inline version adds dynamic context (MARKET, TIMESTAMP)

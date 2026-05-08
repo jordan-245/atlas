@@ -316,6 +316,52 @@ def _write_heartbeat(dry_run: bool, stats: dict) -> None:
         log.warning("Heartbeat write failed (non-fatal): %s", exc)
 
 
+_SUCCESS_STAMP_PATH = Path(__file__).resolve().parent.parent / "data" / ".sync_broker_orders_last_ok"
+_STALE_THRESHOLD_HOURS = 24
+
+
+def _check_staleness() -> None:
+    """Alert if last-success stamp is > 24h old (or missing). Non-fatal.
+
+    Writes a Telegram message so the operator knows sync stopped silently (#304).
+    """
+    if not _SUCCESS_STAMP_PATH.exists():
+        log.warning("sync_broker_orders: no last-success stamp found — first run or was deleted")
+        return
+    import time
+    age_h = (time.time() - _SUCCESS_STAMP_PATH.stat().st_mtime) / 3600
+    if age_h > _STALE_THRESHOLD_HOURS:
+        msg = (
+            f"⚠️ sync_broker_orders stale: last success was {age_h:.1f}h ago "
+            f"(threshold {_STALE_THRESHOLD_HOURS}h). broker_orders may be out-of-date."
+        )
+        log.warning(msg)
+        try:
+            from scripts.telegram_notify import send_telegram  # noqa: PLC0415
+            send_telegram(msg)
+        except Exception as _tg_exc:
+            log.debug("Telegram alert failed (non-fatal): %s", _tg_exc)
+        try:
+            import subprocess, sys as _sys  # noqa: PLC0415
+            _tg_script = Path(__file__).resolve().parent / "telegram_notify.py"
+            subprocess.run(
+                [_sys.executable, str(_tg_script), "warning", "sync_broker_orders",
+                 f"stale {age_h:.1f}h"],
+                timeout=10, check=False,
+            )
+        except Exception:
+            pass
+
+
+def _update_success_stamp() -> None:
+    """Touch the last-success stamp file."""
+    try:
+        _SUCCESS_STAMP_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _SUCCESS_STAMP_PATH.touch()
+    except Exception as exc:
+        log.debug("Failed to update success stamp: %s", exc)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -328,11 +374,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    # Check for staleness before running — alert if too long since last success
+    _check_staleness()
+
     stats = sync_broker_orders(days=args.days, dry_run=args.dry_run)
 
     if stats.get("errors"):
         log.warning("Completed with %d errors: %s", len(stats["errors"]), stats["errors"])
         return 1
+
+    # Update success stamp on clean run
+    if not args.dry_run:
+        _update_success_stamp()
     return 0
 
 
