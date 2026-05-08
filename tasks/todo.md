@@ -121,8 +121,9 @@ session — none are quick fixes.
       (commits 3e3d53a5 / d70ecc52 / aaa025d1 + #252 test-leak fixes
       30a49291 / e3afa30f / c7b17d03 / 857019f5). `verify_dual_write.py`
       Trades check now PASS manually; awaiting 5 consecutive real-cron
-      PASSes (gate: 0/5 as of today; schedule `0 10 * * 2-6` UTC;
-      earliest close Sat 2026-04-25).
+      PASSes (gate: 0/5 as of 2026-05-08; schedule `0 10 * * 2-6` UTC;
+      failing: checks 6+7 — sector_etfs stale halt_reason + equity-history delta
+      caused by #297 consolidation; gate scope needs re-evaluation for sp500-only).
 - [x] **#215 — Overlay gate enforcement.** Confirm overlay signals actually
       gate order placement (not just annotate decisions). Needs end-to-end
       trace from overlay engine → plan file → executor.
@@ -137,6 +138,8 @@ session — none are quick fixes.
       flipping `overlay.shadow_mode: false` in config/active/{market}.json.
       Both modes now share the same resolution path so the flip is a
       one-line config change (no code drift).
+      **Gate check 2026-05-08**: 27 overlay_decisions over 21 days → ≥1 week threshold MET.
+      Weekly evaluator (overlay_eval_*.log) writing 0 bytes — manual table review needed.
 - [ ] **#216 — Phase 5 coverage gap.** Research matrix has stale
       `research_best` rows; population requires a dedicated compute window,
       not a code change. Blocks #219.
@@ -315,7 +318,9 @@ Status: PLANNED. Each task has a design doc; implementation deferred until pre-r
 - [ ] Shadow-write phase (parallel writes to `state` column, no enforcement yet)
 - [ ] CHECK constraint enforcement (table-recreation pattern)
 - [ ] Refactor all 12 write paths to call `db.transition_trade(trade_id, to_state)`
-- [ ] Pre-req: Phase B.2 cutover (7-day shadow validation complete)
+- [ ] Pre-req: Phase B.2 cutover (7-day shadow validation — **2/7 clean as of 2026-05-08**;
+        Apr29=171, Apr30=17, May1=3, May2=7, May5=5, May6=11, May7=0✅, May8=0✅;
+        est. cutover ~2026-05-14 if streak holds)
 - Estimate: 2-3 weeks
 
 ### C.2 — Per-market broker sub-accounts
@@ -530,6 +535,8 @@ Files changed: `scripts/cli.py`, `tests/test_plan_generator_lifecycle.py` (8 tes
 - **2026-05-21 — #288**: Evaluate auto-remediation Phase 3 results (active since 2026-04-30,
   ~21 days by then). Decide on any Phase 3 config tightening or whitelist expansion.
   Check: `curl http://127.0.0.1:8899/api/error_remediation/summary` for attempts/reverts.
+  **Status 2026-05-08**: 17 errors captured since activation, 0 fix_attempts started
+  (all classified ESCALATE — PDT block, sweep failures, cancel-order race; idle as expected).
   
   ⚠️ **Prerequisite investigation before evaluating**: L4 kill-switch shows false-positive
   75.6% drawdown (equity_history peak 2026-04-24 = $5,429 global, vs current sp500-only
