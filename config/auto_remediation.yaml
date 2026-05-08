@@ -32,7 +32,9 @@ graduation:
     scope_violations_threshold: 5      # >5 scope-guard violations in...
     scope_violations_window_days: 60   # ...60 days → permanent revert to ASSIST
 
-permanent_assist: {}                   # REMOVED 2026-04-30 (user Option-C) — no permanent ASSIST tier
+permanent_assist:                      # Tier removed 2026-04-30 (user Option-C). Per-file spec preserved:
+  paths:                               #   monitor/lifecycle.py → never_fix below (trading-path-adjacent)
+    - monitor/evaluator.py             #   monitor/evaluator.py → HERE (observability, assist allowed, no auto-merge)
 
 never_fix:                             # Permanent ESCALATE — never even ASSIST
   paths:
