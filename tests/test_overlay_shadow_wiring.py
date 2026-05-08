@@ -93,7 +93,7 @@ def _minimal_executor_config(shadow_mode: bool = True) -> dict:
             "max_open_positions": 10,
         },
         "data": {"source": "alpaca", "history_years": 1},
-        "overlay": {"shadow_mode": shadow_mode},
+        "overlay": {"enabled": True, "shadow_mode": shadow_mode},
     }
 
 

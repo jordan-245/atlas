@@ -618,7 +618,9 @@ class LiveExecutor:
                     # this gate, the executor silently enforces a sizing override
                     # written by the overlay vision cron even when
                     # config["overlay"]["enabled"] = false.  See #307 (2026-05-07).
-                    if not self.config.get("overlay", {}).get("enabled", True):
+                    # Default is False (fail-closed) so configs that omit the key
+                    # are safe by default.  Production configs set it explicitly.
+                    if not self.config.get("overlay", {}).get("enabled", False):
                         logger.info(
                             "overlay_resolve: skipping DB-fallback lookup — "
                             "overlay.enabled=false in active config "
