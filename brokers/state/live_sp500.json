@@ -5,13 +5,51 @@
     {
       "ticker": "CAT",
       "strategy": "momentum_breakout",
-      "entry_date": "2026-05-04",
+      "entry_date": "2026-05-08",
       "entry_price": 835.24,
       "shares": 1,
       "stop_price": 861.21,
       "order_id": "",
       "stop_order_id": "a1021664-51c8-4ac1-aecc-a8d70feb7cf8",
       "tp_order_id": ""
+    },
+    {
+      "ticker": "SYK",
+      "strategy": "connors_rsi2",
+      "entry_date": "2026-05-08",
+      "entry_price": 294.65,
+      "shares": 1,
+      "stop_price": 286.12,
+      "order_id": "",
+      "stop_order_id": "72608264-4f61-40f0-abe9-fbbb041c7f68",
+      "tp_order_id": ""
+    },
+    {
+      "ticker": "MCHP",
+      "strategy": "momentum_breakout",
+      "entry_date": "2026-05-08",
+      "entry_price": 102.28,
+      "shares": 2,
+      "stop_price": 100.8875,
+      "order_id": ""
+    },
+    {
+      "ticker": "FSLR",
+      "strategy": "reconciled",
+      "entry_date": "2026-05-08",
+      "entry_price": 218.16,
+      "shares": 2,
+      "stop_price": 213.8228,
+      "order_id": ""
+    },
+    {
+      "ticker": "EBAY",
+      "strategy": "reconciled",
+      "entry_date": "2026-05-08",
+      "entry_price": 107.5,
+      "shares": 4,
+      "stop_price": 107.0969,
+      "order_id": ""
     }
   ],
   "closed_trades": [
@@ -253,7 +291,8 @@
       "exit_price": 62.14,
       "pnl": -4.18,
       "shares": 7,
-      "exit_reason": "signal_exit"
+      "exit_reason": "signal_exit",
+      "pnl_pct": 0.0
     },
     {
       "ticker": "COP",
@@ -264,7 +303,8 @@
       "exit_price": 127.0,
       "pnl": 5.94,
       "shares": 2,
-      "exit_reason": "trailing_stop"
+      "exit_reason": "trailing_stop",
+      "pnl_pct": 0.0
     },
     {
       "ticker": "CARR",
@@ -275,7 +315,8 @@
       "exit_price": 56.64,
       "pnl": 9.95,
       "shares": 5,
-      "exit_reason": "broker_stop_fill"
+      "exit_reason": "broker_stop_fill",
+      "pnl_pct": 0.0
     },
     {
       "ticker": "HCA",
@@ -286,7 +327,8 @@
       "exit_price": 470.0,
       "pnl": 2.17,
       "shares": 1,
-      "exit_reason": "signal_exit"
+      "exit_reason": "signal_exit",
+      "pnl_pct": 0.0
     },
     {
       "ticker": "MRVL",
@@ -297,7 +339,8 @@
       "exit_price": 106.77,
       "pnl": 17.57,
       "shares": 3,
-      "exit_reason": "trailing_stop"
+      "exit_reason": "trailing_stop",
+      "pnl_pct": 0.0
     },
     {
       "ticker": "MSI",
@@ -308,7 +351,8 @@
       "exit_price": 440.98,
       "pnl": 14.2,
       "shares": 1,
-      "exit_reason": "signal_exit"
+      "exit_reason": "signal_exit",
+      "pnl_pct": 0.0
     },
     {
       "ticker": "DVN",
@@ -319,7 +363,8 @@
       "exit_price": 45.9008,
       "pnl": -22.0,
       "shares": 5,
-      "exit_reason": "trailing_stop_fill"
+      "exit_reason": "trailing_stop_fill",
+      "pnl_pct": 0.0
     },
     {
       "ticker": "OXY",
@@ -330,7 +375,8 @@
       "exit_price": 56.4,
       "pnl": -19.68,
       "shares": 3,
-      "exit_reason": "trailing_stop_fill"
+      "exit_reason": "trailing_stop_fill",
+      "pnl_pct": 0.0
     },
     {
       "ticker": "D",
@@ -341,7 +387,8 @@
       "exit_price": 62.17,
       "pnl": 36.27,
       "shares": 13,
-      "exit_reason": "signal_exit"
+      "exit_reason": "signal_exit",
+      "pnl_pct": 0.0
     },
     {
       "ticker": "COP",
@@ -352,7 +399,8 @@
       "exit_price": 121.48,
       "pnl": -18.06,
       "shares": 2,
-      "exit_reason": "trailing_stop_fill"
+      "exit_reason": "trailing_stop_fill",
+      "pnl_pct": 0.0
     },
     {
       "ticker": "AMT",
@@ -389,130 +437,64 @@
       "holding_days": -1
     },
     {
-      "ticker": "XLY",
-      "strategy": "unknown",
-      "entry_price": 0,
-      "exit_price": 116.7134,
-      "shares": 10,
-      "pnl": null,
-      "pnl_pct": null,
-      "holding_days": null,
-      "exit_reason": "trailing_stop_fill",
-      "exit_date": "2026-04-29",
-      "order_id": "2413272a-eefb-416e-bd2e-c69df99854a8",
-      "reconciled": true
-    },
-    {
       "ticker": "ADI",
-      "strategy": "unknown",
-      "entry_price": 0,
+      "strategy": "momentum_breakout",
+      "entry_price": 403.88,
       "exit_price": 383.8282,
       "shares": 2,
-      "pnl": null,
-      "pnl_pct": null,
-      "holding_days": null,
+      "pnl": -40.1036,
+      "pnl_pct": -4.9648,
+      "holding_days": 4,
       "exit_reason": "trailing_stop_fill",
       "exit_date": "2026-04-28",
       "order_id": "af9f454c-0ead-4b27-93a4-bc1173abfea8",
-      "reconciled": true
-    },
-    {
-      "ticker": "FCX",
-      "strategy": "unknown",
-      "entry_price": 0,
-      "exit_price": 58.3374,
-      "shares": 5,
-      "pnl": null,
-      "pnl_pct": null,
-      "holding_days": null,
-      "exit_reason": "trailing_stop_fill",
-      "exit_date": "2026-04-28",
-      "order_id": "fc1d7117-fa54-4ad7-9432-e338ccb0184d",
-      "reconciled": true
-    },
-    {
-      "ticker": "CCJ",
-      "strategy": "unknown",
-      "entry_price": 0,
-      "exit_price": 119.73,
-      "shares": 4,
-      "pnl": null,
-      "pnl_pct": null,
-      "holding_days": null,
-      "exit_reason": "trailing_stop_fill",
-      "exit_date": "2026-04-28",
-      "order_id": "76c42b12-9fda-43b6-878e-5c4d2e008cec",
-      "reconciled": true
-    },
-    {
-      "ticker": "SLV",
-      "strategy": "unknown",
-      "entry_price": 0,
-      "exit_price": 65.7262,
-      "shares": 6,
-      "pnl": null,
-      "pnl_pct": null,
-      "holding_days": null,
-      "exit_reason": "trailing_stop_fill",
-      "exit_date": "2026-04-28",
-      "order_id": "e40a3b01-2689-469b-abf5-3942eb67a064",
-      "reconciled": true
+      "entry_date": "2026-04-24",
+      "backfilled": true
     },
     {
       "ticker": "AVGO",
-      "strategy": "unknown",
-      "entry_price": 0,
+      "strategy": "momentum_breakout",
+      "entry_price": 422.57,
       "exit_price": 399.0747,
       "shares": 1,
-      "pnl": null,
-      "pnl_pct": null,
-      "holding_days": null,
+      "pnl": -23.4953,
+      "pnl_pct": -5.5601,
+      "holding_days": 5,
       "exit_reason": "trailing_stop_fill",
       "exit_date": "2026-04-28",
       "order_id": "324230c5-843d-4cbf-837e-ca0eef6bb48f",
-      "reconciled": true
-    },
-    {
-      "ticker": "XLK",
-      "strategy": "unknown",
-      "entry_price": 0,
-      "exit_price": 157.2691,
-      "shares": 8,
-      "pnl": null,
-      "pnl_pct": null,
-      "holding_days": null,
-      "exit_reason": "trailing_stop_fill",
-      "exit_date": "2026-04-28",
-      "order_id": "258605e5-117a-4664-a97c-5ad343bc82cc",
-      "reconciled": true
-    },
-    {
-      "ticker": "UNG",
-      "strategy": "unknown",
-      "entry_price": 0,
-      "exit_price": 10.5829,
-      "shares": 60,
-      "pnl": null,
-      "pnl_pct": null,
-      "holding_days": null,
-      "exit_reason": "trailing_stop_fill",
-      "exit_date": "2026-04-27",
-      "order_id": "da0ad32b-a315-402d-986d-600693b3a19c",
-      "reconciled": true
+      "entry_date": "2026-04-23",
+      "backfilled": true
     },
     {
       "ticker": "AMD",
-      "strategy": "unknown",
-      "entry_price": 0,
+      "strategy": "momentum_breakout",
+      "entry_price": 278.25,
       "exit_price": 337.533,
       "shares": 2,
-      "pnl": null,
-      "pnl_pct": null,
-      "holding_days": null,
+      "pnl": 118.566,
+      "pnl_pct": 21.3057,
+      "holding_days": 9,
       "exit_reason": "trailing_stop_fill",
       "exit_date": "2026-04-27",
       "order_id": "c218e806-521f-4e22-b7ee-f532ca920d40",
-      "reconciled": true
+      "entry_date": "2026-04-18",
+      "backfilled": true
+    },
+    {
+      "ticker": "FCX",
+      "strategy": "connors_rsi2",
+      "entry_price": 57.59,
+      "exit_price": 56.0,
+      "shares": 5,
+      "pnl": -7.95,
+      "pnl_pct": -2.7609,
+      "holding_days": 0,
+      "exit_reason": "trailing_stop_fill",
+      "exit_date": "2026-05-04",
+      "order_id": "cd1225ee-7730-4a34-ae84-356057a28882",
+      "entry_date": "2026-05-05",
+      "backfilled": true
     }
   ],
   "equity_history": [
@@ -2220,11 +2202,165 @@
           "holding_days": -1
         }
       ]
+    },
+    {
+      "date": "2026-05-06",
+      "equity": 1353.51,
+      "cash": 3606.56,
+      "positions_value": -2253.05,
+      "num_positions": 3,
+      "total_realized_pnl": 293.46,
+      "total_closed_trades": 41,
+      "positions": [
+        {
+          "ticker": "CAT",
+          "strategy": "momentum_breakout",
+          "shares": 1,
+          "entry_price": 835.24,
+          "current_price": 926.93,
+          "unrealized_pnl": 91.69,
+          "mae": 0.0,
+          "mfe": 10.98,
+          "holding_days": -1
+        },
+        {
+          "ticker": "FSLR",
+          "strategy": "momentum_breakout",
+          "shares": 2,
+          "entry_price": 218.16,
+          "current_price": 218.0,
+          "unrealized_pnl": -0.32,
+          "mae": -0.07,
+          "mfe": 0.0,
+          "holding_days": -1
+        },
+        {
+          "ticker": "SYK",
+          "strategy": "connors_rsi2",
+          "shares": 1,
+          "entry_price": 294.65,
+          "current_price": 292.33,
+          "unrealized_pnl": -2.32,
+          "mae": -0.79,
+          "mfe": 0.0,
+          "holding_days": -1
+        }
+      ]
+    },
+    {
+      "date": "2026-05-06",
+      "equity": 1353.51,
+      "cash": 3606.56,
+      "positions_value": -2253.05,
+      "num_positions": 3,
+      "total_realized_pnl": 293.46,
+      "total_closed_trades": 41,
+      "positions": [
+        {
+          "ticker": "CAT",
+          "strategy": "momentum_breakout",
+          "shares": 1,
+          "entry_price": 835.24,
+          "current_price": 926.93,
+          "unrealized_pnl": 91.69,
+          "mae": 0.0,
+          "mfe": 10.98,
+          "holding_days": -1
+        },
+        {
+          "ticker": "FSLR",
+          "strategy": "momentum_breakout",
+          "shares": 2,
+          "entry_price": 218.16,
+          "current_price": 218.0,
+          "unrealized_pnl": -0.32,
+          "mae": -0.07,
+          "mfe": 0.0,
+          "holding_days": -1
+        },
+        {
+          "ticker": "SYK",
+          "strategy": "connors_rsi2",
+          "shares": 1,
+          "entry_price": 294.65,
+          "current_price": 292.33,
+          "unrealized_pnl": -2.32,
+          "mae": -0.79,
+          "mfe": 0.0,
+          "holding_days": -1
+        }
+      ]
+    },
+    {
+      "date": "2026-05-07",
+      "equity": 1324.49,
+      "cash": 4031.51,
+      "positions_value": -2707.02,
+      "num_positions": 2,
+      "total_realized_pnl": 293.46,
+      "total_closed_trades": 41,
+      "positions": [
+        {
+          "ticker": "CAT",
+          "strategy": "momentum_breakout",
+          "shares": 1,
+          "entry_price": 835.24,
+          "current_price": 895.69,
+          "unrealized_pnl": 60.45,
+          "mae": 0.0,
+          "mfe": 7.24,
+          "holding_days": -1
+        },
+        {
+          "ticker": "SYK",
+          "strategy": "connors_rsi2",
+          "shares": 1,
+          "entry_price": 294.65,
+          "current_price": 294.23,
+          "unrealized_pnl": -0.42,
+          "mae": -0.14,
+          "mfe": 0.0,
+          "holding_days": -1
+        }
+      ]
+    },
+    {
+      "date": "2026-05-07",
+      "equity": 1324.49,
+      "cash": 4031.51,
+      "positions_value": -2707.02,
+      "num_positions": 2,
+      "total_realized_pnl": 293.46,
+      "total_closed_trades": 41,
+      "positions": [
+        {
+          "ticker": "CAT",
+          "strategy": "momentum_breakout",
+          "shares": 1,
+          "entry_price": 835.24,
+          "current_price": 895.69,
+          "unrealized_pnl": 60.45,
+          "mae": 0.0,
+          "mfe": 7.24,
+          "holding_days": -1
+        },
+        {
+          "ticker": "SYK",
+          "strategy": "connors_rsi2",
+          "shares": 1,
+          "entry_price": 294.65,
+          "current_price": 294.23,
+          "unrealized_pnl": -0.42,
+          "mae": -0.14,
+          "mfe": 0.0,
+          "holding_days": -1
+        }
+      ]
     }
   ],
-  "daily_high_water": 1435.115,
-  "daily_high_water_date": "2026-05-02",
+  "daily_high_water": 5262.03,
+  "daily_high_water_date": "2026-05-08",
   "halted": false,
   "halt_reason": "",
-  "last_saved": "2026-05-04T10:54:50.629287"
+  "last_saved": "2026-05-08T11:30:49.048517"
 }

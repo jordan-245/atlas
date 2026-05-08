@@ -2508,6 +2508,22 @@ class LiveExecutor:
                         f"SELECT id, strategy FROM {_dedup_table} WHERE status='open' AND ticker=? LIMIT 1",
                         (ticker,),
                     ).fetchone()
+                # Also skip if this ticker was already CLOSED today (prevents
+                # sync_protective_orders from re-opening a same-day settled trade).
+                if not _sqlite_open:
+                    with _adb.get_db() as _chk_closed:
+                        _sqlite_closed_today = _chk_closed.execute(
+                            f"SELECT id FROM {_dedup_table} WHERE status='closed' AND ticker=? "
+                            f"AND date(exit_date) >= date('now', '-1 day') LIMIT 1",
+                            (ticker,),
+                        ).fetchone()
+                    if _sqlite_closed_today:
+                        logger.debug(
+                            "reconcile_entry_fills: dedup_guard: %s closed today "
+                            "(id=%d) — skipping re-open [%s]",
+                            ticker, _sqlite_closed_today["id"], self._mode,
+                        )
+                        continue
                 if _sqlite_open:
                     _existing_id = _sqlite_open["id"]
                     _existing_strat = _sqlite_open["strategy"]
@@ -2824,8 +2840,10 @@ class LiveExecutor:
                     )
 
             # Also record to LivePortfolio.closed_trades (broker state JSON).
-            # _portfolio is constructed once above the loop with the live broker
-            # already injected — so broker_data_valid=True when the broker is healthy.
+            # Write-time universe filter (#293/#305): verify ticker belongs to
+            # _market_id before writing.  Non-market tickers are routed to their
+            # canonical universe's portfolio instead of being forced into the wrong
+            # state file (which created the stub-row leak in Apr-May 2026).
             if _portfolio_valid:
                 try:
                     _closed_trade = {
@@ -2842,7 +2860,46 @@ class LiveExecutor:
                         "order_id": order_id,
                         "reconciled": True,
                     }
-                    _portfolio.record_closed_trade(_closed_trade)
+                    # ── Write-time universe gate ──────────────────────────
+                    _write_target_portfolio = _portfolio
+                    try:
+                        from universe.membership import derive_universe as _wt_du
+                        _wt_canonical = _wt_du(ticker)
+                        if _wt_canonical and _wt_canonical != _market_id:
+                            logger.warning(
+                                "reconcile_exit_fills: write-time filter: %s belongs to "
+                                "%s not %s — routing to canonical universe portfolio",
+                                ticker, _wt_canonical, _market_id,
+                            )
+                            # Route to canonical universe's portfolio
+                            try:
+                                import json as _wt_json
+                                from pathlib import Path as _WTPath
+                                _wt_cfg_path = (
+                                    _WTPath(__file__).resolve().parent.parent
+                                    / "config" / "active" / f"{_wt_canonical}.json"
+                                )
+                                if _wt_cfg_path.exists():
+                                    _wt_cfg = _wt_json.loads(_wt_cfg_path.read_text())
+                                    from brokers.live_portfolio import LivePortfolio as _WtLP
+                                    _write_target_portfolio = _WtLP(
+                                        _wt_cfg, market_id=_wt_canonical
+                                    )
+                            except Exception as _wt_route_exc:
+                                logger.warning(
+                                    "reconcile_exit_fills: failed to build canonical "
+                                    "portfolio for %s: %s — skipping write to %s",
+                                    ticker, _wt_route_exc, _market_id,
+                                )
+                                _write_target_portfolio = None
+                    except Exception as _wt_exc:
+                        logger.debug(
+                            "reconcile_exit_fills: write-time filter check failed "
+                            "for %s (non-fatal): %s", ticker, _wt_exc,
+                        )
+                    # ── End write-time universe gate ──────────────────────
+                    if _write_target_portfolio is not None:
+                        _write_target_portfolio.record_closed_trade(_closed_trade)
                     logger.debug("Recorded reconciled exit to LivePortfolio: %s", ticker)
                 except Exception as _port_exc:
                     logger.error(
