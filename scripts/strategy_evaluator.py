@@ -351,7 +351,7 @@ def run_backtest(cfg: dict, data: dict, strategy_names: list = None) -> dict:
             strat_trades.setdefault(s, []).append(t)
         breakdown = {}
         for s, trades in strat_trades.items():
-            pnls = [t.get('pnl', 0) for t in trades]
+            pnls = [(t.get('pnl') or 0) for t in trades]
             wins = sum(1 for p in pnls if p > 0)
             breakdown[s] = {
                 'trades': len(trades),

@@ -322,7 +322,7 @@ def calc_win_rate(trades: List[Dict[str, Any]]) -> float:
     if not trades:
         return 0.0
 
-    winners = sum(1 for t in trades if t.get("pnl", 0) > 0)
+    winners = sum(1 for t in trades if (t.get("pnl") or 0) > 0)
     return round(winners / len(trades), 4)
 
 
@@ -339,8 +339,8 @@ def calc_profit_factor(trades: List[Dict[str, Any]]) -> float:
     if not trades:
         return 0.0
 
-    gross_profit = sum(t["pnl"] for t in trades if t.get("pnl", 0) > 0)
-    gross_loss = abs(sum(t["pnl"] for t in trades if t.get("pnl", 0) < 0))
+    gross_profit = sum(t["pnl"] for t in trades if (t.get("pnl") or 0) > 0)
+    gross_loss = abs(sum(t["pnl"] for t in trades if (t.get("pnl") or 0) < 0))
 
     if gross_loss == 0:
         return float("inf") if gross_profit > 0 else 0.0
@@ -360,7 +360,7 @@ def calc_avg_trade(trades: List[Dict[str, Any]]) -> float:
     if not trades:
         return 0.0
 
-    total_pnl = sum(t.get("pnl", 0) for t in trades)
+    total_pnl = sum((t.get("pnl") or 0) for t in trades)
     return round(total_pnl / len(trades), 2)
 
 
@@ -708,7 +708,7 @@ def calc_strategy_correlation(
 
     for t in trades:
         s = t.get("strategy", "unknown")
-        pnl = t.get("pnl", 0)
+        pnl = (t.get("pnl") or 0)
         hold = t.get("hold_days", t.get("holding_days", 1)) or 1
         exit_date = t.get("exit_date")
         if not exit_date or s not in strat_daily:
@@ -1080,7 +1080,7 @@ def calc_all_metrics(
         "profit_factor": calc_profit_factor(trades),
         "avg_trade": calc_avg_trade(trades),
         "total_trades": len(trades),
-        "total_pnl": round(sum(t.get("pnl", 0) for t in trades), 2),
+        "total_pnl": round(sum((t.get("pnl") or 0) for t in trades), 2),
         "exposure": calc_exposure(equity_curve, positions_log),
         "turnover": calc_turnover(trades, avg_equity),
         "avg_equity": round(avg_equity, 2),
@@ -1089,7 +1089,7 @@ def calc_all_metrics(
 
     # Additional trade stats
     if trades:
-        pnls = [t.get("pnl", 0) for t in trades]
+        pnls = [(t.get("pnl") or 0) for t in trades]
         winners = [p for p in pnls if p > 0]
         losers = [p for p in pnls if p < 0]
         metrics["avg_winner"] = round(np.mean(winners), 2) if winners else 0.0
@@ -1174,7 +1174,7 @@ def calc_regime_metrics(trades: List[Dict]) -> Dict:
 
     result = {}
     for regime, rtrades in sorted(regime_trades.items()):
-        pnls = [t.get("pnl", 0) for t in rtrades]
+        pnls = [(t.get("pnl") or 0) for t in rtrades]
         wins = [p for p in pnls if p > 0]
         losses = [p for p in pnls if p <= 0]
         n = len(pnls)
