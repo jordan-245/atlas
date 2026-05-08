@@ -2514,7 +2514,7 @@ class LiveExecutor:
                     with _adb.get_db() as _chk_closed:
                         _sqlite_closed_today = _chk_closed.execute(
                             f"SELECT id FROM {_dedup_table} WHERE status='closed' AND ticker=? "
-                            f"AND date(exit_date) >= date('now', '-1 day') LIMIT 1",
+                            f"AND date(exit_date) >= date('now', 'localtime', '-1 day') LIMIT 1",
                             (ticker,),
                         ).fetchone()
                     if _sqlite_closed_today:
@@ -2970,7 +2970,7 @@ class LiveExecutor:
                     "SELECT id FROM trades "
                     "WHERE ticker = ? "
                     "AND status = 'closed' AND superseded = 0 "
-                    "AND DATE(exit_date) = DATE('now') "
+                    "AND DATE(exit_date) = DATE('now', 'localtime') "
                     "AND ROUND(pnl, 2) = ROUND(?, 2) "
                     "LIMIT 1",
                     (ticker, realized_pnl),

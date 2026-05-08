@@ -106,7 +106,7 @@ def _insert_closed_trade(
     strategy: str = "reconciled",
 ) -> int:
     """Insert a closed trade row into the isolated test DB. Returns row id."""
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")  # local time — matches production exit_date format
     _exit_date = exit_date if exit_date is not None else today
     # entry_date must be <= exit_date (CHECK constraint); use exit_date as entry_date
     _entry_date = _exit_date
@@ -273,14 +273,14 @@ class TestSameBarRoundTripIdempotency:
     def test_does_not_match_yesterday(self):
         """Yesterday's closed row must NOT block today's recording.
 
-        The precheck uses `DATE(exit_date) = DATE('now')`, so a closed trade
+        The precheck uses `DATE(exit_date) = DATE('now', 'localtime')`, so a closed trade
         from the prior session day must not suppress a fresh event today.
         """
         ticker = "MCHP_YEST"
         buy_price = 100.0
         sell_price = 99.11   # pnl = -2.67
         expected_pnl = round((sell_price - buy_price) * 3, 2)
-        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")  # local yesterday
 
         # Pre-insert a row for YESTERDAY
         _insert_closed_trade(ticker, expected_pnl, exit_date=yesterday, superseded=0)
@@ -293,4 +293,111 @@ class TestSameBarRoundTripIdempotency:
         )
         assert ledger._mock_tg.call_count == 1, (
             "Telegram must fire — yesterday's rows must not block today's alerts"
+        )
+
+
+class TestSameBarRoundTripTZRegression:
+    """TZ regression: DATE('now') vs DATE('now','localtime') in SQLite precheck.
+
+    Root cause of 11147e19 silent breakage: SQLite DATE('now') returns UTC date
+    while exit_date column stores local AEST timestamps (UTC+10). When local
+    time is May 9 but UTC is still May 8, DATE(exit_date)='2026-05-09' never
+    equals DATE('now')='2026-05-08' → precheck always misses → spam every cron.
+
+    Fix: use DATE('now', 'localtime') in the precheck SQL.
+    """
+
+    def test_precheck_matches_local_today_iso_timestamp(self, tmp_path, monkeypatch):
+        """Insert a trade with exit_date as a local-AEST ISO timestamp for *today*.
+
+        Run the precheck SQL directly against that row and assert it matches.
+        This test is independent of the current TZ offset — it always uses
+        the real local date to build the timestamp, so it passes in any TZ.
+        """
+        import sqlite3
+        from datetime import date
+
+        # Build a local-time ISO timestamp for "today at 08:01 local"
+        local_today = date.today().isoformat()  # e.g. '2026-05-09'
+        exit_ts = f"{local_today}T08:01:04.985449"
+
+        # Create a scratch DB with the trades schema subset we need
+        db_path = str(tmp_path / "tz_test.db")
+        conn = sqlite3.connect(db_path)
+        conn.execute("""
+            CREATE TABLE trades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticker TEXT,
+                status TEXT,
+                superseded INTEGER DEFAULT 0,
+                exit_date TEXT,
+                pnl REAL
+            )
+        """)
+        conn.execute(
+            "INSERT INTO trades (ticker, status, superseded, exit_date, pnl) VALUES (?, ?, ?, ?, ?)",
+            ("SYK", "closed", 0, exit_ts, -7.97),
+        )
+        conn.commit()
+
+        # Run the FIXED precheck query (with 'localtime')
+        row_fixed = conn.execute(
+            "SELECT id FROM trades "
+            "WHERE ticker = ? "
+            "AND status = 'closed' AND superseded = 0 "
+            "AND DATE(exit_date) = DATE('now', 'localtime') "
+            "AND ROUND(pnl, 2) = ROUND(?, 2) "
+            "LIMIT 1",
+            ("SYK", -7.97),
+        ).fetchone()
+
+        # Run the BUGGY precheck query (without 'localtime') to document the failure
+        row_buggy = conn.execute(
+            "SELECT id FROM trades "
+            "WHERE ticker = ? "
+            "AND status = 'closed' AND superseded = 0 "
+            "AND DATE(exit_date) = DATE('now') "
+            "AND ROUND(pnl, 2) = ROUND(?, 2) "
+            "LIMIT 1",
+            ("SYK", -7.97),
+        ).fetchone()
+
+        conn.close()
+
+        assert row_fixed is not None, (
+            "Fixed query (DATE('now','localtime')) MUST match a trade whose "
+            f"exit_date={exit_ts!r} is today's local date {local_today!r}"
+        )
+        # The buggy query may or may not match depending on UTC offset at test time.
+        # Document: in UTC+10 TZ after local-midnight but before UTC-midnight,
+        # row_buggy would be None (the original spam bug). We don't assert it
+        # fails here since CI may run in UTC where both dates match.
+
+    def test_precheck_sql_does_not_use_bare_date_now(self):
+        """Source-code guard: live_executor.py must not contain DATE('now') without localtime.
+
+        This test will fail if the TZ fix is ever accidentally reverted.
+        It reads the source file directly and asserts the correct SQL string is present.
+        """
+        import re
+
+        src = (PROJECT / "brokers" / "live_executor.py").read_text()
+
+        # Positive assertion: the fixed form must be present
+        assert "DATE('now', 'localtime')" in src, (
+            "live_executor.py must use DATE('now', 'localtime') in the SAME_BAR precheck"
+        )
+        assert "date('now', 'localtime', '-1 day')" in src, (
+            "live_executor.py must use date('now', 'localtime', '-1 day') in reconcile_entry_fills dedup"
+        )
+
+        # Negative assertion: the bare (buggy) form must not appear in the precheck context
+        # We check the _record_same_bar_round_trip function body specifically.
+        sbrt_idx = src.find("def _record_same_bar_round_trip(")
+        assert sbrt_idx != -1, "_record_same_bar_round_trip function not found in source"
+        # Grab up to 3000 chars of function body
+        sbrt_body = src[sbrt_idx: sbrt_idx + 3000]
+        bare_date_now = re.findall(r"DATE\('now'\)(?!\s*,\s*'localtime')", sbrt_body)
+        assert not bare_date_now, (
+            f"Found bare DATE('now') (without localtime) in _record_same_bar_round_trip: {bare_date_now}"
         )

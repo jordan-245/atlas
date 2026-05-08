@@ -1151,6 +1151,13 @@ def sync_market(
             _exec._connected = True
             _exec.config = config
             _exec._mode = config.get("trading", {}).get("mode", "live")
+            # ── Initialize policy (required by reconcile_entry_fills / reconcile_exit_fills) ──
+            # BrokerRoutingPolicy is imported at module top (line 54) — do NOT re-import
+            # locally here; a local import inside a try block would shadow the module-level
+            # name and cause UnboundLocalError at the earlier policy= call on line ~1050.
+            _exec._policy = BrokerRoutingPolicy(
+                config, market_id=config.get("market_id", market_id),
+            )
 
             reconciled_entries = _exec.reconcile_entry_fills(plan=plan)
             if reconciled_entries:

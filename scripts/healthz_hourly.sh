@@ -63,7 +63,19 @@ if [ "$DOW" -le 5 ] || [ "$DOW" -eq 6 ]; then
     if [ "${ATLAS_RECONCILE_AUTOFIX:-0}" = "1" ]; then
         RECONCILE_FIX_FLAG="--fix"
     fi
-    for MKT in sp500 commodity_etfs; do
+    # Only reconcile markets with live_enabled=true in their config.
+    # commodity_etfs was consolidated 2026-05-07 (commit b42137e0) — live_enabled=false.
+    # This dynamic check prevents "get_live_broker returned None" error spam.
+    ENABLED_MARKETS=()
+    for MKT in sp500 commodity_etfs sector_etfs; do
+        if [ -f "$PROJECT/config/active/${MKT}.json" ]; then
+            LE=$(python3 -c "import json; print(json.load(open('$PROJECT/config/active/${MKT}.json')).get('trading',{}).get('live_enabled',False))" 2>/dev/null)
+            if [ "$LE" = "True" ]; then
+                ENABLED_MARKETS+=("$MKT")
+            fi
+        fi
+    done
+    for MKT in "${ENABLED_MARKETS[@]}"; do
         MKT_OUT=$(python3 "$RECONCILE" --market "$MKT" $RECONCILE_FIX_FLAG 2>&1) || MKT_EXIT=$?
         log "Reconcile $MKT exit code: ${MKT_EXIT:-0}"
         if [ -n "$MKT_OUT" ]; then

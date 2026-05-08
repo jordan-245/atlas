@@ -70,7 +70,7 @@ def research_overview(_auth: HTTPBasicCredentials = Depends(check_auth)):
                        COUNT(*) as experiments_today,
                        SUM(CASE WHEN status='kept' THEN 1 ELSE 0 END) as kept_today
                 FROM research_experiments
-                WHERE created_at >= date('now')
+                WHERE created_at >= date('now', 'localtime')
                 GROUP BY universe
             """).fetchall():
                 d = dict(r)
@@ -154,7 +154,7 @@ def research_overview(_auth: HTTPBasicCredentials = Depends(check_auth)):
             # Total all-time and daily aggregates
             totals = db.execute("""
                 SELECT COUNT(*) as total,
-                       SUM(CASE WHEN created_at >= date('now') THEN 1 ELSE 0 END) as today,
+                       SUM(CASE WHEN created_at >= date('now', 'localtime') THEN 1 ELSE 0 END) as today,
                        SUM(CASE WHEN status='kept' THEN 1 ELSE 0 END) as kept_all
                 FROM research_experiments
             """).fetchone()
