@@ -1207,12 +1207,15 @@ def cache_stats(market_id: Optional[str] = None) -> Dict:
 # ---------------------------------------------------------------------------
 
 def _last_trading_day(reference_date: Optional[datetime] = None) -> datetime:
-    """Return the most recent weekday on or before *reference_date* (at midnight).
+    """Return the most recent COMPLETED NYSE trading day before *reference_date*.
 
-    Handles weekends by walking back to Friday.  Does NOT account for
-    US market holidays — callers relying on exact holiday-awareness should
-    use a calendar library.  For the stale-data check, "weekend adjustment"
-    is the dominant case and is sufficient for Atlas's needs.
+    Uses ``pandas_market_calendars`` for full holiday awareness (MLK Day, Good
+    Friday, Thanksgiving, etc.).  If the library is unavailable the function
+    falls back to a simple weekend walk-back (no holiday handling).
+
+    "Most recent completed" means: if *reference_date* itself is a trading day
+    (e.g. Monday), we return the previous trading day (e.g. Friday) so that
+    pre-market runs on a trading day treat the prior session's close as fresh.
 
     The returned datetime is always at midnight (00:00:00) so that date
     comparisons against DataFrame DatetimeIndex values are unambiguous.
@@ -1221,13 +1224,34 @@ def _last_trading_day(reference_date: Optional[datetime] = None) -> datetime:
         reference_date: Date to anchor from (default: today).
 
     Returns:
-        datetime at midnight of the last expected trading day.
+        datetime at midnight of the last completed NYSE trading day.
     """
     if reference_date is None:
         reference_date = datetime.now()
 
+    ref_date = reference_date.date() if hasattr(reference_date, "date") else reference_date
+
+    # ── NYSE calendar path (holiday-aware) ──────────────────────────────────
+    try:
+        import pandas_market_calendars as mcal  # already a project dependency
+
+        nyse = mcal.get_calendar("NYSE")
+        start = ref_date - timedelta(days=10)  # buffer for long holiday runs
+        valid_days = nyse.valid_days(start_date=start, end_date=ref_date)
+        if not valid_days.empty:
+            last_valid = valid_days[-1].date()
+            if last_valid == ref_date:
+                # Today is a trading day — return the *previous* session's date
+                # so that pre-market checks treat yesterday's close as fresh.
+                last_valid = valid_days[-2].date() if len(valid_days) >= 2 else last_valid
+            return datetime(last_valid.year, last_valid.month, last_valid.day)
+    except Exception:
+        pass  # fall through to weekend-only fallback
+
+    # ── Fallback: weekend walk-back (no holiday awareness) ──────────────────
     d = reference_date
-    # Walk back from Sunday (6) and Saturday (5) to Friday (4)
+    # Step back one day first (we want the *previous* trading day, not today)
+    d -= timedelta(days=1)
     while d.weekday() >= 5:  # 5=Saturday, 6=Sunday
         d -= timedelta(days=1)
     # Normalise to midnight to avoid time-of-day comparison issues
