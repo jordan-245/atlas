@@ -150,11 +150,13 @@ def fetch_new_papers(
             logger.error("ArXiv query failed (%s): %s", query, exc)
             continue
 
-    # Mark all newly-seen URLs in batch
-    if seen_this_run:
-        with _SEEN_URLS_FILE.open("a") as f:
-            for url in seen_this_run:
-                f.write(url + "\n")
+    # F-09 FIX: Do NOT write to seen_urls.txt here.
+    # arxiv_api.py previously marked URLs seen immediately after fetching them.
+    # discover_daily step 3 then called dedup.is_seen() on the SAME seen_urls.txt,
+    # which found all newly-fetched papers as "already seen" → papers_found=0.
+    # Persistent URL marking is dedup.py's exclusive responsibility.
+    # In-run dedup (seen_this_run set) is retained to avoid duplicate papers
+    # from multiple queries within the same fetch_new_papers() call.
 
     logger.info("fetch_new_papers: %d new papers found across %d queries", len(results), len(queries))
     return results
