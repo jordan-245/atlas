@@ -75,21 +75,31 @@ def is_rth(now: Optional[datetime] = None) -> bool:
 
 
 def last_us_market_session(now: Optional[datetime] = None) -> str:
-    """Return the YYYY-MM-DD of the most recent NYSE trading session.
+    """Return YYYY-MM-DD of the most recently CLOSED NYSE session.
 
-    If *now* is during RTH on a trading day, returns today's date.
-    Otherwise returns the last completed trading day (skips weekends +
-    holidays).
+    A session is "closed" when ``now`` is past its ``market_close`` time.
+    During an open session (between 09:30 and 16:00 ET on a trading day),
+    returns the PRIOR session's date — because today's data is not yet
+    final and should not be expected in the OHLCV store.
+
+    Examples (assuming standard NYSE hours, EDT = UTC-4):
+        - Sat 12:00 ET  → returns previous Friday
+        - Sun 12:00 ET  → returns previous Friday
+        - Mon 06:00 ET  (pre-open)    → returns previous Friday (today not yet open)
+        - Mon 12:00 ET  (mid-session) → returns previous Friday (today not yet closed)
+        - Mon 17:00 ET  (post-close)  → returns today (Monday — just closed)
+        - Tue 06:00 ET                → returns Monday (Mon just closed)
 
     Args:
         now: Datetime to check (UTC-aware). Defaults to ``datetime.now(UTC)``.
 
     Returns:
-        ISO date string ``"YYYY-MM-DD"`` of the most recent NYSE session.
+        ISO date string ``"YYYY-MM-DD"`` of the most recently CLOSED NYSE session.
     """
     if now is None:
         now = datetime.now(timezone.utc)
     if now.tzinfo is None:
+        # Treat naive datetime as UTC (defensive — caller should always pass aware)
         now = now.replace(tzinfo=timezone.utc)
 
     if _NYSE is not None:
@@ -97,18 +107,27 @@ def last_us_market_session(now: Optional[datetime] = None) -> str:
             from datetime import timedelta
             sched = _NYSE.schedule(
                 start_date=now.date() - timedelta(days=14),
-                end_date=now.date(),
+                end_date=now.date() + timedelta(days=1),  # include today in window
             )
             if sched.empty:
-                return now.date().isoformat()
-            return sched.index[-1].date().isoformat()
+                return (now.date() - timedelta(days=1)).isoformat()
+
+            # Filter to sessions whose market_close is in the past relative to now.
+            # pandas_market_calendars market_close timestamps are UTC-aware;
+            # now is also tz-aware — pandas converts to a common tz for comparison.
+            closed_sessions = sched[sched["market_close"] <= now]
+            if closed_sessions.empty:
+                # All sessions in window are future — very rare (multi-day holiday).
+                # Return the earliest session in the window as best approximation.
+                return sched.index[0].date().isoformat()
+            return closed_sessions.index[-1].date().isoformat()
         except Exception as _e:
             logger.warning(
                 "last_us_market_session: pandas_market_calendars failed (%s) — using fallback",
                 _e,
             )
 
-    # Fallback: walk backwards skipping Sat/Sun
+    # Fallback: walk backwards skipping Sat/Sun (used when _NYSE is None or library fails)
     from datetime import timedelta
     d = now.date()
     while d.weekday() >= 5:  # 5=Sat, 6=Sun
