@@ -83,6 +83,7 @@ class LivePortfolio:
         # Persistent local state (closed trades, equity history)
         self.closed_trades: list[dict] = []
         self.equity_history: list[dict] = []
+        self.closed_trades_quarantine: list[dict] = []
         self.daily_high_water: float = self.starting_equity
         self.daily_high_water_date: Optional[str] = None
         self.halted: bool = False
@@ -122,6 +123,7 @@ class LivePortfolio:
                 with open(path) as f:
                     state = json.load(f)
                 self.closed_trades = state.get("closed_trades", [])
+                self.closed_trades_quarantine = state.get("closed_trades_quarantine", [])
                 self.equity_history = state.get("equity_history", [])
                 self.daily_high_water = state.get("daily_high_water", self.starting_equity)
                 self.daily_high_water_date = state.get("daily_high_water_date", None)
@@ -202,6 +204,7 @@ class LivePortfolio:
             "mode": "live",
             "positions": positions_list,
             "closed_trades": self.closed_trades,
+            "closed_trades_quarantine": self.closed_trades_quarantine,
             "equity_history": self.equity_history,
             "daily_high_water": self.daily_high_water,
             "daily_high_water_date": self.daily_high_water_date,
@@ -1402,6 +1405,19 @@ class LivePortfolio:
         Also triggers an asynchronous dashboard refresh so strategy
         performance metrics are always current after any position close.
         """
+        # ── Validation: reject quarantined tickers (re-add prevention) ──
+        _qkeyfields = ("ticker", "entry_price", "exit_date")
+        _qticker = trade_record.get("ticker", "")
+        if any(
+            q.get("ticker") == _qticker
+            for q in self.closed_trades_quarantine
+        ):
+            logger.info(
+                "record_closed_trade: SKIPPED re-add of quarantined ticker %s",
+                _qticker,
+            )
+            return
+
         # ── Validation: reject ghost trades (exit before entry) ──
         entry_date = str(trade_record.get("entry_date", ""))[:10]
         exit_date = str(trade_record.get("exit_date", ""))[:10]
