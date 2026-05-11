@@ -100,7 +100,7 @@ const SAFE_BASH_PREFIXES = [
 /**
  * Convert a simple glob pattern to a regex string.
  * - ** matches any sequence of characters including / (including zero chars)
- * - **\/ matches an optional path prefix (zero or more segments + slash)
+ * - the double-star-then-slash pattern matches an optional path prefix (zero or more segments + slash)
  * - *  matches any sequence of characters except /
  */
 function simpleGlobMatch(relPath: string, pattern: string): boolean {
