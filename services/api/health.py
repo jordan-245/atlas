@@ -9,6 +9,7 @@ Routes:
 """
 from __future__ import annotations
 
+import json
 import logging
 import subprocess
 from pathlib import Path
@@ -21,6 +22,35 @@ from services.auth import check_auth
 
 router = APIRouter(tags=["health"])
 logger = logging.getLogger(__name__)
+
+
+def _load_auto_excluded() -> list[str]:
+    """Load the list of auto-excluded tickers from config/auto_excluded_tickers.json.
+
+    Supports two JSON shapes:
+    - ``{"excluded": {"TICK": {...}, ...}}``  — keys of the inner dict (current format)
+    - ``{"tickers": ["TICK", ...]}``           — explicit list under "tickers" key
+    - ``["TICK", ...]``                        — bare list at root
+
+    Returns an empty list on any error (graceful degradation).
+    """
+    try:
+        path = Path(__file__).resolve().parents[2] / "config" / "auto_excluded_tickers.json"
+        if not path.exists():
+            return []
+        data = json.loads(path.read_text())
+        if isinstance(data, list):
+            return [str(t) for t in data]
+        if isinstance(data, dict):
+            excl = data.get("excluded", data.get("tickers", []))
+            if isinstance(excl, dict):
+                # Current format: {"excluded": {"TICK": {...metadata...}, ...}}
+                return list(excl.keys())
+            if isinstance(excl, list):
+                return [str(t) for t in excl]
+    except Exception as e:
+        logger.warning("Could not load auto_excluded_tickers.json: %s", e)
+    return []
 
 
 def _systemctl_status(svc: str) -> dict:
@@ -101,26 +131,69 @@ def system_health(_auth: HTTPBasicCredentials = Depends(check_auth)):
         # Data freshness from SQLite
         data_freshness = {}
         try:
+            excluded = _load_auto_excluded()
+            data_freshness["auto_excluded_tickers"] = excluded
+
             with get_db() as db:
-                # MAX across all tickers = most recent data available (freshness indicator)
-                row = db.execute("SELECT MAX(date) as last_date FROM ohlcv").fetchone()
-                data_freshness["ohlcv_last_date"] = row["last_date"] if row else None
-                # Per-ticker breakdown — 10 stalest tickers (most useful for diagnostics)
-                ticker_rows = db.execute(
-                    "SELECT ticker, MAX(date) as last_date"
-                    " FROM ohlcv"
-                    " GROUP BY ticker"
-                    " ORDER BY last_date ASC"
-                    " LIMIT 10"
-                ).fetchall()
+                if excluded:
+                    placeholders = ",".join("?" for _ in excluded)
+                    # MAX across non-excluded tickers (R-02: don't let stale excluded
+                    # tickers pull down ohlcv_last_date for the whole system)
+                    row = db.execute(
+                        f"SELECT MAX(date) as last_date FROM ohlcv"
+                        f" WHERE ticker NOT IN ({placeholders})",
+                        excluded,
+                    ).fetchone()
+                    data_freshness["ohlcv_last_date"] = row["last_date"] if row else None
+                    # Per-ticker breakdown — 10 stalest non-excluded tickers
+                    ticker_rows = db.execute(
+                        f"SELECT ticker, MAX(date) as last_date"
+                        f" FROM ohlcv"
+                        f" WHERE ticker NOT IN ({placeholders})"
+                        f" GROUP BY ticker"
+                        f" ORDER BY last_date ASC"
+                        f" LIMIT 10",
+                        excluded,
+                    ).fetchall()
+                else:
+                    # No exclusions — use unfiltered queries
+                    row = db.execute(
+                        "SELECT MAX(date) as last_date FROM ohlcv"
+                    ).fetchone()
+                    data_freshness["ohlcv_last_date"] = row["last_date"] if row else None
+                    ticker_rows = db.execute(
+                        "SELECT ticker, MAX(date) as last_date"
+                        " FROM ohlcv"
+                        " GROUP BY ticker"
+                        " ORDER BY last_date ASC"
+                        " LIMIT 10"
+                    ).fetchall()
+
                 data_freshness["ohlcv_per_ticker"] = [
                     {"ticker": r["ticker"], "last_date": r["last_date"]}
                     for r in ticker_rows
                 ]
+
                 row = db.execute("SELECT MAX(date) as last_date FROM equity_curve").fetchone()
                 data_freshness["equity_last_date"] = row["last_date"] if row else None
                 row = db.execute("SELECT COUNT(*) as cnt FROM overlay_decisions").fetchone()
                 data_freshness["overlay_decisions_count"] = row["cnt"] if row else 0
+
+            # R-03: weekend-aware freshness badge — compare ohlcv_last_date
+            # against the last completed NYSE trading session (not wall-clock today)
+            try:
+                from utils.market_hours import last_us_market_session
+                data_freshness["ohlcv_last_session"] = last_us_market_session()
+                last_d = data_freshness.get("ohlcv_last_date")
+                last_sess = data_freshness["ohlcv_last_session"]
+                data_freshness["ohlcv_is_fresh"] = bool(
+                    last_d and last_sess and last_d >= last_sess
+                )
+            except Exception as _e:
+                logger.warning("Could not compute last_us_market_session: %s", _e)
+                data_freshness["ohlcv_last_session"] = None
+                data_freshness["ohlcv_is_fresh"] = None
+
         except Exception as exc:
             data_freshness["error"] = str(exc)
 
