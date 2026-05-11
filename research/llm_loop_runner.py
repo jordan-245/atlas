@@ -293,23 +293,6 @@ def run_llm_loop(
         return {"status": "error", "error": str(e), "runtime_s": 0}
 
 
-# TODO(#PERF-TG-CONSOLIDATE): rewrite to use utils.telegram.notify() if formatting can move into caller
-def _send_telegram(summary: dict) -> None:
-    """Send a brief Telegram notification about the LLM loop run."""
-    try:
-        from alerting import get_alert_manager
-        status = summary.get("status", "unknown")
-        runtime = summary.get("runtime_s", 0) / 60
-        emoji = "🧠" if status == "complete" else "⚠️"
-        msg = (
-            f"{emoji} <b>LLM Research Loop</b>\n"
-            f"Status: {status}\n"
-            f"Runtime: {runtime:.1f} min\n"
-            f"Turns: {summary.get('num_turns', '?')}"
-        )
-        get_alert_manager().send(msg)
-    except Exception as e:
-        logger.warning("Telegram notify failed: %s", e)
 
 
 def main():
@@ -337,7 +320,20 @@ def main():
     summary = run_llm_loop(minutes=args.minutes, strategies=strategies, universe=args.universe)
 
     if args.notify:
-        _send_telegram(summary)
+        try:
+            from alerting import get_alert_manager
+            status = summary.get("status", "unknown")
+            runtime = summary.get("runtime_s", 0) / 60
+            emoji = "🧠" if status == "complete" else "⚠️"
+            msg = (
+                f"{emoji} <b>LLM Research Loop</b>\n"
+                f"Status: {status}\n"
+                f"Runtime: {runtime:.1f} min\n"
+                f"Turns: {summary.get('num_turns', '?')}"
+            )
+            get_alert_manager().send(msg)
+        except Exception as e:
+            logger.warning("Telegram notify failed: %s", e)
 
     # Print summary
     print(json.dumps(summary, indent=2, default=str))

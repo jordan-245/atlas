@@ -475,21 +475,6 @@ def build_sweep_plan(
     return plan
 
 
-# ─── Telegram ────────────────────────────────────────────────────────────────
-
-
-# TODO(#PERF-TG-CONSOLIDATE): rewrite to use utils.telegram.notify() if formatting can move into caller
-def _try_send_telegram(text: str) -> None:
-    """Attempt to send *text* via Telegram.  Never raises — failures are logged.
-
-    Uses ``utils.telegram.smart_notify`` if available.
-    """
-    try:
-        from alerting import get_alert_manager
-        get_alert_manager().send(text)
-    except Exception as exc:
-        logger.warning("Telegram notification failed (non-fatal): %s", exc)
-
 
 # ─── Session Runner ──────────────────────────────────────────────────────────
 
@@ -629,11 +614,15 @@ def run_session(
                 )
                 logger.error(msg)
                 # Send alert instead of silently skipping
-                _try_send_telegram(
-                    f"⚠️ Universe <b>{universe}</b> has 0 data in SQLite — "
-                    f"ingest pipeline may be broken. "
-                    f"Run: <code>python3 scripts/cli.py ingest -m {universe}</code>"
-                )
+                try:
+                    from alerting import get_alert_manager
+                    get_alert_manager().send(
+                        f"⚠️ Universe <b>{universe}</b> has 0 data in SQLite — "
+                        f"ingest pipeline may be broken. "
+                        f"Run: <code>python3 scripts/cli.py ingest -m {universe}</code>"
+                    )
+                except Exception as exc:
+                    logger.warning("Telegram notification failed (non-fatal): %s", exc)
                 _print_summary(
                     strategy, market, 0, 0, 0, 0, 0, 0.0, 0.0, 0.0,
                     status="skipped",
@@ -1076,7 +1065,11 @@ def _summarise_and_notify(
             f"({delta:+.4f})\n"
             f"Runtime: {mins:.1f} min"
         )
-        _try_send_telegram(msg)
+        try:
+            from alerting import get_alert_manager
+            get_alert_manager().send(msg)
+        except Exception as exc:
+            logger.warning("Telegram notification failed (non-fatal): %s", exc)
 
     return summary
 

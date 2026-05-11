@@ -265,7 +265,7 @@ class TestRunSessionPromotion:
             patch("research.autoresearch_runner._vectorised_presort", side_effect=lambda s, p, d, b: p),
             patch("research.autoresearch_runner._run_solo_screen") as mock_solo,
             patch("research.autoresearch_runner._promote_session_result") as mock_promote,
-            patch("research.autoresearch_runner._try_send_telegram"),
+            patch("alerting.get_alert_manager"),
         ):
             mock_session = self._build_mock_session()
             MockSession.return_value = mock_session
@@ -304,7 +304,7 @@ class TestRunSessionPromotion:
             patch("research.autoresearch_runner.build_sweep_plan") as mock_plan,
             patch("research.autoresearch_runner._vectorised_presort", side_effect=lambda s, p, d, b: p),
             patch("research.autoresearch_runner._promote_session_result") as mock_promote,
-            patch("research.autoresearch_runner._try_send_telegram"),
+            patch("alerting.get_alert_manager"),
         ):
             mock_session = self._build_mock_session()
             MockSession.return_value = mock_session
