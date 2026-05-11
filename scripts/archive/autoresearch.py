@@ -13,6 +13,11 @@ Usage:
     python3 scripts/autoresearch.py --partition 1    # odd strategies
 """
 
+# QUARANTINED 2026-05-11 — atlas-autoresearch.service does not exist;
+# production path is autoresearch_nightly.py via atlas-research-window@.timer.
+# See task #321 in tasks/todo.md. This file is kept for historical reference
+# only; do not invoke from cron/systemd.
+
 import argparse
 import fcntl
 import json

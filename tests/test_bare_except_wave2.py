@@ -145,7 +145,7 @@ class TestAutoresearchNoBareExcept:
     """Static: all except Exception converted in autoresearch orchestrator."""
 
     def test_no_unbound_broad_except(self):
-        src = (PROJECT / "scripts" / "autoresearch.py").read_text()
+        src = (PROJECT / "scripts" / "archive" / "autoresearch.py").read_text()
         count = _count_unbound_broad(src)
         assert count == 0, (
             f"Found {count} unbound broad-except in scripts/autoresearch.py. "
@@ -160,7 +160,7 @@ class TestAutoresearchNoBareExcept:
         # Load module without running __main__
         spec = importlib.util.spec_from_file_location(
             "autoresearch_test",
-            PROJECT / "scripts" / "autoresearch.py",
+            PROJECT / "scripts" / "archive" / "autoresearch.py",
         )
         mod = importlib.util.module_from_spec(spec)
         # Inject minimal globals to avoid side effects
