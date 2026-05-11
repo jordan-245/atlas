@@ -29,6 +29,8 @@ sys.path.insert(0, str(PROJECT))
 from backtest.engine import BacktestEngine
 from strategies.base import BaseStrategy, Signal
 
+from tests.conftest import make_ohlcv_df
+
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
@@ -48,19 +50,10 @@ _N_DAYS = 120               # enough for min_history
 
 
 def _make_ohlcv(n_days: int = _N_DAYS, volume: float = TIGHT_VOLUME) -> pd.DataFrame:
-    """Create a simple flat-price OHLCV DataFrame."""
-    dates = pd.date_range("2023-01-02", periods=n_days, freq="B")
-    price = 100.0
-    return pd.DataFrame(
-        {
-            "open": price,
-            "high": price * 1.01,
-            "low": price * 0.99,
-            "close": price,
-            "volume": volume,
-            "ticker": "TEST",
-        },
-        index=dates,
+    """Create a simple flat-price OHLCV DataFrame — delegates to conftest.make_ohlcv_df."""
+    return make_ohlcv_df(
+        ticker="TEST", flat_price=100.0, high_mult=1.01, low_mult=0.99,
+        volumes=volume, dates=pd.date_range("2023-01-02", periods=n_days, freq="B"),
     )
 
 

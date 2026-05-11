@@ -29,6 +29,8 @@ from unittest.mock import patch
 import pandas as pd
 import pytest
 
+from tests.conftest import make_ohlcv_df
+
 PROJECT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT))
 
@@ -65,16 +67,14 @@ def tmp_db(tmp_path, monkeypatch):
 
 
 def _make_ohlcv_df(dates: list[str], close_start: float = 100.0) -> pd.DataFrame:
-    """Create a minimal OHLCV DataFrame for testing."""
-    idx = pd.DatetimeIndex(dates)
-    data = {
-        "open": [close_start + i for i in range(len(dates))],
-        "high": [close_start + i + 1 for i in range(len(dates))],
-        "low": [close_start + i - 1 for i in range(len(dates))],
-        "close": [close_start + i for i in range(len(dates))],
-        "volume": [1_000_000] * len(dates),
-    }
-    return pd.DataFrame(data, index=idx)
+    """Create a minimal OHLCV DataFrame for testing — delegates to conftest.make_ohlcv_df.
+
+    Close series is an incremental walk: close[i] = close_start + i.
+    Tests only assert on close values and date index; high/low multipliers are fine.
+    """
+    n = len(dates)
+    closes = [close_start + float(i) for i in range(n)]
+    return make_ohlcv_df(closes=closes, volumes=1_000_000, dates=dates)
 
 
 # ── _sqlite_batch_write unit tests ────────────────────────────────────────────

@@ -464,33 +464,84 @@ def make_ohlcv_df(
     seed: int = 42,
     trend: float = 0.0005,
     daily_vol: float = 0.015,
+    *,
+    closes: "np.ndarray | None" = None,
+    volumes: "np.ndarray | float | int | None" = None,
+    flat_price: float | None = None,
+    high_mult: float = 1.005,
+    low_mult: float = 0.995,
+    dates: "pd.DatetimeIndex | list[str] | None" = None,
+    end_date: str = "2024-12-31",
 ) -> pd.DataFrame:
     """Create a synthetic OHLCV DataFrame with DatetimeIndex.
 
-    Prices are lognormal with drift *trend* and daily vol *daily_vol*.
-    OHLCV invariant: low <= min(open, close) and high >= max(open, close).
+    Default path (no keyword args): lognormal walk with drift *trend* and daily
+    vol *daily_vol*.  All existing callers are unaffected — defaults unchanged.
+
+    Optional keyword-only overrides
+    --------------------------------
+    closes      : pre-built close series (array-like); skips lognormal generation.
+    volumes     : scalar → broadcast to all bars; array → used directly; None → RNG.
+    flat_price  : constant open/close (mutually exclusive with *closes*).
+    high_mult   : high = close * high_mult  (closes / flat_price paths only).
+    low_mult    : low  = close * low_mult   (closes / flat_price paths only).
+    dates       : explicit DatetimeIndex or list[str]; length overrides n_days.
+    end_date    : trailing date for auto-generated index (default "2024-12-31").
+
+    OHLCV invariant always enforced:
+        low <= min(open, close) <= max(open, close) <= high
     """
+    if closes is not None and flat_price is not None:
+        raise ValueError("'closes' and 'flat_price' are mutually exclusive")
+
+    # ── Determine date index ────────────────────────────────────────────────
+    if dates is not None:
+        idx = pd.DatetimeIndex(dates) if not isinstance(dates, pd.DatetimeIndex) else dates
+        n = len(idx)
+    elif closes is not None:
+        n = len(np.asarray(closes))
+        idx = pd.date_range(end=end_date, periods=n, freq="B")
+    else:
+        n = n_days
+        idx = pd.date_range(end=end_date, periods=n, freq="B")
+
+    # ── RNG (lognormal path + fallback random volumes) ──────────────────────
     rng = np.random.default_rng(seed)
-    dates = pd.date_range(end="2024-12-31", periods=n_days, freq="B")
 
-    # Log-normal returns
-    returns = rng.normal(trend, daily_vol, n_days)
-    close = base_price * np.exp(np.cumsum(returns))
+    # ── Build OHLCV arrays ──────────────────────────────────────────────────
+    if flat_price is not None:
+        open_ = np.full(n, float(flat_price))
+        close = np.full(n, float(flat_price))
+        raw_high = np.full(n, float(flat_price) * high_mult)
+        raw_low = np.full(n, float(flat_price) * low_mult)
+    elif closes is not None:
+        close = np.asarray(closes, dtype=float)
+        open_ = close * 0.999
+        raw_high = close * high_mult
+        raw_low = close * low_mult
+    else:
+        # Lognormal path (original behaviour — unchanged)
+        returns = rng.normal(trend, daily_vol, n)
+        close = base_price * np.exp(np.cumsum(returns))
+        open_ = close * np.exp(rng.normal(0, 0.004, n))
+        raw_high = np.maximum(open_, close) * np.exp(rng.uniform(0, 0.008, n))
+        raw_low = np.minimum(open_, close) * np.exp(-rng.uniform(0, 0.008, n))
 
-    # Intraday scatter
-    open_ = close * np.exp(rng.normal(0, 0.004, n_days))
-    raw_high = np.maximum(open_, close) * np.exp(rng.uniform(0, 0.008, n_days))
-    raw_low = np.minimum(open_, close) * np.exp(-rng.uniform(0, 0.008, n_days))
-
-    # Enforce invariants
+    # ── Enforce OHLCV invariants ────────────────────────────────────────────
     high = np.maximum(raw_high, np.maximum(open_, close))
     low = np.minimum(raw_low, np.minimum(open_, close))
 
-    volume = rng.integers(1_000_000, 5_000_000, n_days).astype(float)
+    # ── Volumes ─────────────────────────────────────────────────────────────
+    if volumes is None:
+        vol = rng.integers(1_000_000, 5_000_000, n).astype(float)
+    elif np.ndim(volumes) == 0:
+        vol = np.full(n, float(volumes))
+    else:
+        vol = np.asarray(volumes, dtype=float)
 
     return pd.DataFrame(
-        {"open": open_, "high": high, "low": low, "close": close, "volume": volume, "ticker": ticker},
-        index=dates,
+        {"open": open_, "high": high, "low": low, "close": close, "volume": vol, "ticker": ticker},
+        index=idx,
     )
 
 

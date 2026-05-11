@@ -10,6 +10,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from tests.conftest import make_ohlcv_df
+
 # ---------------------------------------------------------------------------
 # Helpers / fixtures
 # ---------------------------------------------------------------------------
@@ -20,17 +22,8 @@ def _make_df(
     high_mult: float = 1.005,
     low_mult: float = 0.995,
 ) -> pd.DataFrame:
-    """Build a minimal OHLCV DataFrame from close + volume arrays."""
-    n = len(closes)
-    return pd.DataFrame(
-        {
-            "close": closes,
-            "high": closes * high_mult,
-            "low": closes * low_mult,
-            "open": closes * 0.999,
-            "volume": volumes,
-        }
-    )
+    """Build a minimal OHLCV DataFrame — delegates to conftest.make_ohlcv_df."""
+    return make_ohlcv_df(closes=closes, volumes=volumes, high_mult=high_mult, low_mult=low_mult)
 
 
 @pytest.fixture

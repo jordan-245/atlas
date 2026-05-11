@@ -16,18 +16,19 @@ import numpy as np
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
+from tests.conftest import make_ohlcv_df
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 def _make_df(last_date: str, n: int = 30) -> pd.DataFrame:
-    """Return a minimal OHLCV DataFrame with the given last date."""
-    end = pd.Timestamp(last_date)
-    idx = pd.date_range(end=end, periods=n, freq="B")
-    return pd.DataFrame(
-        {"open": 100.0, "high": 105.0, "low": 95.0, "close": 102.0, "volume": 1_000_000},
-        index=idx,
-    )
+    """Return a minimal OHLCV DataFrame with the given last date.
+
+    Uses flat_price=102.0 (close value only; tests care about date index, not OHLC).
+    Delegates to conftest.make_ohlcv_df.
+    """
+    return make_ohlcv_df(n_days=n, flat_price=102.0, volumes=1_000_000, end_date=last_date)
 
 
 def _make_data(last_date: str, tickers: list[str] | None = None) -> dict[str, pd.DataFrame]:
