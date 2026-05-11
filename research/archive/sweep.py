@@ -37,7 +37,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-ATLAS_ROOT = Path(__file__).resolve().parent.parent
+ATLAS_ROOT = Path(__file__).resolve().parent.parent.parent  # archive/sweep.py is one level deeper
 sys.path.insert(0, str(ATLAS_ROOT))
 
 from research.loop import (

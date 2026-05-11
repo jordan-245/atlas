@@ -142,15 +142,12 @@ class BBSqueeze(BaseStrategy):
                     continue
 
                 # ATR for stops
-                if self._precomputed:
-                    current_atr = float(df["_bb_atr"].iloc[curr])
-                else:
-                    current_atr = float(calc_atr(high, low, close, self.atr_period).iloc[curr])
+                current_atr = float(self._get_indicator(df, "_bb_atr", lambda d: calc_atr(d["high"], d["low"], d["close"], self.atr_period)).iloc[curr])
                 if np.isnan(current_atr) or current_atr <= 0:
                     continue
 
                 entry_price = float(close.iloc[curr])
-                stop_price = entry_price - self.atr_stop_mult * current_atr
+                stop_price = self._atr_stop(entry_price, current_atr)
 
                 # Confidence calculation
                 confidence = 0.55
@@ -239,18 +236,9 @@ class BBSqueeze(BaseStrategy):
         """Check exit conditions for BB squeeze positions."""
         exits = []
 
-        for pos in existing_positions:
-            if pos.get("strategy") != "bb_squeeze":
-                continue
-
-            ticker = pos.get("ticker", "")
-            if ticker not in data:
-                continue
-
-            df = data[ticker]
+        for ticker, pos, df in self._iter_my_positions(data, existing_positions):
             if len(df) < self.momentum_period + 5:
                 continue
-
             try:
                 close = df["close"]
                 high = df["high"]
@@ -266,17 +254,14 @@ class BBSqueeze(BaseStrategy):
                     pos["highest_price"] = highest_price
 
                 # ATR for stops
-                if self._precomputed:
-                    current_atr = df["_bb_atr"].iloc[-1]
-                else:
-                    current_atr = calc_atr(high, low, close, self.atr_period).iloc[-1]
+                current_atr = self._get_indicator(df, "_bb_atr", lambda d: calc_atr(d["high"], d["low"], d["close"], self.atr_period)).iloc[-1]
                 if np.isnan(current_atr) or current_atr <= 0:
                     current_atr = entry_price * 0.02  # fallback 2%
 
                 exit_reason = None
 
                 # 1. Stop loss
-                stop_price = entry_price - self.atr_stop_mult * current_atr
+                stop_price = self._atr_stop(entry_price, current_atr)
                 if current_price <= stop_price:
                     exit_reason = f"Stop loss: {current_price:.4f} <= {stop_price:.4f}"
 
