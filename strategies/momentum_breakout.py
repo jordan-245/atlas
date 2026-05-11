@@ -32,7 +32,8 @@ import numpy as np
 import pandas as pd
 
 from strategies.base import BaseStrategy, Signal
-from utils.helpers import calc_atr, calc_position_size
+from indicators import calc_atr
+from utils.helpers import calc_position_size
 
 logger = logging.getLogger(__name__)
 
