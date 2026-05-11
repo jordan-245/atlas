@@ -248,6 +248,14 @@ PAUSED_AUTORESEARCH_STRATEGIES: frozenset[str] = frozenset({
     "opening_gap",
 })
 
+# Minimum log age (seconds) before a zero-byte autoresearch log is flagged.
+# Prevents the race where the silent-failure-watchdog runs at hourly :00
+# and catches an autoresearch_*.log file that was JUST created at the same
+# minute by a concurrent autoresearch timer (e.g., 13:00 UTC) but hasn't
+# flushed any content yet.  15 min comfortably exceeds buffered-IO flush
+# latency for the autoresearch runner's first log line.
+_AUTORESEARCH_MIN_AGE_SECONDS = 15 * 60
+
 
 def _is_rotation_stub(log_file: Path) -> bool:
     """Return True if *log_file* looks like a logrotate-created empty stub.
@@ -298,12 +306,24 @@ def check_autoresearch_logs(dry_run: bool = False) -> None:
 
         zero_byte_files: list[str] = []
         skipped_paused: list[str] = []
+        skipped_too_fresh: list[str] = []
         for log_file in LOGS_DIR.glob("autoresearch_*.log"):
             try:
                 st = log_file.stat()
             except OSError:
                 continue
             if st.st_mtime >= cutoff_ts and st.st_size == 0 and not _is_rotation_stub(log_file):
+                # Skip logs that are too young — the autoresearch runner
+                # may have just created the file before content flushed.
+                age_seconds = now_ts - st.st_mtime
+                if age_seconds < _AUTORESEARCH_MIN_AGE_SECONDS:
+                    skipped_too_fresh.append(log_file.name)
+                    logger.info(
+                        "check_autoresearch_logs: %s is %ds old (<%ds min-age) — "
+                        "race-condition skip",
+                        log_file.name, int(age_seconds), _AUTORESEARCH_MIN_AGE_SECONDS,
+                    )
+                    continue
                 m = _AR_RE.match(log_file.name)
                 strat = m["strat"] if m else None
                 if strat and strat in PAUSED_AUTORESEARCH_STRATEGIES:
@@ -324,12 +344,16 @@ def check_autoresearch_logs(dry_run: bool = False) -> None:
                 dry_run=dry_run,
             )
         else:
+            extras = []
             if skipped_paused:
+                extras.append(f"{len(skipped_paused)} paused-strategy stub(s): {', '.join(sorted(skipped_paused))}")
+            if skipped_too_fresh:
+                extras.append(f"{len(skipped_too_fresh)} too-fresh log(s): {', '.join(sorted(skipped_too_fresh))}")
+            if extras:
                 logger.info(
                     "check_autoresearch_logs: OK (no actionable zero-byte logs; "
-                    "skipped %d paused-strategy stub(s): %s)",
-                    len(skipped_paused),
-                    ", ".join(sorted(skipped_paused)),
+                    "skipped %s)",
+                    "; ".join(extras),
                 )
             else:
                 logger.info("check_autoresearch_logs: OK (no zero-byte logs in last 24h)")
