@@ -183,21 +183,13 @@ class ShortTermMR(BaseStrategy):
                         )
 
                 # Volume confirmation (noted for confidence, no hard filter)
-                if self._precomputed:
-                    current_vol_ratio = df["_st_vol_ratio"].iloc[-1]
-                else:
-                    vol_ratio = calc_volume_ratio(volume, lookback=self.vol_lookback)
-                    current_vol_ratio = vol_ratio.iloc[-1]
+                current_vol_ratio = self._get_indicator(df, "_st_vol_ratio", lambda d: calc_volume_ratio(d["volume"], lookback=self.vol_lookback)).iloc[-1]
 
                 if pd.isna(current_vol_ratio):
                     current_vol_ratio = 1.0  # Neutral if no data
 
                 # Calculate ATR
-                if self._precomputed:
-                    current_atr = df["_st_atr"].iloc[-1]
-                else:
-                    atr = calc_atr(high, low, close, period=self.atr_period)
-                    current_atr = atr.iloc[-1]
+                current_atr = self._get_indicator(df, "_st_atr", lambda d: calc_atr(d["high"], d["low"], d["close"], period=self.atr_period)).iloc[-1]
 
                 if pd.isna(current_atr) or current_atr <= 0:
                     self._logger.debug("%s: invalid ATR (%s)", ticker, current_atr)
@@ -206,7 +198,7 @@ class ShortTermMR(BaseStrategy):
                 entry_price = today_close
 
                 # Stop loss: entry - atr_stop_mult * ATR
-                stop_price = entry_price - (self.atr_stop_mult * current_atr)
+                stop_price = self._atr_stop(entry_price, current_atr)
                 if stop_price <= 0:
                     self._logger.debug("%s: stop price <= 0, skipping", ticker)
                     continue
@@ -333,17 +325,7 @@ class ShortTermMR(BaseStrategy):
         """
         exits: List[Dict[str, Any]] = []
 
-        for pos in positions:
-            if pos.get("strategy") != self.name:
-                continue
-
-            ticker = pos["ticker"]
-            df = data.get(ticker)
-
-            if df is None or df.empty:
-                self._logger.warning(f"{ticker}: no data for exit check")
-                continue
-
+        for ticker, pos, df in self._iter_my_positions(data, positions):
             try:
                 close = df["close"]
                 today_close = close.iloc[-1]
