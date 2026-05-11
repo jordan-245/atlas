@@ -69,6 +69,8 @@ TZ=Australia/Brisbane
 
 # ── Post-close 08:00 AEST Tue–Sat (= 22:00 UTC Mon–Fri) ─────────────────────
 0 8 * * 2-6 /root/atlas/scripts/pi-cron.sh postclose sp500
+# Same-bar stop monitor: 08:30 AEST Tue–Sat (30 min after postclose; only needs closed trades)
+30 8 * * 2-6 /usr/bin/flock -n /tmp/monitor_same_bar.lock bash -c 'cd /root/atlas && timeout 3m python3 scripts/monitor_same_bar_stops.py --days 30' >> /root/atlas/logs/monitor_same_bar_stops.log 2>&1
 # CONSOLIDATED-2026-05-07: 0 8 * * 2-6 /root/atlas/scripts/pi-cron.sh postclose commodity_etfs
 # CONSOLIDATED-2026-05-07: 0 8 * * 2-6 /root/atlas/scripts/pi-cron.sh postclose sector_etfs
 
