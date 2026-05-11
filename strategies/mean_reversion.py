@@ -176,10 +176,7 @@ class MeanReversion(BaseStrategy):
 
                 # SMA-200 trend filter: only buy if price is above 200-day SMA
                 if self.sma200_filter:
-                    if self._precomputed:
-                        sma200_val = df["_mr_sma200"].iloc[-1]
-                    else:
-                        sma200_val = close.rolling(200).mean().iloc[-1]
+                    sma200_val = self._get_indicator(df, "_mr_sma200", lambda d: d["close"].rolling(200).mean()).iloc[-1]
                     if pd.isna(sma200_val) or close.iloc[-1] < sma200_val:
                         self._logger.debug(
                             f"{ticker}: below SMA(200) "
@@ -189,11 +186,7 @@ class MeanReversion(BaseStrategy):
 
                 # IBS confirmation filter: only buy if IBS is low (selling exhaustion)
                 if self.ibs_max < 1.0:
-                    if self._precomputed:
-                        current_ibs = df["_mr_ibs"].iloc[-1]
-                    else:
-                        ibs = calc_ibs(high, low, close)
-                        current_ibs = ibs.iloc[-1]
+                    current_ibs = self._get_indicator(df, "_mr_ibs", lambda d: calc_ibs(d["high"], d["low"], d["close"])).iloc[-1]
                     if pd.isna(current_ibs) or current_ibs > self.ibs_max:
                         self._logger.debug(
                             f"{ticker}: IBS={current_ibs:.3f} > max {self.ibs_max}, skipping"
@@ -220,11 +213,7 @@ class MeanReversion(BaseStrategy):
                         self._logger.debug(f"{ticker}: earnings check failed ({e}), proceeding")
 
                 # Phase 7A: Volume confirmation
-                if self._precomputed:
-                    current_vol_ratio = df["_mr_vol_ratio"].iloc[-1]
-                else:
-                    vol_ratio = calc_volume_ratio(volume, lookback=self.vol_lookback)
-                    current_vol_ratio = vol_ratio.iloc[-1]
+                current_vol_ratio = self._get_indicator(df, "_mr_vol_ratio", lambda d: calc_volume_ratio(d["volume"], lookback=self.vol_lookback)).iloc[-1]
 
                 if pd.isna(current_vol_ratio):
                     current_vol_ratio = 1.0  # Neutral if no data
@@ -239,11 +228,7 @@ class MeanReversion(BaseStrategy):
                 # Phase 7A: Volume noted for confidence adjustment
 
                 # Calculate ATR
-                if self._precomputed:
-                    current_atr = df["_mr_atr"].iloc[-1]
-                else:
-                    atr = calc_atr(high, low, close, period=self.atr_period)
-                    current_atr = atr.iloc[-1]
+                current_atr = self._get_indicator(df, "_mr_atr", lambda d: calc_atr(d["high"], d["low"], d["close"], period=self.atr_period)).iloc[-1]
 
                 if pd.isna(current_atr) or current_atr <= 0:
                     self._logger.debug(f"{ticker}: invalid ATR ({current_atr})")
@@ -253,7 +238,7 @@ class MeanReversion(BaseStrategy):
                 entry_price = today_close
 
                 # Stop loss: entry - atr_stop_mult * ATR
-                stop_price = entry_price - (self.atr_stop_mult * current_atr)
+                stop_price = self._atr_stop(entry_price, current_atr)
                 if stop_price <= 0:
                     self._logger.debug(f"{ticker}: stop price <= 0, skipping")
                     continue
@@ -379,17 +364,7 @@ class MeanReversion(BaseStrategy):
         """
         exits: List[Dict[str, Any]] = []
 
-        for pos in positions:
-            if pos.get("strategy") != self.name:
-                continue
-
-            ticker = pos["ticker"]
-            df = data.get(ticker)
-
-            if df is None or df.empty:
-                self._logger.warning(f"{ticker}: no data for exit check")
-                continue
-
+        for ticker, pos, df in self._iter_my_positions(data, positions):
             try:
                 close = df["close"]
                 today_close = close.iloc[-1]
@@ -404,10 +379,7 @@ class MeanReversion(BaseStrategy):
                 days_held = (today_date - entry_date).days
 
                 # 20-day moving average (mean reversion target)
-                if self._precomputed:
-                    mean_20 = df["_mr_mean_target"].iloc[-1]
-                else:
-                    mean_20 = close.iloc[-self.zscore_lookback:].mean()
+                mean_20 = self._get_indicator(df, "_mr_mean_target", lambda d: d["close"].iloc[-self.zscore_lookback:].mean())
 
                 # 1. Hard stop hit
                 if today_close <= stop_price:
