@@ -8,12 +8,23 @@ import { usePnlFilterOptions, usePnlTrades } from '../../api/queries'
 import type { PnlFilters } from '../../api/queries'
 import { fmtSignedCcy, fmtDateShort, pnlClass } from '../../lib/format'
 import { useCssVars } from '../../hooks/useCssVar'
+import {
+  CHART_GRID,
+  CHART_TICK,
+  CHART_ANIM,
+  CHART_CURSOR,
+  SERIES_PORTFOLIO,
+} from '../../lib/chart-palette'
 
 // ---------------------------------------------------------------------------
 // PnlSlicerRow — horizontal row of 3 dropdowns
 // ---------------------------------------------------------------------------
 const SELECT_CLASS =
   'text-xs bg-[var(--color-surface-alt)] border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-[var(--color-text)] cursor-pointer'
+
+// Pill-style period/slice selector — matches EquityChart period pills exactly
+const PILL_ACTIVE = 'bg-[var(--color-accent)]/15 text-[var(--color-accent)] border-[var(--color-accent)]/30'
+const PILL_INACTIVE = 'bg-transparent border-[var(--color-border)]/40 text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
 
 interface SlicerRowProps {
   filters: PnlFilters
@@ -98,13 +109,11 @@ export function PnlSlicedSection() {
 
   const colors = useCssVars([
     '--color-series-portfolio',
-    '--color-series-grid',
     '--color-text-muted',
   ] as const)
 
-  const portfolioColor = colors['--color-series-portfolio']
-  const gridColor = colors['--color-series-grid']
-  const textMuted = colors['--color-text-muted']
+  const portfolioColor = colors['--color-series-portfolio'] || SERIES_PORTFOLIO
+  const textMuted = colors['--color-text-muted'] || 'var(--color-text-muted)'
 
   // Build cumulative P&L series from sorted trades
   const { chartData, totalPnl } = useMemo(() => {
@@ -133,6 +142,8 @@ export function PnlSlicedSection() {
   const isLoading = trades.isLoading
   const isEmpty = !isLoading && Array.isArray(trades.data) && trades.data.length === 0
   const hasData = !isLoading && !isEmpty && chartData.length > 0
+
+  const tickStyle = { ...CHART_TICK, fill: textMuted }
 
   return (
     <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5 dash-card">
@@ -166,15 +177,12 @@ export function PnlSlicedSection() {
             <AreaChart data={chartData}>
               <defs>
                 <linearGradient id="pnlSlicerGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={portfolioColor || '#22c55e'} stopOpacity={0.25} />
-                  <stop offset="100%" stopColor={portfolioColor || '#22c55e'} stopOpacity={0} />
+                  {/* opacity 0.30 — matches EquityChart gradient strength */}
+                  <stop offset="0%" stopColor={portfolioColor} stopOpacity={0.30} />
+                  <stop offset="100%" stopColor={portfolioColor} stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid
-                strokeDasharray="3 3"
-                stroke={gridColor || 'var(--color-border)'}
-                vertical={false}
-              />
+              <CartesianGrid {...CHART_GRID} />
               <XAxis
                 dataKey="date"
                 tickFormatter={(v) => fmtDateShort(v as string)}
@@ -182,18 +190,19 @@ export function PnlSlicedSection() {
                 tickLine={false}
                 interval="preserveStartEnd"
                 minTickGap={40}
-                tick={{ fontSize: 10, fill: textMuted || 'var(--color-text-muted)' }}
+                tick={tickStyle}
               />
               <YAxis
                 tickFormatter={(v) => fmtSignedCcy(v as number)}
                 axisLine={false}
                 tickLine={false}
-                tick={{ fontSize: 10, fill: textMuted || 'var(--color-text-muted)' }}
+                tick={tickStyle}
                 width={80}
               />
-              <ReferenceLine y={0} stroke={gridColor || 'var(--color-border)'} strokeDasharray="4 4" />
+              {/* y=0 P&L parity reference line */}
+              <ReferenceLine y={0} stroke="var(--color-border)" strokeDasharray="2 2" />
               <Tooltip
-                cursor={{ stroke: 'var(--color-border)', strokeDasharray: '4 4' }}
+                cursor={CHART_CURSOR}
                 content={
                   <ChartTooltip
                     labelFormatter={(l) => fmtDateShort(l)}
@@ -204,17 +213,32 @@ export function PnlSlicedSection() {
               <Area
                 dataKey="cumPnl"
                 name="Cumulative P&L"
-                stroke={portfolioColor || '#22c55e'}
+                stroke={portfolioColor}
                 strokeWidth={2}
                 fill="url(#pnlSlicerGrad)"
                 connectNulls={true}
-                isAnimationActive={true}
-                animationDuration={800}
-                animationEasing="ease-out"
+                {...CHART_ANIM}
               />
             </AreaChart>
           </ResponsiveContainer>
         </ChartGate>
+      )}
+
+      {/* Slice selector pills (when data is loaded) — matches EquityChart period pill style */}
+      {hasData && (
+        <div className="flex items-center gap-1 mt-3 flex-wrap">
+          {opts?.strategies && opts.strategies.length > 1 && opts.strategies.map((s) => (
+            <button
+              key={s}
+              onClick={() => handleFilterChange('strategy', filters.strategy === s ? '' : s)}
+              className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-medium tracking-wide transition-colors border ${
+                filters.strategy === s ? PILL_ACTIVE : PILL_INACTIVE
+              }`}
+            >
+              {s.replace(/_/g, ' ')}
+            </button>
+          ))}
+        </div>
       )}
     </div>
   )

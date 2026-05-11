@@ -1,11 +1,20 @@
 import { useState, useEffect, useMemo } from 'react'
-import { ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { ChartGate } from '../shared/ChartGate'
+import { Badge } from '../shared/Badge'
 import { useEquityChartData } from '../../api/queries'
 import { Skeleton } from '../layout/Skeleton'
 import { ChartTooltip } from '../shared/ChartTooltip'
 import { fmtCcy, fmtDateShort, fmtSignedPct } from '../../lib/format'
 import { useCssVars } from '../../hooks/useCssVar'
+import {
+  CHART_GRID,
+  CHART_TICK,
+  CHART_ANIM,
+  CHART_CURSOR,
+  SERIES_PORTFOLIO,
+  SERIES_BENCHMARK,
+} from '../../lib/chart-palette'
 
 // Period selector options
 const PERIODS = [
@@ -18,7 +27,7 @@ const PERIODS = [
 type PeriodKey = (typeof PERIODS)[number]['key']
 
 // ---------------------------------------------------------------------------
-// EquityReturnBadge — module-scoped (rerender-no-inline-components rule)
+// EquityReturnBadge — migrated to <Badge> primitive
 // ---------------------------------------------------------------------------
 interface EquityReturnBadgeProps {
   portfolioReturnPct: number
@@ -26,12 +35,11 @@ interface EquityReturnBadgeProps {
 }
 
 function EquityReturnBadge({ portfolioReturnPct, alphaVsSpy }: EquityReturnBadgeProps) {
-  const positive = portfolioReturnPct >= 0
-  const colorClass = positive ? 'text-[var(--color-green)]' : 'text-[var(--color-red)]'
+  const variant = portfolioReturnPct >= 0 ? 'success' : 'danger'
   return (
-    <div className={`rounded-md px-2.5 py-1 text-xs font-mono bg-[var(--color-surface-alt)] border border-[var(--color-border)] ${colorClass}`}>
-      {fmtSignedPct(portfolioReturnPct)} ({fmtSignedPct(alphaVsSpy)} vs SPY)
-    </div>
+    <Badge variant={variant} size="sm">
+      {fmtSignedPct(portfolioReturnPct)}&nbsp;({fmtSignedPct(alphaVsSpy)} vs SPY)
+    </Badge>
   )
 }
 
@@ -48,7 +56,7 @@ function PeriodSelector({ active, onChange }: { active: PeriodKey; onChange: (k:
           className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-medium tracking-wide transition-colors border ${
             active === key
               ? 'bg-[var(--color-accent)]/15 text-[var(--color-accent)] border-[var(--color-accent)]/30'
-              : 'bg-transparent border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
+              : 'bg-transparent border-[var(--color-border)]/40 text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
           }`}
         >
           {key}
@@ -65,13 +73,13 @@ export function EquityChart() {
   const colors = useCssVars([
     '--color-series-portfolio',
     '--color-series-benchmark',
-    '--color-series-grid',
     '--color-text-muted',
   ] as const)
-  const portfolioColor = colors['--color-series-portfolio']
-  const benchmarkColor = colors['--color-series-benchmark']
-  const gridColor = colors['--color-series-grid']
-  const textMuted = colors['--color-text-muted']
+
+  // Resolved CSS-var values for SVG attributes (can't use var() inside SVG attrs)
+  const portfolioColor = colors['--color-series-portfolio'] || SERIES_PORTFOLIO
+  const benchmarkColor = colors['--color-series-benchmark'] || SERIES_BENCHMARK
+  const textMuted = colors['--color-text-muted'] || 'var(--color-text-muted)'
 
   const [isMobile, setIsMobile] = useState(false)
   useEffect(() => {
@@ -93,7 +101,15 @@ export function EquityChart() {
     return all.slice(-p.days)
   }, [query.data?.chartData, period])
 
+  // Derive start equity from the first visible data point for the baseline reference line
+  const startEquity = useMemo(() => {
+    const first = filteredData[0]
+    return first?.portfolio ?? null
+  }, [filteredData])
+
   if (!query.data) return <Skeleton className="h-96" />
+
+  const tickStyle = { ...CHART_TICK, fontSize: isMobile ? 9 : 10, fill: textMuted }
 
   const tooltipFormatter = (value: number, name: string) => {
     if (name === 'Portfolio' || name === 'SPY') return fmtCcy(value)
@@ -117,11 +133,12 @@ export function EquityChart() {
           <ComposedChart data={filteredData}>
             <defs>
               <linearGradient id="portfolioGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={portfolioColor || '#22c55e'} stopOpacity={0.25} />
-                <stop offset="100%" stopColor={portfolioColor || '#22c55e'} stopOpacity={0} />
+                {/* opacity 0.30 for slightly stronger fill vs old 0.25 */}
+                <stop offset="0%" stopColor={portfolioColor} stopOpacity={0.30} />
+                <stop offset="100%" stopColor={portfolioColor} stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke={gridColor || 'var(--color-border)'} vertical={false} />
+            <CartesianGrid {...CHART_GRID} />
             <XAxis
               dataKey="date"
               tickFormatter={(v) => fmtDateShort(v as string)}
@@ -129,7 +146,7 @@ export function EquityChart() {
               tickLine={false}
               interval="preserveStartEnd"
               minTickGap={40}
-              tick={{ fontSize: isMobile ? 9 : 10, fill: textMuted || 'var(--color-text-muted)' }}
+              tick={tickStyle}
             />
             <YAxis
               domain={[
@@ -139,12 +156,12 @@ export function EquityChart() {
               tickFormatter={(v) => '$' + Math.round(v as number).toLocaleString('en-US')}
               axisLine={false}
               tickLine={false}
-              tick={{ fontSize: isMobile ? 9 : 10, fill: textMuted || 'var(--color-text-muted)' }}
+              tick={tickStyle}
               width={70}
               allowDataOverflow={false}
             />
             <Tooltip
-              cursor={{ stroke: 'var(--color-border)', strokeDasharray: '4 4' }}
+              cursor={CHART_CURSOR}
               content={
                 <ChartTooltip
                   labelFormatter={(l) => fmtDateShort(l)}
@@ -152,29 +169,36 @@ export function EquityChart() {
                 />
               }
             />
+            {/* Baseline reference line at period-start equity — graceful (only when derivable) */}
+            {startEquity != null && (
+              <ReferenceLine
+                y={startEquity}
+                stroke="var(--color-border)"
+                strokeDasharray="2 2"
+                strokeOpacity={0.7}
+              />
+            )}
             <Area
               dataKey="portfolio"
               name="Portfolio"
-              stroke={portfolioColor || '#22c55e'}
+              stroke={portfolioColor}
               strokeWidth={2}
               fill="url(#portfolioGrad)"
               baseValue="dataMin"
               connectNulls={true}
-              isAnimationActive={true}
+              {...CHART_ANIM}
               animationDuration={1200}
-              animationEasing="ease-out"
             />
             <Line
               dataKey="spy"
               name="SPY"
-              stroke={benchmarkColor || '#a1a1aa'}
+              stroke={benchmarkColor}
               strokeWidth={1.5}
               strokeDasharray="4 4"
               dot={false}
               connectNulls={true}
-              isAnimationActive={true}
+              {...CHART_ANIM}
               animationDuration={1200}
-              animationEasing="ease-out"
             />
           </ComposedChart>
         </ResponsiveContainer>

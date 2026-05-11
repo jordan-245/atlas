@@ -2,6 +2,12 @@ import { useEffect, useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { ChartGate } from '../shared/ChartGate'
 import { ChartTooltip } from '../shared/ChartTooltip'
+import {
+  CHART_GRID,
+  CHART_TICK,
+  CHART_ANIM,
+  CHART_CURSOR,
+} from '../../lib/chart-palette'
 
 interface Bucket {
   hour: string
@@ -55,7 +61,7 @@ export function ErrorVolumeChart() {
       {loading ? (
         <div className="h-[180px] bg-[var(--color-surface-alt)] rounded animate-pulse" />
       ) : error ? (
-        <div className="h-[180px] flex items-center justify-center text-sm text-red-500">{error}</div>
+        <div className="h-[180px] flex items-center justify-center text-sm text-[var(--color-red)]">{error}</div>
       ) : data.length === 0 ? (
         <div className="h-[180px] flex items-center justify-center text-sm text-[var(--color-text-muted)]">
           No errors in the last 24h
@@ -64,24 +70,24 @@ export function ErrorVolumeChart() {
         <ChartGate className="h-[180px] w-full">
           <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
             <LineChart data={data}>
-              <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
+              <CartesianGrid {...CHART_GRID} />
               <XAxis
                 dataKey="hour"
                 tickFormatter={fmtHourBucket}
                 axisLine={false}
                 tickLine={false}
-                tick={{ fontSize: 10, fill: 'var(--color-text-muted)' }}
+                tick={CHART_TICK}
                 interval="preserveStartEnd"
               />
               <YAxis
                 allowDecimals={false}
                 axisLine={false}
                 tickLine={false}
-                tick={{ fontSize: 10, fill: 'var(--color-text-muted)' }}
+                tick={CHART_TICK}
                 width={28}
               />
               <Tooltip
-                cursor={{ stroke: 'var(--color-border)', strokeDasharray: '4 4' }}
+                cursor={CHART_CURSOR}
                 content={
                   <ChartTooltip
                     labelFormatter={(l) => fmtHourBucket(l as string)}
@@ -95,9 +101,7 @@ export function ErrorVolumeChart() {
                 stroke="var(--color-red)"
                 strokeWidth={2}
                 dot={false}
-                isAnimationActive={true}
-                animationDuration={800}
-                animationEasing="ease-out"
+                {...CHART_ANIM}
               />
             </LineChart>
           </ResponsiveContainer>

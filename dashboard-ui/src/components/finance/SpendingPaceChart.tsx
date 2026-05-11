@@ -2,7 +2,15 @@ import { ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Respon
 import { ChartGate } from '../shared/ChartGate'
 import type { PacePoint } from '../../api/types'
 import { ChartTooltip } from '../shared/ChartTooltip'
-import { fmtSignedCcy, fmtDateShort, fmtCcy } from '../../lib/format'
+import { fmtDateShort, fmtCcy } from '../../lib/format'
+import {
+  CHART_GRID,
+  CHART_TICK,
+  CHART_ANIM,
+  CHART_CURSOR,
+  SERIES_PORTFOLIO,
+  SERIES_BENCHMARK,
+} from '../../lib/chart-palette'
 
 interface Props {
   paceData: PacePoint[]
@@ -27,76 +35,75 @@ export function SpendingPaceChart({ paceData, paceStatus, paceDiff }: Props) {
       <div className="flex items-center justify-between mb-4">
         <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-medium">SPENDING PACE</div>
         {paceStatus != null ? (
-          <div className={`rounded-full px-3 py-1 text-[10px] font-mono font-medium uppercase ${badgeClass(paceStatus)}`}>
-            {paceStatus} {paceDiff != null ? fmtSignedCcy(paceDiff) : null}
+          <div className={`rounded-full px-3 py-1 text-[10px] font-mono tabular-nums font-medium uppercase ${badgeClass(paceStatus)}`}>
+            {paceStatus} {paceDiff != null ? fmtCcy(Math.abs(paceDiff)) : null}
           </div>
         ) : null}
       </div>
       <ChartGate className="h-[280px] w-full">
-      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-        <ComposedChart data={paceData}>
-          <defs>
-            <linearGradient id="spendingGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#22c55e" stopOpacity={0.2} />
-              <stop offset="100%" stopColor="#22c55e" stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
-          <XAxis
-            dataKey="date"
-            tickFormatter={(v) => fmtDateShort(v as string)}
-            axisLine={false}
-            tickLine={false}
-            tick={{ fontSize: 10, fill: 'var(--color-text-muted)' }}
-          />
-          <YAxis
-            tickFormatter={(v) => '$' + Math.round(v as number).toLocaleString('en-US')}
-            axisLine={false}
-            tickLine={false}
-            tick={{ fontSize: 10, fill: 'var(--color-text-muted)' }}
-          />
-          <Tooltip
-            cursor={{ stroke: 'var(--color-border)', strokeDasharray: '4 4' }}
-            content={
-              <ChartTooltip
-                labelFormatter={(l) => fmtDateShort(l)}
-                formatter={(v) => fmtCcy(v)}
-              />
-            }
-          />
-          {budgetTarget != null ? (
-            <ReferenceLine
-              y={budgetTarget}
-              stroke="var(--color-text-muted)"
-              strokeDasharray="6 4"
-              strokeOpacity={0.5}
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+          <ComposedChart data={paceData}>
+            <defs>
+              <linearGradient id="spendingGrad" x1="0" y1="0" x2="0" y2="1">
+                {/* Use portfolio series token — green in dark, darker green in light */}
+                <stop offset="0%" stopColor={SERIES_PORTFOLIO} stopOpacity={0.20} />
+                <stop offset="100%" stopColor={SERIES_PORTFOLIO} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid {...CHART_GRID} />
+            <XAxis
+              dataKey="date"
+              tickFormatter={(v) => fmtDateShort(v as string)}
+              axisLine={false}
+              tickLine={false}
+              tick={CHART_TICK}
             />
-          ) : null}
-          <Area
-            dataKey="actual"
-            name="Actual"
-            stroke="#22c55e"
-            strokeWidth={2}
-            fill="url(#spendingGrad)"
-            baseValue={0}
-            dot={false}
-            isAnimationActive={true}
-            animationDuration={1200}
-            animationEasing="ease-out"
-          />
-          <Line
-            dataKey="budget"
-            name="Budget"
-            stroke="#a1a1aa"
-            strokeDasharray="4 4"
-            strokeWidth={1.5}
-            dot={false}
-            isAnimationActive={true}
-            animationDuration={1200}
-            animationEasing="ease-out"
-          />
-        </ComposedChart>
-      </ResponsiveContainer>
+            <YAxis
+              tickFormatter={(v) => '$' + Math.round(v as number).toLocaleString('en-US')}
+              axisLine={false}
+              tickLine={false}
+              tick={CHART_TICK}
+            />
+            <Tooltip
+              cursor={CHART_CURSOR}
+              content={
+                <ChartTooltip
+                  labelFormatter={(l) => fmtDateShort(l)}
+                  formatter={(v) => fmtCcy(v)}
+                />
+              }
+            />
+            {budgetTarget != null ? (
+              <ReferenceLine
+                y={budgetTarget}
+                stroke="var(--color-text-muted)"
+                strokeDasharray="6 4"
+                strokeOpacity={0.5}
+              />
+            ) : null}
+            <Area
+              dataKey="actual"
+              name="Actual"
+              stroke={SERIES_PORTFOLIO}
+              strokeWidth={2}
+              fill="url(#spendingGrad)"
+              baseValue={0}
+              dot={false}
+              {...CHART_ANIM}
+              animationDuration={1200}
+            />
+            <Line
+              dataKey="budget"
+              name="Budget"
+              stroke={SERIES_BENCHMARK}
+              strokeDasharray="4 4"
+              strokeWidth={1.5}
+              dot={false}
+              {...CHART_ANIM}
+              animationDuration={1200}
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
       </ChartGate>
     </div>
   )
