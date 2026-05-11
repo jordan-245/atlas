@@ -59,6 +59,47 @@ class DailyReport:
     runtime_s: float = 0.0
 
 
+
+
+def _extract_assistant_text_from_ndjson(ndjson: str) -> str:
+    """Extract the final assistant text block from pi CLI NDJSON output.
+
+    Pi CLI ``--mode json`` produces newline-delimited JSON (NDJSON) where each
+    line is a structured event object.  The ``turn_end`` event for the LAST
+    completed turn contains ``message.content`` — an array of blocks with types
+    such as ``"thinking"`` and ``"text"``.  We scan the stream in reverse so the
+    LAST ``turn_end`` event (the final assistant response) is found first.
+
+    Content block types:
+      - ``"text"``     — the model's actual reply; this is what we want.
+      - ``"thinking"`` — extended-thinking scratchpad; skip.
+      - ``"tool_use"`` — tool invocation; skip (no text to extract).
+
+    Returns the text of the first suitable text block, or ``""`` if the stream
+    has no parseable ``turn_end`` event with a text block.
+    """
+    lines = ndjson.splitlines()
+    # Scan in reverse: the LAST turn_end = the final assistant turn
+    for line in reversed(lines):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("type") != "turn_end":
+            continue
+        message = event.get("message", {})
+        if not isinstance(message, dict) or message.get("role") != "assistant":
+            continue
+        for block in message.get("content", []):
+            if isinstance(block, dict) and block.get("type") == "text":
+                text = block.get("text", "")
+                if text.strip():
+                    return text
+    return ""
+
 # ─── Core Pi CLI helper ──────────────────────────────────────────────────────
 
 def _run_pi(
@@ -107,18 +148,49 @@ def _run_pi(
         if not stdout:
             return {"error": "empty output from pi", "raw": ""}
 
-        # Parse JSON — pi --mode json returns structured JSON
+        # Parse JSON.
+        # Pi CLI --mode json outputs NDJSON (newline-delimited JSON events).
+        # A bare json.loads() of the full stdout therefore fails.
+        # Strategy:
+        #   1. Try json.loads directly (works when pi outputs a single JSON doc).
+        #   2. Parse NDJSON: find the last turn_end event, extract assistant text,
+        #      then try json.loads on that text (+ code-fence and bare-array fallbacks).
+        #   3. Code-fence extraction on raw stdout (legacy fallback).
+        #   4. Return {"error": "json parse failed", "raw": ...}.
         try:
             return json.loads(stdout)
         except json.JSONDecodeError:
-            # Try to extract JSON block from output
+            # ── NDJSON path ───────────────────────────────────────────────────
+            assistant_text = _extract_assistant_text_from_ndjson(stdout)
+            if assistant_text:
+                try:
+                    return json.loads(assistant_text)
+                except json.JSONDecodeError:
+                    pass
+                # Code fence inside assistant text
+                m = re.search(r"```json\s*([\s\S]+?)\s*```", assistant_text)
+                if m:
+                    try:
+                        return json.loads(m.group(1))
+                    except json.JSONDecodeError:
+                        pass
+                # Bare JSON array inside assistant text (model added prose prefix)
+                m2 = re.search(r"\[\s*\{[\s\S]+?\}\s*\]", assistant_text)
+                if m2:
+                    try:
+                        return json.loads(m2.group(0))
+                    except json.JSONDecodeError:
+                        pass
+                logger.debug("_run_pi: assistant_text not JSON; snippet=%s", assistant_text[:200])
+                return {"error": "json parse failed", "raw": assistant_text[:2000]}
+            # ── Legacy code-fence fallback on raw stdout ──────────────────────
             m = re.search(r"```json\s*([\s\S]+?)\s*```", stdout)
             if m:
                 try:
                     return json.loads(m.group(1))
                 except json.JSONDecodeError:
                     pass
-            return {"error": "json parse failed", "raw": stdout[:500]}
+            return {"error": "json parse failed", "raw": stdout[:2000]}
 
     except PiSubprocessError as e:
         err_msg = str(e)
@@ -146,15 +218,26 @@ def _browse_with_pi(source: dict) -> list:
     Returns:
         list of paper dicts (may be empty if pi CLI unavailable).
     """
-    source_type = source.get("type", "")
+    # Determine prompt file using the "source" key (e.g. "ssrn", "blog", "quantpedia").
+    # Note: source dicts use the key "source", not "type".
+    source_type = source.get("source", "")
     if source_type == "ssrn":
         prompt_file = PROMPTS_DIR / "browse_ssrn.md"
     else:
         prompt_file = PROMPTS_DIR / "browse_blog.md"
 
     if not prompt_file.exists():
-        logger.warning("Browse prompt not found: %s", prompt_file)
-        return []
+        # Graceful fallback: use browse_blog.md for unknown source types
+        fallback = PROMPTS_DIR / "browse_blog.md"
+        if fallback.exists():
+            logger.info(
+                "browse_with_pi: no prompt for source_type=%r — falling back to browse_blog.md",
+                source_type,
+            )
+            prompt_file = fallback
+        else:
+            logger.warning("Browse prompt not found: %s", prompt_file)
+            return []
 
     PAPERS_DIR.mkdir(parents=True, exist_ok=True)
     prompt = prompt_file.read_text()
@@ -167,16 +250,79 @@ def _browse_with_pi(source: dict) -> list:
     allowed = "Bash,Read,Write,computer_use,browser"
     result = _run_pi(prompt, mcp=True, allowed_tools=allowed)
 
-    if "error" in result:
-        logger.warning("browse_with_pi error: %s", result["error"])
+    # Log raw shape for diagnostics
+    logger.info(
+        "browse_with_pi: source=%s result_type=%s",
+        source.get("name", source_type or "?"),
+        type(result).__name__,
+    )
+
+    if isinstance(result, dict) and "error" in result:
+        logger.warning("browse_with_pi error: %s", result.get("error"))
         return []
 
-    # Expect result to be a list or contain a 'papers' key
+    # Tolerant parser — pi CLI returns inconsistent shapes depending on model
+    # behaviour and session length:
+    #   - bare list of paper dicts           (ideal path after NDJSON fix)
+    #   - dict with "papers" key
+    #   - dict with "result" key (list OR JSON-encoded string "[{...}]")
+    #   - dict with other list-valued keys
+    #   - plain string with embedded JSON array (model added prose prefix/suffix)
+    papers: list[dict] = []
+
     if isinstance(result, list):
-        return result
-    if isinstance(result, dict):
-        return result.get("papers", result.get("result", []))
-    return []
+        papers = [p for p in result if isinstance(p, dict)]
+
+    elif isinstance(result, dict):
+        # Try known keys in priority order
+        for key in ("papers", "result", "items", "data", "results"):
+            candidate = result.get(key)
+            if isinstance(candidate, list):
+                papers = [p for p in candidate if isinstance(p, dict)]
+                if papers:
+                    logger.info(
+                        "browse_with_pi: parsed via dict[%r] key (%d papers)", key, len(papers)
+                    )
+                    break
+            elif isinstance(candidate, str):
+                # Pi wrapper shape: {"result": "[{...}]"} — value is JSON string
+                try:
+                    parsed = json.loads(candidate)
+                    if isinstance(parsed, list):
+                        papers = [p for p in parsed if isinstance(p, dict)]
+                        if papers:
+                            logger.info(
+                                "browse_with_pi: parsed JSON string via dict[%r] key (%d papers)",
+                                key, len(papers),
+                            )
+                            break
+                except json.JSONDecodeError:
+                    pass
+
+        if not papers:
+            # Last-resort: scan all dict values for any list of dicts
+            for k, v in result.items():
+                if isinstance(v, list) and v and all(isinstance(x, dict) for x in v):
+                    papers = v
+                    logger.info("browse_with_pi: parsed via fallback scan of key %r", k)
+                    break
+
+    elif isinstance(result, str):
+        # Pi returned raw text — extract embedded JSON array
+        m = re.search(r"\[\s*\{[\s\S]+?\}\s*\]", result)
+        if m:
+            try:
+                papers = json.loads(m.group(0))
+            except json.JSONDecodeError:
+                pass
+
+    if not papers:
+        snippet = str(result)[:1000] if result else "<empty>"
+        logger.warning(
+            "browse_with_pi: 0 papers parsed from result; snippet=%s", snippet
+        )
+
+    return papers
 
 
 # ─── Filter helpers ───────────────────────────────────────────────────────────

@@ -63,18 +63,31 @@ def check_cron_status() -> None:
 
 
 def check_browse_with_pi_issue() -> None:
-    """Document the _browse_with_pi JSON parse failure."""
+    """Document the _browse_with_pi JSON parse failure and applied fix."""
     print("\n=== Root cause 1: _browse_with_pi JSON parse failure ===")
     print("  Method: computer_use — calls pi CLI to browse SSRN/Quantpedia/blogs")
-    print("  Failure: 'browse_with_pi error: json parse failed' after ~1398s")
+    print("  Original failure: 'browse_with_pi error: json parse failed' after ~1398s")
+    print("  Root cause: pi CLI --mode json outputs NDJSON (newline-delimited JSON")
+    print("    events), NOT a single JSON document.  json.loads(full_stdout) always")
+    print("    fails for NDJSON → _run_pi returned {'error': 'json parse failed'}.")
     print("  Evidence: journalctl shows May 06 run (last systemd timer run):")
-    print("    10:00:03 [discovery] INFO Today's source: arxiv (method=computer_use)")
+    print("    10:00:03 [discovery] INFO Today\'s source: arxiv (method=computer_use)")
     print("    10:23:21 [discovery] WARNING browse_with_pi error: json parse failed")
     print("    Papers found: 0 after 1398s runtime")
     print("  Days affected: Wednesday (SSRN), Friday (Quantpedia), Saturday (blog)")
-    print("  Scheduled fix: computer_use is fundamentally unreliable with pi CLI")
-    print("    JSON output from browser tool calls doesn't parse cleanly")
-    print("    Long-term fix: switch all computer_use sources to api/http methods")
+    print()
+    # Check if fix is applied
+    disc_py = Path(__file__).parent.parent / "research" / "discovery" / "discovery.py"
+    src = disc_py.read_text()
+    if "_extract_assistant_text_from_ndjson" in src:
+        print("  STATUS: FIX APPLIED (R-04, 2026-05-11)")
+        print("    _extract_assistant_text_from_ndjson() parses NDJSON turn_end events")
+        print("    _run_pi() now correctly extracts model text from pi CLI NDJSON stream")
+        print("    _browse_with_pi() has tolerant multi-shape parser with snippet logging")
+        print("    source_type key bug fixed: source.get('source') not source.get('type')")
+        print("    browse_ssrn.md prompt added for SSRN-specific computer_use sessions")
+    else:
+        print("  STATUS: FIX NOT APPLIED — see research/discovery/discovery.py")
 
 
 def check_arxiv_dedup_bug() -> None:
@@ -147,8 +160,9 @@ def main() -> None:
     check_arxiv_dedup_bug()
     check_daily_log()
     print("\n=== Summary ===")
-    print("  Root cause 1 (PRIMARY, all methods broken):")
-    print("    _browse_with_pi() JSON parse failure burns 1398s, returns 0 papers")
+    print("  Root cause 1 (PRIMARY, fixed 2026-05-11):")
+    print("    _browse_with_pi() NDJSON parser fix (R-04)")
+    print("    pi CLI --mode json → NDJSON → turn_end events → extract text block")
     print("    Affects: computer_use method (Wed/Fri/Sat sources)")
     print("  Root cause 2 (SECONDARY, API method broken):")
     print("    arxiv_api.py writes URLs to seen_urls.txt BEFORE dedup step")
@@ -160,10 +174,14 @@ def main() -> None:
     print("    arxiv_api.py: removed seen_urls.txt write (research/discovery/arxiv_api.py)")
     print("    In-run dedup via seen_this_run set retained")
     print("    Persistent URL marking delegated to dedup.py mark_seen()")
-    print("  Fix NOT applied (Root cause 1 - needs larger refactor):")
-    print("    _browse_with_pi() requires pi CLI to support structured web browsing")
-    print("    Long-term: replace computer_use with direct HTTP scraping for each source")
-    print("    See: research/discovery/discovery.py _browse_with_pi()")
+    disc_py = Path(__file__).parent.parent / "research" / "discovery" / "discovery.py"
+    if "_extract_assistant_text_from_ndjson" in disc_py.read_text():
+        print("  Fix applied (Root cause 1 - R-04):")
+        print("    _extract_assistant_text_from_ndjson() + tolerant _browse_with_pi parser")
+        print("    Cron re-enabled 2026-05-11")
+    else:
+        print("  Fix NOT applied (Root cause 1 - needs larger refactor):")
+        print("    See: research/discovery/discovery.py _browse_with_pi()")
 
 
 if __name__ == "__main__":
