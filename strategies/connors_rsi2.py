@@ -142,10 +142,7 @@ class ConnorsRSI2(BaseStrategy):
 
                 # --- SMA-200 trend filter ---
                 if self.sma200_filter:
-                    if self._precomputed:
-                        sma200 = df["_cr_sma_trend"].iloc[-1]
-                    else:
-                        sma200 = df["close"].rolling(self.sma_trend_period).mean().iloc[-1]
+                    sma200 = self._get_indicator(df, "_cr_sma_trend", lambda d: d["close"].rolling(self.sma_trend_period).mean()).iloc[-1]
                     if pd.isna(sma200) or close <= sma200:
                         continue
 
@@ -204,7 +201,7 @@ class ConnorsRSI2(BaseStrategy):
                 if pd.isna(atr) or atr <= 0:
                     continue
 
-                stop_price = entry_price - (self.atr_stop_mult * atr)
+                stop_price = self._atr_stop(entry_price, atr)
                 if stop_price <= 0 or stop_price >= entry_price:
                     continue
 
@@ -287,15 +284,7 @@ class ConnorsRSI2(BaseStrategy):
         """Check open positions for RSI(2) exit conditions."""
         exits = []
 
-        for pos in positions:
-            if pos.get("strategy") != self.name:
-                continue
-
-            ticker = pos["ticker"]
-            df = data.get(ticker)
-            if df is None or df.empty:
-                continue
-
+        for ticker, pos, df in self._iter_my_positions(data, positions):
             try:
                 current = df.iloc[-1]
                 close = current["close"]
@@ -352,10 +341,7 @@ class ConnorsRSI2(BaseStrategy):
 
                 # --- SMA exit (primary: close > SMA-5 = mean reversion complete) ---
                 if self.exit_mode in ("sma", "both"):
-                    if self._precomputed:
-                        sma_exit = df["_cr_sma_exit"].iloc[-1]
-                    else:
-                        sma_exit = df["close"].rolling(self.sma_exit_period).mean().iloc[-1]
+                    sma_exit = self._get_indicator(df, "_cr_sma_exit", lambda d: d["close"].rolling(self.sma_exit_period).mean()).iloc[-1]
                     if not pd.isna(sma_exit) and close > sma_exit:
                         exits.append({
                             "ticker": ticker,
