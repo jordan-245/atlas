@@ -1,4 +1,8 @@
 import { useEffect, useState } from 'react'
+import { Badge } from '../shared/Badge'
+import type { BadgeVariant } from '../shared/Badge'
+import { Skeleton } from '../layout/Skeleton'
+import { fmtRelativeTime } from '../../lib/format'
 
 interface FingerprintRow {
   fingerprint: string
@@ -21,24 +25,36 @@ interface FingerprintsResponse {
   fingerprints: FingerprintRow[]
 }
 
-const CLASS_BADGE: Record<string, string> = {
-  AUTO_FIX: 'bg-red-500/20 text-red-400',
-  ASSIST: 'bg-blue-500/20 text-blue-400',
-  ESCALATE: 'bg-orange-500/20 text-orange-400',
-  ESCALATE_DEFERRED: 'bg-orange-400/20 text-orange-300',
-  IGNORE: 'bg-green-500/20 text-green-400',
-  IGNORE_PENDING_CLEAR: 'bg-green-400/20 text-green-300',
-  UNCLASSIFIED: 'bg-[var(--color-surface-alt)] text-[var(--color-text-muted)]',
+// Map classification → Badge variant
+const CLASS_VARIANT: Record<string, BadgeVariant> = {
+  AUTO_FIX:             'danger',
+  ASSIST:               'info',
+  ESCALATE:             'warning',
+  ESCALATE_DEFERRED:    'warning',
+  IGNORE:               'success',
+  IGNORE_PENDING_CLEAR: 'success',
+  UNCLASSIFIED:         'neutral',
 }
 
-const TIER_BADGE: Record<number, string> = {
-  0: 'bg-red-500/20 text-red-400',
-  1: 'bg-orange-500/20 text-orange-400',
-  2: 'bg-yellow-500/20 text-yellow-400',
-  99: 'bg-[var(--color-surface-alt)] text-[var(--color-text-muted)]',
+// Map tier → Badge variant
+const TIER_VARIANT: Record<number, BadgeVariant> = {
+  0:  'danger',
+  1:  'warning',
+  2:  'warning',
+  99: 'neutral',
 }
 
-function truncate(s: string | null, max = 60): string {
+const CLASS_LABEL: Record<string, string> = {
+  AUTO_FIX:             'AUTO FIX',
+  ASSIST:               'ASSIST',
+  ESCALATE:             'ESCALATE',
+  ESCALATE_DEFERRED:    'ESCALATE DEF',
+  IGNORE:               'IGNORE',
+  IGNORE_PENDING_CLEAR: 'IGNORE PEND',
+  UNCLASSIFIED:         'UNCLASSIFIED',
+}
+
+function truncateStr(s: string | null, max = 70): string {
   if (!s) return '—'
   return s.length > max ? s.slice(0, max) + '…' : s
 }
@@ -78,11 +94,11 @@ export function TopFingerprintsTable() {
       {loading ? (
         <div className="space-y-2">
           {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="h-8 bg-[var(--color-surface-alt)] rounded animate-pulse" />
+            <Skeleton key={i} className="h-8" />
           ))}
         </div>
       ) : error ? (
-        <div className="text-sm text-red-500">{error}</div>
+        <div className="text-sm" style={{ color: 'var(--color-red)' }}>{error}</div>
       ) : rows.length === 0 ? (
         <div className="text-sm text-[var(--color-text-muted)]">No errors in the last 24h — all quiet.</div>
       ) : (
@@ -93,23 +109,25 @@ export function TopFingerprintsTable() {
                 <th className="py-2 pr-3 text-left w-8">#</th>
                 <th className="py-2 pr-3 text-left">Service</th>
                 <th className="py-2 pr-3 text-left">Error / Message</th>
-                <th className="py-2 pr-3 text-right">Count</th>
+                <th className="py-2 pr-3 text-right tabular-nums">Count</th>
                 <th className="py-2 pr-3 text-left">Classification</th>
-                <th className="py-2 text-left">Tier</th>
+                <th className="py-2 pr-3 text-left">Tier</th>
+                <th className="py-2 text-left hidden sm:table-cell">Last seen</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row, idx) => {
-                const badgeCls = CLASS_BADGE[row.classification] ?? CLASS_BADGE.UNCLASSIFIED
-                const tierCls = TIER_BADGE[row.tier] ?? TIER_BADGE[99]
-                const tierLabel = row.tier === 99 ? '—' : String(row.tier)
+                const clsVariant = CLASS_VARIANT[row.classification] ?? 'neutral'
+                const clsLabel = CLASS_LABEL[row.classification] ?? row.classification.replace(/_/g, ' ')
+                const tierVariant = TIER_VARIANT[row.tier] ?? 'neutral'
+                const tierLabel = row.tier === 99 ? '—' : `T${row.tier}`
                 const excLabel = row.exc_type ?? row.level
                 return (
                   <tr
                     key={row.fingerprint}
                     className="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-surface-alt)] transition-colors"
                   >
-                    <td className="py-2 pr-3 font-mono text-[var(--color-text-muted)] text-xs">{idx + 1}</td>
+                    <td className="py-2 pr-3 font-mono tabular-nums text-[var(--color-text-muted)] text-xs">{idx + 1}</td>
                     <td className="py-2 pr-3 text-xs font-mono max-w-[80px] truncate" title={row.service ?? undefined}>
                       {row.service ?? '—'}
                     </td>
@@ -120,19 +138,19 @@ export function TopFingerprintsTable() {
                         title={row.message}
                         style={{ maxWidth: '260px' }}
                       >
-                        {truncate(row.message, 70)}
+                        {truncateStr(row.message, 70)}
                       </div>
                     </td>
-                    <td className="py-2 pr-3 text-right font-mono">{row.occurrence_count.toLocaleString()}</td>
+                    <td className="py-2 pr-3 text-right font-mono tabular-nums text-xs">{row.occurrence_count.toLocaleString()}</td>
                     <td className="py-2 pr-3">
-                      <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium uppercase ${badgeCls}`}>
-                        {row.classification.replace(/_/g, ' ')}
-                      </span>
+                      <Badge variant={clsVariant} size="xs">{clsLabel}</Badge>
                     </td>
-                    <td className="py-2">
-                      <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-mono ${tierCls}`}>
-                        {tierLabel}
-                      </span>
+                    <td className="py-2 pr-3">
+                      <Badge variant={tierVariant} size="xs">{tierLabel}</Badge>
+                    </td>
+                    <td className="py-2 text-xs text-[var(--color-text-muted)] font-mono hidden sm:table-cell"
+                        title={row.last_seen_ts}>
+                      {fmtRelativeTime(row.last_seen_ts)}
                     </td>
                   </tr>
                 )

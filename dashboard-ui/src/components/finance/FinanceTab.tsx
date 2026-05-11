@@ -1,4 +1,5 @@
 import { useFinanceData } from '../../api/queries'
+import { Skeleton } from '../layout/Skeleton'
 import { SectionBoundary } from '../layout/SectionBoundary'
 import { FinSummaryStrip } from './FinSummaryStrip'
 import { SpendingPaceChart } from './SpendingPaceChart'
@@ -9,59 +10,25 @@ import { MonthlyComparison } from './MonthlyComparison'
 import { RecurringExpenses } from './RecurringExpenses'
 import { RecentTransactions } from './RecentTransactions'
 
-// FinanceTabSkeleton — pulse placeholders that mirror the actual layout
-// Rendered immediately on tab activation before data arrives.
+// FinanceTabSkeleton — shimmer placeholders that mirror the actual layout
+// Uses <Skeleton> component (shimmer animation, not raw animate-pulse).
 function FinanceTabSkeleton() {
   return (
     <div className="space-y-4 md:space-y-6" aria-busy="true" aria-label="Loading finance data">
       {/* Summary strip */}
-      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5">
-        <div className="h-2.5 w-20 bg-[var(--color-surface-alt)] rounded animate-pulse mb-4" />
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i}>
-              <div className="h-2 w-16 bg-[var(--color-surface-alt)] rounded animate-pulse mb-2" />
-              <div className="h-7 w-24 bg-[var(--color-surface-alt)] rounded animate-pulse" />
-            </div>
-          ))}
-        </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
       </div>
-
-      {/* Bank accounts grid — 3 cards */}
-      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5">
-        <div className="h-2.5 w-20 bg-[var(--color-surface-alt)] rounded animate-pulse mb-4" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-24 bg-[var(--color-surface-alt)] rounded-lg animate-pulse" />
-          ))}
-        </div>
+      {/* Bank accounts */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {[1, 2, 3].map((i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
       </div>
-
-      {/* Budget grid — 4 budget cards */}
-      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5">
-        <div className="h-2.5 w-20 bg-[var(--color-surface-alt)] rounded animate-pulse mb-4" />
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-28 bg-[var(--color-surface-alt)] rounded-lg animate-pulse" />
-          ))}
-        </div>
+      {/* Budget grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {[1, 2, 3].map((i) => <Skeleton key={i} className="h-28 rounded-xl" />)}
       </div>
-
-      {/* Spending bars placeholder */}
-      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5">
-        <div className="h-2.5 w-24 bg-[var(--color-surface-alt)] rounded animate-pulse mb-4" />
-        <div className="space-y-3">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="flex items-center gap-3">
-              <div className="h-3 w-24 bg-[var(--color-surface-alt)] rounded animate-pulse" />
-              <div
-                className="h-4 bg-[var(--color-surface-alt)] rounded animate-pulse"
-                style={{ width: `${40 + i * 10}%` }}
-              />
-            </div>
-          ))}
-        </div>
-      </div>
+      {/* Spending bars */}
+      <Skeleton className="h-32 rounded-xl" />
     </div>
   )
 }

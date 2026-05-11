@@ -1,16 +1,28 @@
 import type { RecurringItem } from '../../api/types'
 import { DataTable } from '../shared/DataTable'
 import type { Column } from '../shared/DataTable'
+import { Badge } from '../shared/Badge'
+import type { BadgeVariant } from '../shared/Badge'
 import { fmtCcy } from '../../lib/format'
 
 interface Props { items: RecurringItem[] }
 
+// Map recurrence cadence to Badge variant
+const FREQ_VARIANT: Record<string, BadgeVariant> = {
+  weekly:      'accent',
+  fortnightly: 'success',
+  monthly:     'warning',
+  quarterly:   'info',
+  yearly:      'neutral',
+}
+
+// Colored dot for merchant column
 const FREQ_COLORS: Record<string, string> = {
-  weekly: '#6366f1',
+  weekly:      '#6366f1',
   fortnightly: '#22c55e',
-  monthly: '#f59e0b',
-  quarterly: '#ec4899',
-  yearly: '#14b8a6',
+  monthly:     '#f59e0b',
+  quarterly:   '#ec4899',
+  yearly:      '#14b8a6',
 }
 
 function freqDot(freq?: string) {
@@ -19,6 +31,7 @@ function freqDot(freq?: string) {
     <span
       className="inline-block rounded-full shrink-0 mr-2"
       style={{ width: 8, height: 8, backgroundColor: color }}
+      aria-hidden="true"
     />
   )
 }
@@ -31,7 +44,7 @@ const COLUMNS: Column<RecurringItem>[] = [
     render: (r) => (
       <span className="font-mono flex items-center">
         {freqDot(r.frequency)}
-        {r.merchant ?? '\u2014'}
+        {r.merchant ?? '—'}
       </span>
     ),
   },
@@ -39,14 +52,11 @@ const COLUMNS: Column<RecurringItem>[] = [
     key: 'frequency',
     label: 'Frequency',
     render: (r) => {
-      const color = FREQ_COLORS[(r.frequency ?? '').toLowerCase()] ?? '#a1a1aa'
+      const variant = FREQ_VARIANT[(r.frequency ?? '').toLowerCase()] ?? 'neutral'
       return (
-        <span
-          className="rounded-full px-2 py-0.5 text-[10px] font-mono uppercase"
-          style={{ backgroundColor: `${color}20`, color }}
-        >
-          {r.frequency ?? '\u2014'}
-        </span>
+        <Badge variant={variant} size="xs">
+          {(r.frequency ?? '—').toUpperCase()}
+        </Badge>
       )
     },
   },
@@ -80,11 +90,11 @@ export function RecurringExpenses({ items }: Props) {
         <div className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-text-muted)] font-semibold">
           RECURRING EXPENSES ({items.length})
         </div>
-        <div className="text-xs font-mono text-[var(--color-text-muted)]">
+        <div className="text-xs font-mono text-[var(--color-text-muted)] tabular-nums">
           Est. annual: <span className="text-[var(--color-text)] font-semibold">{fmtCcy(estAnnual)}</span>
         </div>
       </div>
-      <DataTable columns={COLUMNS} data={items} emptyMessage="No recurring expenses" />
+      <DataTable columns={COLUMNS} data={items} density="compact" emptyMessage="No recurring expenses" />
     </div>
   )
 }

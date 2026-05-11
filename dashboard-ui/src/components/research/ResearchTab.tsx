@@ -5,6 +5,10 @@ import { useResearchSummary, useResearchStrategies, useResearchTimeline, useRese
 import { Skeleton } from '../layout/Skeleton'
 import { SectionBoundary } from '../layout/SectionBoundary'
 import { ChartTooltip } from '../shared/ChartTooltip'
+import { Badge } from '../shared/Badge'
+import type { BadgeVariant } from '../shared/Badge'
+import { StatusDot } from '../shared/StatusDot'
+import { CHART_GRID, CHART_TICK, CHART_ANIM, CHART_CURSOR } from '../../lib/chart-palette'
 import { fmtNum, fmtPct, fmtDateShort, fmtRelativeTime } from '../../lib/format'
 import type { StrategyDetail, Experiment, BrainParam, Discovery, UniverseInfo, LeaderboardEntry, DailyCount } from '../../api/research-types'
 import { CoverageMatrix } from './CoverageMatrix'
@@ -99,15 +103,15 @@ function SharpeChart() {
                 <stop offset="100%" stopColor="var(--color-accent, #6366f1)" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
+            <CartesianGrid {...CHART_GRID} />
             <XAxis dataKey="date" tickFormatter={(v) => fmtDateShort(v as string)} axisLine={false} tickLine={false}
-              tick={{ fontSize: 10, fill: 'var(--color-text-muted)' }} minTickGap={40} />
-            <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: 'var(--color-text-muted)' }} width={50}
+              tick={CHART_TICK} minTickGap={40} />
+            <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={CHART_TICK} width={50}
               tickFormatter={(v) => (v as number).toFixed(2)} />
-            <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: 'var(--color-text-muted)' }} width={40} />
-            <Tooltip content={<ChartTooltip labelFormatter={(l) => fmtDateShort(l)} formatter={(v, n) => n === 'Experiments' ? String(v) : (v as number).toFixed(4)} />} />
-            <Area yAxisId="left" dataKey="avgSharpe" name="Avg Sharpe" stroke="var(--color-accent, #6366f1)" strokeWidth={2} fill="url(#sharpeGrad)" dot={{ r: 3, fill: 'var(--color-accent, #6366f1)' }} />
-            <Area yAxisId="right" dataKey="experiments" name="Experiments" stroke="none" fill="var(--color-text-muted)" fillOpacity={0.1} />
+            <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={CHART_TICK} width={40} />
+            <Tooltip cursor={CHART_CURSOR} content={<ChartTooltip labelFormatter={(l) => fmtDateShort(l)} formatter={(v, n) => n === 'Experiments' ? String(v) : (v as number).toFixed(4)} />} />
+            <Area yAxisId="left" dataKey="avgSharpe" name="Avg Sharpe" stroke="var(--color-accent, #6366f1)" strokeWidth={2} fill="url(#sharpeGrad)" dot={{ r: 3, fill: 'var(--color-accent, #6366f1)' }} {...CHART_ANIM} />
+            <Area yAxisId="right" dataKey="experiments" name="Experiments" stroke="none" fill="var(--color-text-muted)" fillOpacity={0.1} {...CHART_ANIM} />
           </AreaChart>
         </ResponsiveContainer>
       </ChartGate>
@@ -167,14 +171,13 @@ function StrategyGrid({ strategies }: { strategies: StrategyDetail[] }) {
 // ── Status Badge ────────────────────────────────────────────────
 function StatusBadge({ status }: { status?: string }) {
   const s = status ?? 'unknown'
-  const cls = s === 'kept'
-    ? 'bg-[var(--color-green)]/15 text-[var(--color-green)]'
-    : s === 'discarded'
-    ? 'bg-[var(--color-red)]/15 text-[var(--color-red)]'
-    : s === 'discard_solo'
-    ? 'bg-[var(--color-amber,#f59e0b)]/15 text-[var(--color-amber,#f59e0b)]'
-    : 'bg-[var(--color-surface-alt)] text-[var(--color-text-muted)]'
-  return <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${cls}`}>{s}</span>
+  const variant: BadgeVariant =
+    s === 'kept' ? 'success'
+    : s === 'discarded' ? 'danger'
+    : s === 'discard_solo' ? 'warning'
+    : s === 'running' ? 'info'
+    : 'neutral'
+  return <Badge variant={variant} size="xs">{s}</Badge>
 }
 
 // ── Experiments Table ───────────────────────────────────────────
@@ -335,10 +338,11 @@ function EngineHero({ engine }: { engine: { status?: string; total_experiments_a
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-2">
-            <span className={`inline-block w-2.5 h-2.5 rounded-full ${isRunning ? 'bg-[var(--color-green)] animate-pulse' : 'bg-[var(--color-text-muted)]'}`} />
+            <StatusDot status={isRunning ? 'green' : 'gray'} size="md" pulse={isRunning} />
             <span className="font-medium text-sm">
-              Research Engine — {isRunning ? 'Running 🧪' : 'Idle'}
+              Research Engine — {isRunning ? 'Running' : 'Idle'}
             </span>
+            {isRunning && <Badge variant="success" size="xs">live</Badge>}
           </div>
           <div className="flex items-center gap-4 text-xs text-[var(--color-text-muted)]">
             <span><span className="font-mono font-semibold text-[var(--color-text)] text-base">{(engine.total_experiments_all_time ?? 0).toLocaleString()}</span> experiments all-time</span>
@@ -402,12 +406,12 @@ function UniverseCard({ u }: { u: UniverseInfo }) {
       <div className="flex items-start justify-between gap-2 mb-3">
         <span className="font-medium text-sm truncate">{title}</span>
         <div className="flex gap-1.5 flex-shrink-0">
-          <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${isLive ? 'bg-[var(--color-green)]/15 text-[var(--color-green)]' : 'bg-[var(--color-surface-alt)] text-[var(--color-text-muted)]'}`}>
-            {isLive ? '🟢 LIVE' : '⏸️ PASSIVE'}
-          </span>
-          <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${priKey === 'high' ? 'bg-[var(--color-amber,#f59e0b)]/15 text-[var(--color-amber,#f59e0b)]' : 'bg-[var(--color-surface-alt)] text-[var(--color-text-muted)]'}`}>
+          <Badge variant={isLive ? 'success' : 'neutral'} size="xs">
+            {isLive ? 'LIVE' : 'PASSIVE'}
+          </Badge>
+          <Badge variant={priKey === 'high' ? 'warning' : 'neutral'} size="xs">
             {priStars} {priKey.toUpperCase()}
-          </span>
+          </Badge>
         </div>
       </div>
       <div className="mb-3">
@@ -436,9 +440,7 @@ function UniverseCard({ u }: { u: UniverseInfo }) {
       {stratKeys.length > 0 && (
         <div className="flex flex-wrap gap-1 mt-2">
           {stratKeys.slice(0, 6).map(k => (
-            <span key={k} className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[var(--color-surface-alt)] text-[var(--color-text-muted)]">
-              {k.replace(/_/g, ' ')}
-            </span>
+            <Badge key={k} variant="neutral" size="xs">{k.replace(/_/g, ' ')}</Badge>
           ))}
         </div>
       )}
@@ -563,9 +565,7 @@ function LeaderboardTable({ entries }: { entries: LeaderboardEntry[] }) {
                   <td className="px-4 py-2 font-mono text-xs text-[var(--color-text-muted)]">{i + 1}</td>
                   <td className="px-4 py-2 text-xs font-medium">{(row.strategy ?? '').replace(/_/g, ' ')}</td>
                   <td className="px-4 py-2">
-                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[var(--color-surface-alt)] text-[var(--color-text-muted)]">
-                      {row.universe ?? ''}
-                    </span>
+                    <Badge variant="neutral" size="xs">{row.universe ?? '—'}</Badge>
                   </td>
                   <td className="px-4 py-2 text-right font-mono text-xs font-semibold" style={{ color }}>{row.sharpe != null ? row.sharpe.toFixed(4) : '—'}</td>
                   <td className="px-4 py-2 text-right font-mono text-xs">{row.trades ?? '—'}</td>
@@ -599,9 +599,7 @@ function LiveFeed({ experiments }: { experiments: Experiment[] }) {
                 <span className={`inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 ${isKept ? 'bg-[var(--color-green)]' : 'bg-[var(--color-red)]'}`} />
                 <span className="font-medium truncate">{(e.strategy ?? '').replace(/_/g, ' ')}</span>
                 {e.universe && (
-                  <span className="text-[9px] font-mono px-1 py-0.5 rounded bg-[var(--color-surface-alt)] text-[var(--color-text-muted)] flex-shrink-0">
-                    {e.universe}
-                  </span>
+                  <Badge variant="neutral" size="xs" className="flex-shrink-0">{e.universe}</Badge>
                 )}
               </div>
               <div className="flex items-center gap-3 flex-shrink-0 ml-2">

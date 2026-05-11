@@ -1,3 +1,5 @@
+import { CATEGORICAL_5 } from '../../lib/chart-palette'
+
 interface Summary {
   by_classification: Record<string, number>
   errors_total: number
@@ -7,24 +9,27 @@ interface Props {
   summary: Summary
 }
 
+// Semantic colors for obvious classifications; CATEGORICAL_5 for others
+// Note: AUTO_FIX=danger-red, IGNORE=success-green kept semantic intentionally.
+// ASSIST/ESCALATE/ESCALATE_DEFERRED/IGNORE_PENDING_CLEAR use CATEGORICAL_5.
 const CLASS_COLORS: Record<string, string> = {
-  AUTO_FIX: 'var(--color-red)',
-  ASSIST: '#3b82f6',            // blue-500
-  ESCALATE: '#f97316',          // orange-500
-  ESCALATE_DEFERRED: '#fb923c', // orange-400
-  IGNORE: 'var(--color-green)',
-  IGNORE_PENDING_CLEAR: '#86efac', // green-300
-  UNCLASSIFIED: 'var(--color-text-muted)',
+  AUTO_FIX:             'var(--color-red)',
+  ASSIST:               CATEGORICAL_5[0],   // indigo
+  ESCALATE:             CATEGORICAL_5[2],   // amber
+  ESCALATE_DEFERRED:    CATEGORICAL_5[3],   // pink
+  IGNORE:               'var(--color-green)',
+  IGNORE_PENDING_CLEAR: CATEGORICAL_5[4],   // purple
+  UNCLASSIFIED:         'var(--color-text-muted)',
 }
 
 const CLASS_LABEL: Record<string, string> = {
-  AUTO_FIX: 'Auto Fix',
-  ASSIST: 'Assist',
-  ESCALATE: 'Escalate',
-  ESCALATE_DEFERRED: 'Escalate (Deferred)',
-  IGNORE: 'Ignore',
+  AUTO_FIX:             'Auto Fix',
+  ASSIST:               'Assist',
+  ESCALATE:             'Escalate',
+  ESCALATE_DEFERRED:    'Escalate (Deferred)',
+  IGNORE:               'Ignore',
   IGNORE_PENDING_CLEAR: 'Ignore (Pending)',
-  UNCLASSIFIED: 'Unclassified',
+  UNCLASSIFIED:         'Unclassified',
 }
 
 // Preferred display order
@@ -34,7 +39,6 @@ export function ClassificationBreakdown({ summary }: Props) {
   const { by_classification } = summary
   const total = Object.values(by_classification).reduce((a, b) => a + b, 0)
 
-  // Build segments in preferred order, then any unlisted keys
   const known = ORDER.filter((k) => (by_classification[k] ?? 0) > 0)
   const extra = Object.keys(by_classification).filter((k) => !ORDER.includes(k) && by_classification[k] > 0)
   const segments = [...known, ...extra]
@@ -61,7 +65,7 @@ export function ClassificationBreakdown({ summary }: Props) {
                   className="transition-all duration-300"
                   style={{
                     width: `${pct}%`,
-                    backgroundColor: CLASS_COLORS[cls] ?? '#6b7280',
+                    backgroundColor: CLASS_COLORS[cls] ?? CATEGORICAL_5[0],
                     minWidth: '2px',
                   }}
                   title={`${CLASS_LABEL[cls] ?? cls}: ${count} (${pct.toFixed(1)}%)`}
@@ -70,20 +74,22 @@ export function ClassificationBreakdown({ summary }: Props) {
             })}
           </div>
 
-          {/* Legend */}
-          <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs">
+          {/* Legend — tabular-nums for counts and percentages */}
+          <div className="flex flex-wrap gap-x-4 gap-y-2">
             {segments.map((cls) => {
               const count = by_classification[cls] ?? 0
               const pct = total > 0 ? (count / total) * 100 : 0
+              const color = CLASS_COLORS[cls] ?? CATEGORICAL_5[0]
               return (
-                <div key={cls} className="flex items-center gap-1.5">
+                <div key={cls} className="flex items-center gap-1.5 text-xs">
                   <span
-                    className="inline-block w-2.5 h-2.5 rounded-sm flex-shrink-0"
-                    style={{ backgroundColor: CLASS_COLORS[cls] ?? '#6b7280' }}
+                    className="inline-block rounded-full flex-shrink-0"
+                    style={{ width: 8, height: 8, backgroundColor: color }}
+                    aria-hidden="true"
                   />
                   <span className="text-[var(--color-text-muted)]">{CLASS_LABEL[cls] ?? cls}</span>
-                  <span className="font-mono text-[var(--color-text)]">{count}</span>
-                  <span className="text-[var(--color-text-muted)]">({pct.toFixed(1)}%)</span>
+                  <span className="font-mono tabular-nums text-[var(--color-text)]">{count.toLocaleString()}</span>
+                  <span className="font-mono tabular-nums text-[var(--color-text-muted)]">({pct.toFixed(1)}%)</span>
                 </div>
               )
             })}
