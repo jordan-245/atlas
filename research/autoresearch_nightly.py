@@ -41,6 +41,7 @@ if str(ATLAS_ROOT) not in sys.path:
     sys.path.insert(0, str(ATLAS_ROOT))
 
 from research.db import log_session, end_session
+from research.snapshots import find_latest_snapshot as _find_latest_snapshot
 
 # Strategies covered by the nightly autoresearch sweep.
 # Includes everything in scripts/strategy_evaluator.STRATEGY_REGISTRY that has
@@ -80,25 +81,6 @@ MIN_ROWS_PER_UNIVERSE = {
 }
 DEFAULT_MIN_ROWS = 10
 
-
-# ─── Snapshot Discovery ─────────────────────────────────────────────────────
-
-
-def _find_latest_snapshot(market: str) -> str:
-    """Find the most recent snapshot for *market* in ``data/snapshots/``."""
-    snapshots_root = ATLAS_ROOT / "data" / "snapshots"
-    if not snapshots_root.exists():
-        raise RuntimeError(f"No snapshots directory: {snapshots_root}")
-
-    matching = [
-        d for d in snapshots_root.iterdir()
-        if d.is_dir() and market.lower() in d.name.lower()
-    ]
-    if not matching:
-        raise RuntimeError(f"No snapshot for market '{market}' in {snapshots_root}")
-
-    matching.sort(key=lambda d: d.stat().st_mtime, reverse=True)
-    return matching[0].name
 
 
 # ─── TSV Parsing ─────────────────────────────────────────────────────────────
