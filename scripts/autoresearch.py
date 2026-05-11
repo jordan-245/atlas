@@ -404,7 +404,7 @@ def run_sweep(strategy: str) -> dict:
     try:
         result = subprocess.run(
             [
-                sys.executable, "research/sweep.py",
+                sys.executable, "research/archive/sweep.py",
                 "--strategy", strategy,
                 "--top-n", str(SWEEP_TOP_N),
                 "--workers", str(SWEEP_WORKERS),

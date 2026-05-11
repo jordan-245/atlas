@@ -42,14 +42,14 @@ class TestSweepCLIUniverse:
 
     def test_sweep_importable(self):
         """sweep.py must be importable without errors."""
-        mod = _load_module("research/sweep.py")
+        mod = _load_module("research/archive/sweep.py")
         assert mod is not None
 
     def test_universe_flag_present(self):
         """--universe must appear in sweep.py's argparse help output."""
         import subprocess
         result = subprocess.run(
-            [sys.executable, str(ATLAS_ROOT / "research" / "sweep.py"), "--help"],
+            [sys.executable, str(ATLAS_ROOT / "research" / "archive" / "sweep.py"), "--help"],
             capture_output=True, text=True,
         )
         combined = result.stdout + result.stderr
@@ -59,7 +59,7 @@ class TestSweepCLIUniverse:
 
     def test_universe_default_is_sp500(self):
         """Parsing args with no --universe must default to 'sp500'."""
-        mod = _load_module("research/sweep.py")
+        mod = _load_module("research/archive/sweep.py")
         # Patch sys.argv to simulate: sweep.py (no --universe)
         with patch("sys.argv", ["sweep.py"]):
             parser = argparse.ArgumentParser()
@@ -76,7 +76,7 @@ class TestSweepCLIUniverse:
 
     def test_run_sweep_signature_has_universe(self):
         """run_sweep() must accept a 'universe' keyword argument."""
-        mod = _load_module("research/sweep.py")
+        mod = _load_module("research/archive/sweep.py")
         import inspect
         sig = inspect.signature(mod.run_sweep)
         assert "universe" in sig.parameters, (
@@ -85,7 +85,7 @@ class TestSweepCLIUniverse:
 
     def test_run_sweep_universe_default_sp500(self):
         """run_sweep()'s 'universe' param must default to 'sp500'."""
-        mod = _load_module("research/sweep.py")
+        mod = _load_module("research/archive/sweep.py")
         import inspect
         sig = inspect.signature(mod.run_sweep)
         default = sig.parameters["universe"].default
@@ -102,13 +102,13 @@ class TestSweepUniverseDataLoading:
 
     def test_sp500_universe_does_not_call_build_from_definition(self):
         """Default sp500 universe must NOT call build_from_definition()."""
-        mod = _load_module("research/sweep.py")
+        mod = _load_module("research/archive/sweep.py")
 
         fake_data = {"AAPL": MagicMock(), "MSFT": MagicMock()}
 
-        with patch("research.sweep.ResearchSession") as MockSession, \
-             patch("research.sweep.STRATEGY_ORDER", ["mean_reversion"]), \
-             patch("research.sweep.PARAM_GRIDS", {"mean_reversion": {}}), \
+        with patch("research.archive.sweep.ResearchSession") as MockSession, \
+             patch("research.archive.sweep.STRATEGY_ORDER", ["mean_reversion"]), \
+             patch("research.archive.sweep.PARAM_GRIDS", {"mean_reversion": {}}), \
              patch("universe.builder.build_from_definition") as mock_bfd:
 
             mock_session = MagicMock()
@@ -129,15 +129,15 @@ class TestSweepUniverseDataLoading:
 
             # Run with cycles=1, sp500 universe — should NOT call build_from_definition
             try:
-                with patch("research.sweep._brain_session", None), \
-                     patch("research.sweep.sweep_strategy", return_value={
+                with patch("research.archive.sweep._brain_session", None), \
+                     patch("research.archive.sweep.sweep_strategy", return_value={
                          "experiments_run": 0, "experiments_kept": 0, "improvements": []
                      }), \
-                     patch("research.sweep._PARAM_HISTORY_AVAILABLE", False), \
-                     patch("research.sweep.rebuild_all_indexes"), \
-                     patch("research.sweep.update_state"), \
-                     patch("research.sweep.leaderboard", return_value=""), \
-                     patch("research.sweep.SweepSession"):
+                     patch("research.archive.sweep._PARAM_HISTORY_AVAILABLE", False), \
+                     patch("research.archive.sweep.rebuild_all_indexes"), \
+                     patch("research.archive.sweep.update_state"), \
+                     patch("research.archive.sweep.leaderboard", return_value=""), \
+                     patch("research.archive.sweep.SweepSession"):
                     mod.run_sweep(
                         strategies=["mean_reversion"],
                         market="sp500",
@@ -152,13 +152,13 @@ class TestSweepUniverseDataLoading:
 
     def test_non_sp500_universe_calls_build_from_definition(self):
         """Non-sp500 universe must call build_from_definition(universe)."""
-        mod = _load_module("research/sweep.py")
+        mod = _load_module("research/archive/sweep.py")
 
         fake_data = {"GLD": MagicMock(), "SLV": MagicMock()}
 
-        with patch("research.sweep.ResearchSession") as MockSession, \
-             patch("research.sweep.STRATEGY_ORDER", ["mean_reversion"]), \
-             patch("research.sweep.PARAM_GRIDS", {"mean_reversion": {}}):
+        with patch("research.archive.sweep.ResearchSession") as MockSession, \
+             patch("research.archive.sweep.STRATEGY_ORDER", ["mean_reversion"]), \
+             patch("research.archive.sweep.PARAM_GRIDS", {"mean_reversion": {}}):
 
             mock_session = MagicMock()
             mock_session._data = {"AAPL": MagicMock()}
@@ -171,15 +171,15 @@ class TestSweepUniverseDataLoading:
             MockSession.return_value = mock_session
 
             with patch("universe.builder.build_from_definition", return_value=fake_data) as mock_bfd, \
-                 patch("research.sweep.sweep_strategy", return_value={
+                 patch("research.archive.sweep.sweep_strategy", return_value={
                      "experiments_run": 0, "experiments_kept": 0, "improvements": []
                  }), \
-                 patch("research.sweep._PARAM_HISTORY_AVAILABLE", False), \
-                 patch("research.sweep.rebuild_all_indexes"), \
-                 patch("research.sweep.update_state"), \
-                 patch("research.sweep.leaderboard", return_value=""), \
-                 patch("research.sweep.SweepSession"), \
-                 patch("research.sweep._brain_session", None):
+                 patch("research.archive.sweep._PARAM_HISTORY_AVAILABLE", False), \
+                 patch("research.archive.sweep.rebuild_all_indexes"), \
+                 patch("research.archive.sweep.update_state"), \
+                 patch("research.archive.sweep.leaderboard", return_value=""), \
+                 patch("research.archive.sweep.SweepSession"), \
+                 patch("research.archive.sweep._brain_session", None):
                 mod.run_sweep(
                     strategies=["mean_reversion"],
                     market="sp500",

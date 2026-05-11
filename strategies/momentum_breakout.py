@@ -148,7 +148,7 @@ class MomentumBreakout(BaseStrategy):
                     continue
 
                 entry_price = today_close
-                stop_price = entry_price - (self.atr_stop_mult * current_atr)
+                stop_price = self._atr_stop(entry_price, current_atr)
                 if stop_price <= 0:
                     continue
 
@@ -318,17 +318,7 @@ class MomentumBreakout(BaseStrategy):
 
         exits: List[Dict[str, Any]] = []
 
-        for pos in positions:
-            if pos.get("strategy") != self.name:
-                continue
-
-            ticker = pos["ticker"]
-            df = data.get(ticker)
-
-            if df is None or df.empty:
-                self._logger.warning(f"{ticker}: no data for exit check")
-                continue
-
+        for ticker, pos, df in self._iter_my_positions(data, positions):
             try:
                 close = df["close"]
                 high = df["high"]
