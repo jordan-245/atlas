@@ -66,9 +66,13 @@ RESULTS_DIR = ATLAS_ROOT / "research" / "results"
 import logging
 _logger = logging.getLogger(__name__)
 
-# Per-universe minimum row counts for silent-failure detection.
-# Below these floors, the sweep is presumed to have crashed silently.
-# Values calibrated per audit 2026-05-06 (see docs/audits/research-system-audit-2026-05-06.md Rec 3).
+# Per-universe MAX_ROWS_PER_UNIVERSE: operator-set ceilings (kept low so we
+# alert if the sweep produces fewer than this).  Calibrated 2026-05-06 audit.
+# These are MAXIMA — actual threshold is min(this, dynamic_floor) where
+# dynamic_floor = enabled_strategies * MIN_ROWS_PER_STRATEGY.
+# This auto-scales when strategies are disabled in a universe's config,
+# preventing false "silent failure" alerts on narrow universes
+# (errors table ids 19,20,21,27-29 db).
 MIN_ROWS_PER_UNIVERSE = {
     "sp500": 50,
     "commodity_etfs": 20,
@@ -80,6 +84,7 @@ MIN_ROWS_PER_UNIVERSE = {
     "asx": 10,
 }
 DEFAULT_MIN_ROWS = 10
+MIN_ROWS_PER_STRATEGY = 3  # Floor: 3 rows per enabled strategy per sweep
 
 
 
@@ -189,6 +194,45 @@ def _count_rows_added(universe: str, session_start_ts: float) -> int:
     except Exception as exc:
         _logger.error("_count_rows_added failed: %s", exc)
         return 0
+
+
+def _resolve_min_rows(universe: str) -> int:
+    """Dynamic silent-failure threshold based on enabled-strategy count.
+
+    Returns ``min(operator_ceiling, enabled_strategies * MIN_ROWS_PER_STRATEGY)``
+    with a floor of 3.  This auto-adapts when strategies are disabled in a
+    universe's active config — prevents false alerts on narrow universes like
+    gold_etfs (1 strategy) and commodity_etfs (3 strategies).
+
+    If the active config cannot be loaded, falls back to the static ceiling
+    or DEFAULT_MIN_ROWS (fail-safe: prefer false-positive alerts over silent
+    silent-failures).
+    """
+    try:
+        from pathlib import Path
+        import json as _json
+        cfg_path = ATLAS_ROOT / "config" / "active" / f"{universe}.json"
+        if not cfg_path.exists():
+            return MIN_ROWS_PER_UNIVERSE.get(universe, DEFAULT_MIN_ROWS)
+        with open(cfg_path) as f:
+            cfg = _json.load(f)
+        enabled = sum(
+            1 for s in cfg.get("strategies", {}).values()
+            if s.get("enabled", False)
+        )
+        if enabled == 0:
+            # Universe has no enabled strategies; sweep should not run at all.
+            # Use the static ceiling so we still alert if rows ARE produced.
+            return MIN_ROWS_PER_UNIVERSE.get(universe, DEFAULT_MIN_ROWS)
+        dynamic_floor = max(3, enabled * MIN_ROWS_PER_STRATEGY)
+        operator_ceiling = MIN_ROWS_PER_UNIVERSE.get(universe, DEFAULT_MIN_ROWS)
+        return min(operator_ceiling, dynamic_floor)
+    except Exception as exc:
+        _logger.warning(
+            "_resolve_min_rows(%s) failed: %s — falling back to static threshold",
+            universe, exc,
+        )
+        return MIN_ROWS_PER_UNIVERSE.get(universe, DEFAULT_MIN_ROWS)
 
 
 # ─── Worker Management ───────────────────────────────────────────────────────
@@ -655,7 +699,7 @@ def run_nightly(
         # Verify rows were actually inserted into research_experiments.
         # Catches the Apr 22-30 0-byte-log silent failures.
         rows_added = _count_rows_added(universe, session_start)
-        min_rows = MIN_ROWS_PER_UNIVERSE.get(universe, DEFAULT_MIN_ROWS)
+        min_rows = _resolve_min_rows(universe)
         silent_failure = rows_added < min_rows
 
         status_str = "SILENT_FAILURE" if silent_failure else "OK"
