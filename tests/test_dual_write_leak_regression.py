@@ -572,6 +572,7 @@ class TestReconcilePositionsFixWritesSQLite:
 # Test 5 — backfill_orphan_trades idempotency
 # ═══════════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.skip(reason="scripts/backfill_orphan_trades.py moved to _attic/2026-05/ on 2026-05-12 per docs/cleanup-plan-2026-05.md")
 class TestBackfillOrphanTradesIdempotent:
     """Regression tests for scripts/backfill_orphan_trades.py idempotency.
 

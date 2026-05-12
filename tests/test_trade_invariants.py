@@ -211,6 +211,7 @@ class TestNullStopAccepted:
 # 6. Backfill logic refuses inverted stop → writes NULL + logs WARNING
 # ---------------------------------------------------------------------------
 
+@pytest.mark.skip(reason="scripts/backfill_orphan_trades.py moved to _attic/2026-05/ on 2026-05-12 per docs/cleanup-plan-2026-05.md")
 class TestBackfillRefusesInvertedStop:
     """Test that backfill_orphan_trades._do_insert writes NULL for inverted stops."""
 

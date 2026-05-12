@@ -317,6 +317,7 @@ def test_idempotent_replay_no_double_write(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skip(reason="scripts/dual_write_d1_rollback.sh moved to _attic/2026-05/ on 2026-05-12 per docs/cleanup-plan-2026-05.md")
 def test_rollback_script_bash_syntax_valid():
     """scripts/dual_write_d1_rollback.sh must pass bash -n (syntax only, no exec)."""
     rollback = ATLAS_ROOT / "scripts" / "dual_write_d1_rollback.sh"
