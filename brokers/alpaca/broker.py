@@ -748,6 +748,12 @@ class AlpacaBroker(BrokerAdapter):
     def cancel_order(self, order_id: str) -> OrderResult:
         """Cancel a specific order by its Alpaca order ID.
 
+        Idempotent: treats Alpaca code 42210000 ("order pending cancel") as
+        success — the cancel WILL settle, we just hit a race where a prior
+        cancel call is still in flight at Alpaca's side. Logging at INFO,
+        not ERROR, to avoid filling errors table with benign races
+        (see errors table ids 12-17, 23, db).
+
         Args:
             order_id: Alpaca order UUID (returned as order_id by place_order).
 
@@ -764,10 +770,23 @@ class AlpacaBroker(BrokerAdapter):
                 status=OrderStatus.CANCELLED, message="Cancelled",
             )
         except Exception as e:
+            err_str = str(e)
+            # Idempotency: 42210000 = "order pending cancel" — benign race
+            # where a prior cancel call is still being processed. The cancel
+            # will settle; treat as success and downgrade log severity.
+            if "42210000" in err_str or "order pending cancel" in err_str.lower():
+                logger.info(
+                    "cancel_order: %s already pending cancel (benign race, treating as success)",
+                    order_id,
+                )
+                return OrderResult(
+                    success=True, order_id=order_id,
+                    status=OrderStatus.CANCELLED, message="Already pending cancel (idempotent)",
+                )
             logger.error("cancel_order failed for %s: %s", order_id, e, exc_info=True)
             return OrderResult(
                 success=False, order_id=order_id,
-                status=OrderStatus.FAILED, message=str(e),
+                status=OrderStatus.FAILED, message=err_str,
             )
 
 
