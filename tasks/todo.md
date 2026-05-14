@@ -113,7 +113,7 @@ session — none are quick fixes.
       from advancing — automated pytest or CI would silently
       re-contaminate the DB otherwise).
 
-- [ ] **#192 — Kill JSON trade-ledger dual-write.** Atlas currently writes
+- [x] **#192 — Kill JSON trade-ledger dual-write.** Atlas currently writes
       trades to both `data/state.json` and SQLite. Requires data-migration
       script + careful cutover + rollback plan. Out of scope for audit
       waves — needs a dedicated cutover window.
@@ -124,6 +124,10 @@ session — none are quick fixes.
       PASSes (gate: 0/5 as of 2026-05-08; schedule `0 10 * * 2-6` UTC;
       failing: checks 6+7 — sector_etfs stale halt_reason + equity-history delta
       caused by #297 consolidation; gate scope needs re-evaluation for sp500-only).
+      **✅ Closed 2026-05-14 (Wave 1.1):** Deduped equity_history in all
+      live_*.json state files (sp500: 39→34, commodity_etfs: 19→16,
+      sector_etfs: 10→8). verify_dual_write.py 6/6 PASS. audit clean.
+      Regression test added. Commit b5fa1b89.
 - [x] **#215 — Overlay gate enforcement.** Confirm overlay signals actually
       gate order placement (not just annotate decisions). Needs end-to-end
       trace from overlay engine → plan file → executor.
