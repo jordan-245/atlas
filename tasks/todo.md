@@ -882,3 +882,30 @@ after `sell_result = None` init-to-None at the start of each function's loop bod
   ```
 
 Resolved by commit: <see git log>
+
+---
+
+## lifecycle-1.6 — Pre-commit hook: lifecycle guard for enabled-true strategies (2026-05-14)
+
+**Status**: COMPLETED
+
+Adds a pre-commit hook that blocks enabling strategies in `config/active/*.json`
+unless `strategy_lifecycle` has a `LIVE` or `PAPER` row for that `(strategy, universe)` pair.
+
+- [x] `scripts/git-hooks/check_lifecycle_for_enabled.py` — Python guard logic (diffs HEAD vs staged, queries SQLite)
+- [x] `scripts/git-hooks/pre-commit-lifecycle-guard.sh` — Bash wrapper (finds staged files, calls Python helper)
+- [x] `.pre-commit-config.yaml` — `lifecycle-enabled-guard` local hook added (pre-commit framework path)
+- [x] `scripts/git-hooks/pre-commit` — lifecycle guard chained before `exit 0` (raw bash hook path)
+- [x] `scripts/git-hooks/README.md` — updated with hook #6 docs + bypass instructions
+- [x] `.git/hooks/pre-commit` — reinstalled via `bash scripts/install-git-hooks.sh`
+- [x] `tests/test_lifecycle_pre_commit_hook.py` — 20/20 tests pass (5 spec scenarios + 15 unit/variant tests)
+
+**Design note**: Project has BOTH `.pre-commit-config.yaml` (pre-commit framework config) AND a raw bash
+`.git/hooks/pre-commit` (canonical source at `scripts/git-hooks/pre-commit`). The hook is registered in
+BOTH paths so it fires whether or not `pre-commit install` has been run. `BYPASS_RESEARCH_GATE` env var
+skips both the existing research gate and this new lifecycle guard (same files, same escape hatch).
+
+**SQL fix**: spec showed `ORDER BY id DESC LIMIT 1` but `strategy_lifecycle` has no `id` column (PK is
+`(strategy, universe)` — one row per pair). Fixed to plain `WHERE strategy = ? AND universe = ?`.
+
+**Bypass**: `git commit --no-verify` or `BYPASS_RESEARCH_GATE="reason" git commit ...`

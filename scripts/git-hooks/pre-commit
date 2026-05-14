@@ -128,4 +128,12 @@ sys.exit(0 if match else 1)
     fi
 fi
 
+# ─── Strategy lifecycle guard (lifecycle-1.6, 2026-05-14) ────────────────────
+# Blocks enabling strategies that lack a LIVE/PAPER row in strategy_lifecycle.
+# Shares the BYPASS_RESEARCH_GATE escape hatch (set env var to skip).
+LIFECYCLE_GUARD="$(git rev-parse --show-toplevel)/scripts/git-hooks/pre-commit-lifecycle-guard.sh"
+if [ -f "$LIFECYCLE_GUARD" ]; then
+    bash "$LIFECYCLE_GUARD"
+fi
+
 exit 0
