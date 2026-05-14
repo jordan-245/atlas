@@ -12,9 +12,7 @@ pandas==3.0.1
 yfinance==1.2.0
 
 # Brokers
-moomoo-api==9.6.5608
 alpaca-py==0.43.2
-ib-insync==0.9.86
 
 # Utilities
 requests==2.32.5
