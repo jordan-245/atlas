@@ -361,7 +361,7 @@ Status: PLANNED. Each task has a design doc; implementation deferred until pre-r
 - [ ] Read docs/phase-c-god-file-decomposition.md
 - [ ] Run `pydeps` import graph on all 3 god files; document cycles
 - [ ] Extract `core/types.py` with shared dataclasses to break import cycles
-- [ ] db/atlas_db.py → `db/{connection,trades,equity,signals,broker_orders,misc}.py` (start here — lowest risk)
+- [x] db/atlas_db.py → `db/{connection,trades,equity,signals,broker_orders,misc}.py` **DONE 2026-05-14** — commit 129cf48c; 14 sub-modules, 137-LOC shim, 6180/6180 tests
 - [ ] services/chat_server.py → `services/app.py` + `services/api/*.py` + `services/ws/chat.py`
 - [ ] brokers/live_executor.py → `executor/{entry,exit,protective,reconcile,pdt,leverage}.py` (last — highest risk)
 - [ ] Re-export shims preserve old import paths during transition
