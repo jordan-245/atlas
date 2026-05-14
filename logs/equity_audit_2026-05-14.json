@@ -1,0 +1,87 @@
+{
+  "run_at": "2026-05-14T14:23:07.311401",
+  "db_path": "/root/atlas/data/atlas.db",
+  "threshold": 0.01,
+  "markets": [
+    {
+      "market_id": "sp500",
+      "live_enabled": true,
+      "status": "PASS",
+      "json_raw_rows": 39,
+      "json_deduped_rows": 34,
+      "sqlite_rows": 34,
+      "matches": 34,
+      "divergences": [],
+      "json_only_dates": [],
+      "sqlite_only_dates": []
+    },
+    {
+      "market_id": "commodity_etfs",
+      "live_enabled": false,
+      "status": "FAIL",
+      "json_raw_rows": 18,
+      "json_deduped_rows": 15,
+      "sqlite_rows": 16,
+      "matches": 14,
+      "divergences": [
+        {
+          "date": "2026-05-05",
+          "json_equity": 956.82,
+          "sqlite_equity": 944.82,
+          "diff": 12.0
+        }
+      ],
+      "json_only_dates": [],
+      "sqlite_only_dates": [
+        "2026-05-01"
+      ]
+    },
+    {
+      "market_id": "regime",
+      "live_enabled": false,
+      "status": "PASS",
+      "json_raw_rows": 0,
+      "json_deduped_rows": 0,
+      "sqlite_rows": 0,
+      "matches": 0,
+      "divergences": [],
+      "json_only_dates": [],
+      "sqlite_only_dates": []
+    },
+    {
+      "market_id": "sector_etfs",
+      "live_enabled": false,
+      "status": "FAIL",
+      "json_raw_rows": 9,
+      "json_deduped_rows": 7,
+      "sqlite_rows": 8,
+      "matches": 6,
+      "divergences": [
+        {
+          "date": "2026-05-05",
+          "json_equity": 3202.08,
+          "sqlite_equity": 3191.73,
+          "diff": 10.35
+        }
+      ],
+      "json_only_dates": [],
+      "sqlite_only_dates": [
+        "2026-05-01"
+      ]
+    }
+  ],
+  "summary": {
+    "live_enabled_markets": [
+      "sp500"
+    ],
+    "disabled_markets": [
+      "commodity_etfs",
+      "regime",
+      "sector_etfs"
+    ],
+    "primary_equity_divergences": 0,
+    "primary_json_only_dates": 0,
+    "primary_sqlite_only_dates": 0,
+    "primary_status": "PASS"
+  }
+}
