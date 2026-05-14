@@ -37,7 +37,7 @@ def test_outside_rth_no_telegram_logs_warning(caplog):
          patch("utils.market_hours.is_rth", return_value=False):
         with caplog.at_level("WARNING"):
             price = price_arbiter.arbitrate("TEST", tiingo_price=100.0, alpaca_price=110.0)
-    assert price == 110.0  # Alpaca authority
+    assert price == 100.0  # Tiingo authority (Wave B #265)
     assert price_arbiter.is_ticker_halted("TEST")
     assert sent == []
     assert any("outside RTH" in rec.message and "TEST" in rec.message for rec in caplog.records)
@@ -71,6 +71,14 @@ def test_warn_band_does_not_alert():
     with patch("brokers.price_arbiter._send_telegram_bg", side_effect=lambda m: sent.append(m)):
         # 3% spread is above warn_pct (2%) but below halt_pct (5%)
         price = price_arbiter.arbitrate("TEST", tiingo_price=100.0, alpaca_price=103.0)
-    assert price == 103.0
+    assert price == 100.0  # Tiingo authority
     assert not price_arbiter.is_ticker_halted("TEST")
     assert sent == []
+
+def test_default_authority_is_tiingo():
+    """Lock-in test: post-Wave-B (#265, commit a445662b), default authority_on_mismatch is 'tiingo'."""
+    cfg = price_arbiter._load_config()
+    assert cfg["authority_on_mismatch"] == "tiingo", (
+        f"Default authority should be 'tiingo' per Wave B #265 (commit a445662b); "
+        f"got {cfg['authority_on_mismatch']!r}"
+    )
