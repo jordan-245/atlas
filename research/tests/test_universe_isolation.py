@@ -30,7 +30,19 @@ class TestFilterEnabledStrategiesRespectsUniverse:
     """_filter_enabled_strategies must read the UNIVERSE config, not sp500."""
 
     def test_gold_etfs_drops_disabled_strategies(self):
-        """Strategies disabled in gold_etfs config must be excluded."""
+        """Strategies disabled in gold_etfs config must be excluded.
+
+        Skipped if config/active/gold_etfs.json was retired (commit 32f15077).
+        The 3 sibling tests in this class use monkeypatched configs and cover
+        the underlying logic for the retired-config case.
+        """
+        gold_etfs_cfg = ATLAS_ROOT / "config" / "active" / "gold_etfs.json"
+        if not gold_etfs_cfg.exists():
+            pytest.skip(
+                "config/active/gold_etfs.json retired by commit 32f15077; "
+                "see sibling monkeypatched tests for filter-logic coverage."
+            )
+
         # In the real gold_etfs config: trend_following=False, mean_reversion=False
         # Use the real config so this test catches real regressions.
         result = _filter_enabled_strategies(
