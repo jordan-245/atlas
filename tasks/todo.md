@@ -769,7 +769,7 @@ consult alt-data before generating signals.
 
 ## #348 — Consolidate / verify router mounts for strategy_lifecycle + research_matrix
 
-**Status**: TODO — audit 2026-05-14 found the picture is murkier than expected.
+**Status**: ✅ DONE 2026-05-14 — clarifying comment added to chat_server.py (commit `437c7b16`).
 
 **Current state** (verified 2026-05-14):
 - `services/api/lifecycle.py` → IS mounted (chat_server line 205, `_lifecycle_router`)
