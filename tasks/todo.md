@@ -468,30 +468,22 @@ Clearing HALT without the fix just restarts the false-positive cycle.
 
 ---
 
-## #PERF-TG-CONSOLIDATE — Telegram wrapper consolidation (round 2)
+## ✅ #PERF-TG-CONSOLIDATE — Telegram wrapper consolidation (round 2) — DONE 2026-05-14
 
-The 2026-05-01 efficiency audit started consolidating `_send_telegram` wrappers
-to `utils.telegram.notify()`. Round 1 replaced the 4 trivial pass-throughs
-(check_fred_health, check_regime_features_staleness, research/sweep,
-scripts/autoresearch). Round 2 should tackle the 11+ remaining wrappers that
-have non-trivial formatting logic. The right move is to:
-1. Move formatting into the caller (build the message string before notify())
-2. Pass the formatted string to `utils.telegram.notify()` directly
-3. Delete the local wrapper
+Round 2 (commit f035eae2) inlined 5 single-caller wrappers (≤30 LOC body):
+- `scripts/check_config_vs_research_best.py:_send_telegram_alert` → inlined
+- `scripts/healthz_error_remediation.py:send_telegram_alert` → inlined
+- `scripts/data_integrity_monitor.py:_send_telegram_alert` → inlined
+- `monitor/evaluator.py:_send_telegram_alerts` → inlined
+- `brokers/price_arbiter.py:_send_telegram_bg` → inlined
 
-Each wrapper is small (15-40 lines) but they touch live ops — do them one
-at a time with regression tests.
+KEPT (>30 LOC formatter or multi-concern):
+- `research/discovery/discovery.py:_send_telegram_digest` — ~40 LOC (>30 threshold)
+- `scripts/sync_protective_orders.py:format_telegram_message + send_telegram_summary` — ~75 LOC complex HTML formatter
+- `scripts/reconcile_positions.py:format_telegram_message + send_telegram_summary` — ~65 LOC complex HTML formatter
 
-Remaining wrappers (all marked with `# TODO(#PERF-TG-CONSOLIDATE)`):
-- `scripts/check_config_vs_research_best.py:_send_telegram_alert(analysis: dict)` — builds rich message
-- `scripts/healthz_error_remediation.py:send_telegram_alert(failures, summary)` — formats failure list
-- `scripts/data_integrity_monitor.py:_send_telegram_alert(hits, window_hours)` — formats hits
-- `research/discovery/discovery.py:_send_telegram_digest(report)` — DailyReport formatter
+Remaining (not in scope of wave 3.4):
 - `research/autoresearch_runner.py:_try_send_telegram(text)` — has retry/dedup logic
-- `monitor/evaluator.py:_send_telegram_alerts(alerts)` — alert list formatter
-- `scripts/sync_protective_orders.py:send_telegram_summary(...)` — summary formatter
-- `scripts/reconcile_positions.py:send_telegram_summary(...)` — summary formatter
-- `brokers/price_arbiter.py:_send_telegram_bg(msg)` — threading/dedup logic
 - `research/llm_loop_runner.py:_send_telegram(summary: dict)` — dict-to-text formatting
 
 ## #PERF-BT-FOLDS — Walk-forward backtest fold parallelization (DEFERRED)
