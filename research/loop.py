@@ -615,9 +615,15 @@ class ResearchSession:
         self._data = data
         logger.info("Loaded %d tickers.", len(self._data))
 
-        # Load active config
+        # Load active config — graceful for retired/inactive markets
         from utils.config import get_active_config
-        self._config = get_active_config(market)
+        try:
+            self._config = get_active_config(market)
+        except FileNotFoundError:
+            self._config = {}
+            logger.warning(
+                "No active config for market '%s' — using empty config.", market
+            )
 
         # ── Evaluation lock ─────────────────────────────────────────────────
         # Hash all engine files + snapshot parquet files.  Any modification
