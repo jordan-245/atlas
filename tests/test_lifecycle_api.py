@@ -240,6 +240,19 @@ class TestGetLifecycleHistory:
         assert resp.status_code == 200
         assert resp.json()["history"] == []
 
+    def test_returns_empty_history_for_unknown_combo(self, client: TestClient) -> None:
+        """GET history for unknown strategy/universe returns 200 + empty list.
+
+        Migrated from tests/test_strategy_lifecycle_api.py (deleted orphan).
+        Verifies the mounted router (services/api/lifecycle.py) uses the
+        'history' key (not 'rows' like the orphan's minimal stand-alone router).
+        """
+        resp = client.get("/api/strategy-lifecycle/unknown_strat/no_universe/history")
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert "history" in body, f"Expected 'history' key, got: {list(body.keys())}"
+        assert body["history"] == [], f"Expected empty list, got: {body['history']}"
+
 
 # ════════════════════════════════════════════════════════════════════════
 # 5. POST /api/strategy-lifecycle/transition — allowed move
