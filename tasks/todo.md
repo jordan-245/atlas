@@ -960,3 +960,32 @@ Spec signature was incompatible; specific function matching real usage created i
 - [x] 13 public function imports all verified
 
 **Design note**: Cache I/O (`_save_cache`, `_load_cache`, `_market_cache_dir`, `CACHE_DIR`, etc.) and freshness functions (`_last_trading_day`, `check_data_freshness`, `verify_ingest_freshness`) are defined directly in `__init__.py` (not re-exported from sub-modules). Reason: tests patch `data.ingest._market_cache_dir` and `data.ingest._last_trading_day`. Python resolves these lookups through the function's `__globals__` dict, which is `data.ingest.__dict__` only when the calling function is defined in `data.ingest`. If these were in `cache.py`/`freshness.py`, the patches would be invisible to the callers.
+
+
+## 2026-05-15 — Cron restoration + permanent /etc/cron.d/ protection (#353)
+
+Restored NRL-Predict cron schedule to save Round 12 (deadline 2026-05-19) and
+implemented permanent per-project /etc/cron.d/ scheme to prevent recurrence of
+the 2026-04-30 deletion incident.
+
+**Done:**
+- Refreshed footytips ESPN OneID token (was 7+ days stale → now valid 23h 59m)
+- Smoke tested `nrl-cron.sh refresh` → exit=0, fetched R11 odds (8 matches, API quota 6/500 used), log 17,458 bytes
+- Created /etc/cron.d/nrl-predict (refresh Mon 20:00, tips Tue 17:00, pregame Thu-Sun 13-20 AEST) — TZ=Australia/Sydney
+- Created /etc/cron.d/up-bank (06:30 daily resync — migrated from atlas.crontab) — TZ=Australia/Brisbane
+- Cleaned atlas.crontab to Atlas-only with pointer comments + header docs new scheme
+- R11 confirmed lost (May 12 deadline passed before restoration) — no salvage possible
+
+**R12 readiness:**
+- Next refresh: Mon 2026-05-18 20:00 AEST → scrapes R11 results, rebuilds data, plans R12
+- Next tips: Tue 2026-05-19 17:00 AEST → submits R12 picks ← SAVES R12
+- Pregame swings: starting Fri 2026-05-15 13:00 AEST, then Thu-Sun every 30min 13:00-20:30 AEST
+
+**Audit findings** (Phase 8):
+- supercoach-site: Scraper is functional (`python3 -m scrapers` runs OK). `scraper.log` last touched Apr 27 19:00 (pre-deletion victim). However, NO documented cron schedule in AGENTS.md or docs/. Checkpoint marks 2026 data "complete" (6471 players). Needs human confirmation: should it re-scrape weekly with `--no-resume` to capture new round stats? No /etc/cron.d entry created until cadence confirmed.
+- credibility-engine: No cron/schedule expectations documented in AGENTS.md or SPEC.md. Activity in logs appears to be systemd or manual. No action needed.
+- cronus: Confirmed systemd-managed. 5 active timers (cronus-account-snapshot, cronus-rollover, cronus-calendar, cronus-scanner, cronus-fundamentals) + 2 long-running services (alert-sender, risk-guardian). No cron action needed.
+
+**Follow-up tasks:**
+- [ ] supercoach-site: Human decision needed — weekly re-scrape cadence (e.g. `0 19 * * 0 root python3 -m scrapers --no-resume >> /root/supercoach-site/scraper.log 2>&1`)? Confirm before creating /etc/cron.d/supercoach-site.
+- [ ] NRL-Predict: Verify R12 tips actually submitted Tue 2026-05-19 17:00 by checking logs/nrl-cron-tips.log post-run.
