@@ -921,3 +921,22 @@ skips both the existing research gate and this new lifecycle guard (same files, 
 - [x] test_state_isolation_self.py: 3/3 PASS
 - [x] test_halt_isolation.py: 2/2 PASS
 - [x] test_no_prod_db_writes.py: 3/3 PASS
+
+---
+
+## D5 / Wave 3.2 — Extract inline SQL from signal files into data/{ohlcv,macro}_query.py (2026-05-14)
+
+**Status**: ✅ COMPLETED
+
+- [x] Created `data/ohlcv_query.py` — `get_ohlcv_volume`, `get_ohlcv_close`, 5-min TTL cache
+- [x] Created `data/macro_query.py` — `get_macro_indicators_cols`, `get_vix_term_structure`, 5-min TTL cache
+- [x] Migrated `signals/etf_flows.py` — `_load_volumes_from_db` → `get_ohlcv_volume`
+- [x] Migrated `signals/macro_surprise.py` — inline SELECT block → `get_macro_indicators_cols`
+- [x] Migrated `signals/sector_rotation.py` — `_load_prices_from_db` → `get_ohlcv_close`
+- [x] Migrated `signals/vix_term_structure.py` — inline SELECT block → `get_vix_term_structure` (aliased as `_load_vix_data`)
+- [x] 35/35 new tests in `tests/test_ohlcv_query.py` + `tests/test_macro_query.py`
+- [x] All existing signal tests pass (2 pre-existing failures unchanged)
+
+**Deviation**: `get_macro_indicators_cols` uses `(cols, end_date, limit)` not `(cols, start_date, end_date)`.
+Actual SQL in macro_surprise.py is `WHERE date <= ? ORDER BY date DESC LIMIT ?` — not a date range query.
+Spec signature was incompatible; specific function matching real usage created instead.

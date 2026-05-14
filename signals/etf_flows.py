@@ -118,23 +118,13 @@ def compute_volume_zscores(
 def _load_volumes_from_db(tickers: list, start: date, end: date) -> Optional[pd.DataFrame]:
     """Load volume data from Atlas DB OHLCV table."""
     try:
-        from db.atlas_db import get_db
-        placeholders = ",".join("?" * len(tickers))
-        with get_db() as db:
-            rows = db.execute(
-                f"SELECT date, ticker, volume FROM ohlcv "
-                f"WHERE ticker IN ({placeholders}) "
-                f"AND date >= ? AND date <= ? "
-                f"ORDER BY date",
-                tickers + [start.isoformat(), end.isoformat()],
-            ).fetchall()
-
-        if not rows:
+        from data.ohlcv_query import get_ohlcv_volume
+        raw = get_ohlcv_volume(tickers, start.isoformat(), end.isoformat())
+        if raw.empty:
             return None
-
-        df = pd.DataFrame([dict(r) for r in rows])
-        df["date"] = pd.to_datetime(df["date"])
-        pivot = df.pivot_table(index="date", columns="ticker", values="volume", aggfunc="first")
+        raw = raw.copy()
+        raw["date"] = pd.to_datetime(raw["date"])
+        pivot = raw.pivot_table(index="date", columns="ticker", values="volume", aggfunc="first")
         return pivot
     except Exception as e:
         logger.warning(f"ETF flows DB load failed: {e}")

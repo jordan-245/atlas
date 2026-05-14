@@ -14,7 +14,8 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from db.atlas_db import get_db
+import pandas as pd
+from data.ohlcv_query import get_ohlcv_close
 from signals.constants import DEFENSIVE_ETFS_PURE, SECTOR_ETF_NAMES
 
 logger = logging.getLogger(__name__)
@@ -116,24 +117,16 @@ def _load_prices_from_db(
     # 63 trading days ≈ 90 calendar days; 2× buffer is generous
     start = end_date - timedelta(days=roc_period * 2 + 30)
     tickers = list(SPDR_SECTORS.keys())
-    placeholders = ",".join("?" * len(tickers))
 
-    with get_db() as db:
-        rows = db.execute(
-            f"SELECT ticker, date, close FROM ohlcv "
-            f"WHERE ticker IN ({placeholders}) "
-            f"AND date BETWEEN ? AND ? "
-            f"ORDER BY ticker, date",
-            tickers + [start.isoformat(), end_date.isoformat()],
-        ).fetchall()
+    df = get_ohlcv_close(tickers, start.isoformat(), end_date.isoformat())
 
     prices: dict[str, list[tuple[str, float]]] = {}
-    for r in rows:
-        ticker = r["ticker"]
-        close = r["close"]
-        if close is None:
+    for _, row in df.iterrows():
+        ticker = row["ticker"]
+        close = row["close"]
+        if close is None or pd.isna(close):
             continue
-        prices.setdefault(ticker, []).append((r["date"], float(close)))
+        prices.setdefault(ticker, []).append((row["date"], float(close)))
 
     return prices
 

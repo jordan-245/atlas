@@ -15,7 +15,7 @@ import statistics
 from datetime import date, timedelta
 from typing import Optional
 
-from db.atlas_db import get_db
+from data.macro_query import get_vix_term_structure as _load_vix_data
 
 logger = logging.getLogger(__name__)
 
@@ -41,16 +41,10 @@ def get_vix_term_structure(end_date: Optional[date] = None, lookback_days: int =
     end = end_date or date.today()
     start = end - timedelta(days=lookback_days * 2)  # Buffer for weekends/holidays
 
-    with get_db() as db:
-        rows = db.execute(
-            "SELECT date, vix, vix3m FROM macro_indicators "
-            "WHERE date BETWEEN ? AND ? AND vix IS NOT NULL AND vix3m IS NOT NULL "
-            "ORDER BY date",
-            (start.isoformat(), end.isoformat()),
-        ).fetchall()
+    df = _load_vix_data(start.isoformat(), end.isoformat())
 
     result = []
-    for r in rows:
+    for _, r in df.iterrows():
         vix = float(r["vix"])
         vix3m = float(r["vix3m"])
         if vix3m <= 0:

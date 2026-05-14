@@ -16,13 +16,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-try:
-    from db.atlas_db import get_db
-except ModuleNotFoundError:
-    import sys
-    from pathlib import Path
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from db.atlas_db import get_db
+from data.macro_query import get_macro_indicators_cols
 
 logger = logging.getLogger(__name__)
 
@@ -74,28 +68,25 @@ def compute_macro_surprises(
     if as_of_date is None:
         as_of_date = date.today()
 
-    cols = ", ".join(["date"] + list(SURPRISE_SERIES.keys()))
     fetch_limit = lookback + 10  # extra buffer for gaps
 
-    with get_db() as db:
-        rows = db.execute(
-            f"SELECT {cols} FROM macro_indicators "
-            f"WHERE date <= ? ORDER BY date DESC LIMIT ?",
-            (as_of_date.isoformat(), fetch_limit),
-        ).fetchall()
+    df_raw = get_macro_indicators_cols(
+        list(SURPRISE_SERIES.keys()),
+        as_of_date.isoformat(),
+        fetch_limit,
+    )
 
-    if len(rows) < 20:  # minimum data requirement
+    if len(df_raw) < 20:  # minimum data requirement
         return {
             "composite_surprise": 0.0,
             "signal": "neutral",
             "confidence": 0.0,
-            "details": f"Insufficient data ({len(rows)} rows, need 20+)",
+            "details": f"Insufficient data ({len(df_raw)} rows, need 20+)",
             "surprises": {},
         }
 
-    # Convert to DataFrame (rows come back newest-first, so reverse)
-    col_names = ["date"] + list(SURPRISE_SERIES.keys())
-    df = pd.DataFrame([dict(r) for r in rows], columns=col_names)
+    # df_raw comes back newest-first (ORDER BY date DESC); sort chronologically
+    df = df_raw.copy()
     df["date"] = pd.to_datetime(df["date"])
     df = df.sort_values("date").set_index("date")
 
