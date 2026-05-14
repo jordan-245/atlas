@@ -454,6 +454,7 @@ def record_trade_exit(
     exit_price: float,
     exit_reason: str,
     regime_at_exit: Optional[str] = None,
+    exit_date: Optional[str] = None,
 ) -> None:
     """Close the most recent open trade for (ticker, strategy).
 
@@ -466,10 +467,22 @@ def record_trade_exit(
 
     The uq_trades_active_closed unique index enforces the same invariant
     at the database level as a hard backstop.
+
+    Args:
+        exit_date: ISO-format timestamp to use as the exit_date column value.
+            When provided (e.g. broker fill's filled_at), this is used verbatim
+            so the stored exit_date reflects the ACTUAL fill time rather than
+            the script's wall-clock detection time.  Defaults to datetime.now()
+            when None.  This prevents premature-closure bugs where a reconcile
+            script detects an exit and records detection-time as exit_date even
+            though the broker fill happened earlier or later (#FIX-PMEQ-002).
     """
     import logging
     _exit_log = logging.getLogger(__name__)
-    now = datetime.now().isoformat()
+    # Use caller-supplied exit_date (e.g. broker filled_at) when available so
+    # the stored timestamp reflects the ACTUAL fill, not detection wall-clock.
+    # Fall back to datetime.now() only when no broker timestamp is provided.
+    now = exit_date if exit_date else datetime.now().isoformat()
     with get_db() as db:
         # ── Validation: reject ghost trades (exit before entry) ──
         open_row = db.execute(

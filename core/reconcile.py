@@ -501,11 +501,36 @@ def reconcile_fills(
         exit_reason = _derive_exit_reason(order)
         fill_price = float(order.fill_price or 0)
 
+        # #FIX-PMEQ-002: use broker's filled_at as exit_date instead of
+        # datetime.now()-at-detection.  The fill may have happened minutes or
+        # hours before the reconcile script ran; recording detection-time as
+        # exit_date produces a premature (or late) closure timestamp.
+        _raw = getattr(order, "raw", {}) or {}
+        _broker_fill_ts: Optional[str] = (
+            _raw.get("filled_at")
+            or getattr(order, "filled_at", None)
+        )
+        # Normalise: convert None-like strings to actual None
+        if _broker_fill_ts and str(_broker_fill_ts).lower() in ("none", "null", ""):
+            _broker_fill_ts = None
+        if _broker_fill_ts:
+            logger.debug(
+                "reconcile_fills: using broker filled_at=%s for %s exit_date",
+                _broker_fill_ts, ticker,
+            )
+        else:
+            logger.debug(
+                "reconcile_fills: no filled_at on broker order for %s — "
+                "exit_date will default to datetime.now()",
+                ticker,
+            )
+
         if dry_run:
             report.trades_closed.append(0)
             logger.info(
-                "reconcile_fills [dry_run] would close trade #%d: %s @%.4f reason=%s",
+                "reconcile_fills [dry_run] would close trade #%d: %s @%.4f reason=%s filled_at=%s",
                 existing_trade.get("id", -1), ticker, fill_price, exit_reason,
+                _broker_fill_ts or "(fallback:now)",
             )
         else:
             try:
@@ -515,6 +540,7 @@ def reconcile_fills(
                     exit_price=fill_price,
                     exit_reason=exit_reason,
                     regime_at_exit=None,
+                    exit_date=_broker_fill_ts,  # None → falls back to datetime.now() in record_trade_exit
                 )
                 report.trades_closed.append(existing_trade.get("id", 0))
                 logger.info(

@@ -353,6 +353,39 @@ def reconcile_positions(
                     market_id, _po_exc, exc_info=True,
                 )
 
+            # #FIX-PMEQ-002 residual (Worker B flag): pre-query SQLite for
+            # authoritative entry_dates BEFORE building corrected_positions.
+            # The internal state file may have a stale "today" entry_date (set by
+            # a prior --fix run that defaulted to datetime.now()) or no entry_date
+            # at all.  SQLite trades.entry_date is the canonical source because it
+            # was written by record_trade_entry at the time of actual execution.
+            _sqlite_entry_dates: dict[str, str] = {}
+            try:
+                from db import atlas_db as _atlas_db_ed
+                _bp_tickers_ed = tuple(bp.ticker for bp in broker_map.values())
+                if _bp_tickers_ed:
+                    _ph_ed = ",".join("?" * len(_bp_tickers_ed))
+                    with _atlas_db_ed.get_db() as _ed_db:
+                        for _ed_row in _ed_db.execute(
+                            f"SELECT ticker, entry_date FROM trades "
+                            f"WHERE status='open' AND ticker IN ({_ph_ed}) "
+                            f"ORDER BY id DESC",
+                            _bp_tickers_ed,
+                        ).fetchall():
+                            # Keep first occurrence (most recent open trade by id DESC)
+                            if _ed_row["ticker"] not in _sqlite_entry_dates and _ed_row["entry_date"]:
+                                _sqlite_entry_dates[_ed_row["ticker"]] = str(_ed_row["entry_date"])
+                logger.info(
+                    "reconcile_positions: loaded SQLite entry_dates for %d/%d tickers",
+                    len(_sqlite_entry_dates), len(_bp_tickers_ed),
+                )
+            except Exception as _ed_exc:
+                logger.warning(
+                    "reconcile_positions: SQLite entry_date pre-lookup failed: %s — "
+                    "will fall back to internal state / today-date",
+                    _ed_exc,
+                )
+
             corrected_positions = []
             for bp in broker_map.values():
                 # Preserve strategy/entry_date from internal state if available.
@@ -370,10 +403,26 @@ def reconcile_positions(
                 _stop_oid = _po.get("stop_order_id") or internal_pos.get("stop_order_id", "")
                 _tp_oid = _po.get("tp_order_id") or internal_pos.get("tp_order_id", "")
 
+                # Resolve entry_date with authority priority:
+                #   Source 0 (highest): SQLite trades.entry_date (authoritative, set at execution time)
+                #   Source 1: internal state file entry_date (may be stale today-date from prior fix run)
+                #   Source 2 (fallback): today — log WARNING since this propagates the same stale-date bug
+                _rp_entry_date = (
+                    _sqlite_entry_dates.get(bp.ticker)
+                    or internal_pos.get("entry_date")
+                )
+                if not _rp_entry_date:
+                    _rp_entry_date = datetime.now().strftime("%Y-%m-%d")
+                    logger.warning(
+                        "reconcile_positions: no entry_date for %s in SQLite or internal "
+                        "state — defaulting to today (%s). This may propagate a stale date.",
+                        bp.ticker, _rp_entry_date,
+                    )
+
                 corrected_positions.append({
                     "ticker": bp.ticker,
                     "strategy": internal_pos.get("strategy", "unknown"),
-                    "entry_date": internal_pos.get("entry_date", datetime.now().strftime("%Y-%m-%d")),
+                    "entry_date": _rp_entry_date,
                     "entry_price": bp.entry_price,
                     "shares": bp.shares,
                     "stop_price": _stop_price_resolved,

@@ -211,12 +211,22 @@ def check_stop_losses(portfolio, prices, lows, trade_date, dry_run):
                                     _re,
                                 )
                                 _eod_regime = None
+                            # #FIX-PMEQ-002: prefer broker fill timestamp over detection wall-clock.
+                            # sell_result may not exist when broker=None (backtest mode).
+                            _eod_sl_fill_ts: str | None = (
+                                (getattr(sell_result, "raw", {}) or {}).get("filled_at")  # type: ignore[possibly-undefined]
+                                if broker and broker_sell_ok and "sell_result" in dir()
+                                else None
+                            )
+                            if _eod_sl_fill_ts and str(_eod_sl_fill_ts).lower() in ("none", "null", ""):
+                                _eod_sl_fill_ts = None
                             atlas_db.record_trade_exit(
                                 ticker=pos.ticker,
                                 strategy=getattr(pos, "strategy", ""),
                                 exit_price=actual_exit_price,
                                 exit_reason="stop_loss",
                                 regime_at_exit=_eod_regime,
+                                exit_date=_eod_sl_fill_ts,  # None → datetime.now() fallback
                             )
                         except (ImportError, sqlite3.OperationalError, sqlite3.DatabaseError, AttributeError) as _e:  # DB write
                             log.warning("SQLite trade exit dual-write failed: %s", _e)
@@ -331,12 +341,22 @@ def check_take_profits(portfolio, prices, highs, trade_date, dry_run):
                                     _re,
                                 )
                                 _eod_regime = None
+                            # #FIX-PMEQ-002: prefer broker fill timestamp over detection wall-clock.
+                            # sell_result may not exist when broker=None (backtest mode).
+                            _eod_tp_fill_ts: str | None = (
+                                (getattr(sell_result, "raw", {}) or {}).get("filled_at")  # type: ignore[possibly-undefined]
+                                if broker and broker_sell_ok and "sell_result" in dir()
+                                else None
+                            )
+                            if _eod_tp_fill_ts and str(_eod_tp_fill_ts).lower() in ("none", "null", ""):
+                                _eod_tp_fill_ts = None
                             atlas_db.record_trade_exit(
                                 ticker=pos.ticker,
                                 strategy=getattr(pos, "strategy", ""),
                                 exit_price=actual_exit_price,
                                 exit_reason="take_profit",
                                 regime_at_exit=_eod_regime,
+                                exit_date=_eod_tp_fill_ts,  # None → datetime.now() fallback
                             )
                         except (ImportError, sqlite3.OperationalError, sqlite3.DatabaseError, AttributeError) as _e:  # DB write
                             log.warning("SQLite trade exit dual-write failed: %s", _e)
