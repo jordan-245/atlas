@@ -640,3 +640,199 @@ Re-enable criteria: sp500 green ≥30 days (after 2026-06-06), freed capital dep
       - `0 18 * * *` (08:00 UTC) — check_doc_staleness.py
 - [x] 17 tests: 9 in test_cleanup_sediment.py + 8 in test_doc_staleness.py — all passing
 - [x] Commit: `043dfdc0`
+
+## #341 — sp500 connors_rsi2 param drift: LIVE config vs research-best
+
+**Status**: TODO — created 2026-05-14 as follow-up to #340 (connors_rsi2 sp500 LIVE→PAPER demotion).
+
+The currently-LIVE config for connors_rsi2 sp500 has drifted significantly from
+the research-best params. This drift may explain part of the underperformance
+that triggered the demotion. Audit needed before any re-promotion attempt.
+
+**Param-by-param diff** (live config/active/sp500.json vs research/best/connors_rsi2.json):
+
+| Param | Live (config/active) | Research-best (research/best) | Delta |
+|-------|----------------------|-------------------------------|-------|
+| rsi_period | 3 | 2 | live is +1 (less sensitive) |
+| min_consecutive_down | 1 | 2 | live is -1 (looser trigger) |
+| ibs_max | 0.5 | 0.75 | live is -0.25 (stricter) |
+| ibs_filter_enabled | false | true | live disables IBS filter entirely |
+| atr_stop_mult | 1.0 | 1.35 | live is -0.35 (tighter stops) |
+
+**Action items** (deferred — not blocking demotion):
+- [ ] Run controlled comparison backtest with both param sets on identical universe
+- [ ] Determine which set drove the divergence between live performance and research expectation
+- [ ] If research-best params dominate clean solo, consider re-promotion via PAPER path with the corrected params
+- [ ] If live params dominate (drift was intentional), update `research/best/connors_rsi2.json` to reflect production reality and document the override rationale
+
+**Reference**: see `research/best/connors_rsi2.json` for full research metrics; clean solo Sharpe = -0.2433 (post-#327 rerun, 2026-05-14).
+
+---
+
+## #342 — Delete orphan `services/api/strategy_lifecycle.py`
+
+**Status**: TODO — discovered 2026-05-14 during dashboard audit.
+
+`services/api/strategy_lifecycle.py` exists but is NOT mounted in `services/chat_server.py`.
+The richer `services/api/lifecycle.py` IS mounted (line 205: `app.include_router(_lifecycle_router)`).
+`strategy_lifecycle.py` is referenced by `tests/test_strategy_lifecycle_api.py` tests which
+build their own FastAPI app from its router. The file's own docstring confirms this usage.
+
+**Action items**:
+- [ ] Confirm not mounted: `grep -rn "strategy_lifecycle" services/chat_server.py` (expect 0 hits)
+- [ ] Confirm test dependency: `grep -rn "strategy_lifecycle" tests/` — if `test_strategy_lifecycle_api.py` imports it directly, the file CANNOT be deleted; migrate those tests to use `lifecycle.py` router instead
+- [ ] If tests migrated cleanly: delete `services/api/strategy_lifecycle.py`
+- [ ] If tests cannot be migrated without breakage: surface as a consolidation task for #348
+
+---
+
+## #343 — Update `tests/test_research_integrity.py` for connors_rsi2 clean-rerun
+
+**Status**: TODO — after #327 contamination rerun completes for connors_rsi2.
+
+After #327 rerun completes for connors_rsi2 (sp500, commodity_etfs, gold_etfs), the
+`tests/test_research_integrity.py` fixture snapshots may reference the pre-rerun
+(contaminated) Sharpe values. These will mismatch the post-rerun clean-solo values.
+
+**Action items**:
+- [ ] After #327 reruns complete: run `pytest tests/test_research_integrity.py -v --timeout=30`
+- [ ] Identify which fixtures reference the contaminated Sharpe values (likely hardcoded in fixture dicts)
+- [ ] Update fixtures to use post-rerun values from `research/best/connors_rsi2*.json`
+- [ ] Confirm `solo_sharpe_clean` fields are populated and non-None in all 3 connors_rsi2 variants
+- [ ] Re-run; confirm all 24 tests still pass
+
+---
+
+## #344 — Strategic review of connors_rsi2 — DONE 2026-05-14
+
+- [x] Decision: demote sp500 LIVE → PAPER pending param-drift review (see #341 param-drift task)
+- [x] Demotion rationale: clean solo Sharpe = -0.2433 (post-#327 rerun, 2026-05-14)
+- [x] Audit log: see `strategy_lifecycle_history` table entries 2026-05-14
+- [x] Follow-up: param-drift investigation (#341, open)
+
+---
+
+## #345 — Enable disabled research-window timers
+
+**Status**: TODO — timers were disabled 2026-05-07 during consolidation (#297).
+
+`atlas-research-window@commodity_etfs.timer` and `atlas-research-window@sector_etfs.timer`
+were disabled when those universes moved to `passive` mode. Decision needed per universe.
+
+**Action items**:
+- [ ] Run: `systemctl list-timers 'atlas-research-window@*.timer'` — confirm which are disabled
+- [ ] For each disabled timer, decide:
+  - (a) Re-enable: universe has strategies worth researching even in passive mode (research
+        may surface params that justify future re-activation)
+  - (b) Leave disabled: no upcoming plans to re-activate this universe; research is wasteful
+- [ ] Document decision per universe in `docs/multi-universe-consolidation-2026-05-07.md`
+- [ ] Per current re-enable criteria (sp500 green ≥30 days after 2026-06-06): defer
+      commodity_etfs/sector_etfs timer re-evaluation until the re-enable gate date
+
+---
+
+## #346 — Fix pre-existing test_price_arbiter outside-RTH flakiness
+
+**Status**: TODO — pre-existing bug, flagged during refactor audit prep, never fixed.
+
+`tests/test_price_arbiter.py` has a test that fails outside US RTH because the fixture
+mocks Tiingo prices but not the RTH detection used by `brokers/price_arbiter.py`. The
+arbiter's spread-detection logic behaves differently outside RTH (different thresholds
+or early-exit), causing assertion failures when tests run in AEST business hours (which
+are US overnight).
+
+**Action items**:
+- [ ] Run `pytest tests/test_price_arbiter.py -v --timeout=30` outside RTH to confirm flakiness
+- [ ] Locate RTH check in `brokers/price_arbiter.py` (likely `is_rth()` or similar)
+- [ ] Either: freeze time to US RTH in test using `freezegun`, OR mock `is_rth` at the
+      call site to always return `True` for the affected test(s)
+- [ ] Confirm 0 flaky failures across 3 runs at different AEST times
+
+---
+
+## #347 — Wire alt-data signals into plan generator
+
+**Status**: TODO — alt-data pipeline (#220) computes and logs signals but plan generator
+never consumes them.
+
+`overlay/sources/alt_data.py` collects OpenInsider / Finviz signals and writes to
+`news_intel` table. `overlay/sources/news.py` has `_fetch_alt_data_intel()` for the overlay
+engine. But `brokers/plan.py` (`TradePlanGenerator`) and `scripts/cli.py::cmd_plan` do not
+consult alt-data before generating signals.
+
+**Action items**:
+- [ ] Design: decide whether alt-data acts as (a) a sizing override (boost/reduce position
+      size based on insider activity), (b) a hard gate (block signal if no insider buy), or
+      (c) an additive score bonus (bump priority score for tickers with recent insider buys)
+- [ ] Document design decision in `research/brain/strategies/alt_data_integration.md`
+- [ ] Implement the chosen path in `brokers/plan.py::generate_plan()` or `_run_sp500_plan()`
+- [ ] Add unit tests covering: alt-data present → plan reflects it; alt-data absent → plan
+      unchanged (graceful degradation)
+
+---
+
+## #348 — Consolidate / verify router mounts for strategy_lifecycle + research_matrix
+
+**Status**: TODO — audit 2026-05-14 found the picture is murkier than expected.
+
+**Current state** (verified 2026-05-14):
+- `services/api/lifecycle.py` → IS mounted (chat_server line 205, `_lifecycle_router`)
+- `services/api/research_matrix.py` → IS mounted (chat_server line 206, `_research_matrix_router`)
+- `services/api/strategy_lifecycle.py` → NOT mounted; used only by `tests/test_strategy_lifecycle_api.py`
+
+**Action items**:
+- [ ] Confirm `test_strategy_lifecycle_api.py` tests can pass if routed through `lifecycle.py`
+      router instead (endpoint paths should match)
+- [ ] If yes: consolidate — delete `strategy_lifecycle.py`, update test imports (see #342)
+- [ ] If no: document why the redundant file must stay; add a comment to both files cross-
+      referencing each other so the duplication is visible
+- [ ] Either outcome: add a comment in `chat_server.py` explaining that `lifecycle.py` is
+      the canonical mount and `strategy_lifecycle.py` is test-only
+
+---
+
+## #349 — Cleanup: eod_settlement sell_result guard + 2 stale tests
+
+**Status**: TODO — None-unsafe reference surfaced in code review, not yet located precisely.
+
+`scripts/eod_settlement.py` has a `sell_result` variable that is assigned from
+`broker.place_order(...)` and used in a subsequent if-branch WITHOUT a prior None-guard.
+In the `check_stop_losses` or `check_take_profits` code path, if `place_order` returns None
+(e.g. broker offline), accessing `sell_result.filled_price` raises AttributeError.
+
+**Action items**:
+- [ ] Find exact file:line: `grep -n "sell_result" scripts/eod_settlement.py`
+- [ ] Add None guard: `if sell_result is None: logger.warning(...); continue`
+- [ ] Locate the 2 stale tests that reference removed methods (likely in `tests/test_eod_settlement.py`)
+- [ ] Either: fix or delete the 2 stale tests (if the methods were intentionally removed)
+- [ ] Run `pytest tests/test_eod_settlement.py -v --timeout=30`; confirm clean
+
+---
+
+## #350 — Auto-detect KNOWN_CONTAMINATED in rerun_contaminated_backtests.py
+
+**Status**: COMPLETED 2026-05-14 (commit in C3 batch).
+
+- [x] `detect_contaminated_pairs()` rewritten to use multi-criteria detection:
+      (a) `is_solo == false`, (b) `is_solo == true` AND `solo_sharpe_clean` missing,
+      (c) neither field present (legacy).
+- [x] `main()` now uses `detect_contaminated_pairs()` as primary source; falls back to
+      `KNOWN_CONTAMINATED` only if detection yields 0 pairs (e.g. empty best/ dir).
+- [x] Hardcoded `KNOWN_CONTAMINATED` retained as documented ground truth for #327.
+- [x] Unit tests: `tests/test_rerun_contaminated_detect.py` (5 tests, all passing).
+
+---
+
+## #351 — gold_etfs / commodity_etfs / sector_etfs lifecycle cleanup
+
+**Status**: COMPLETED 2026-05-14 (Commit 2 / C2 batch).
+
+6 orphan LIVE entries retired. See `docs/lifecycle/retirement_2026-05-14.md` for full audit.
+
+- [x] connors_rsi2/commodity_etfs → RETIRED (passive universe, 0 open trades)
+- [x] mean_reversion/commodity_etfs → RETIRED (passive universe, 0 open trades)
+- [x] momentum_breakout/commodity_etfs → RETIRED (passive universe, 0 open trades)
+- [x] connors_rsi2/gold_etfs → RETIRED (no active config, 0 open trades)
+- [x] mean_reversion/sector_etfs → RETIRED (passive universe, 0 open trades)
+- [x] momentum_breakout/sector_etfs → RETIRED (passive universe, 0 open trades)
+- NOT retired: momentum_breakout/sp500 (open trade CAT id=187, universe live_enabled=True)
