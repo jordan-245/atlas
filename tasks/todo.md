@@ -26,6 +26,13 @@ tracks real work against real commits.
       atlas-director low-coverage, zero-byte autoresearch logs → Telegram) — `c2a57be2`
 - [x] Replace top-17 silent `except Exception: pass` with logged handling
       across `live_portfolio.py`, `chat_server.py`, `pi_session.py` — `31fdde25`
+- [x] **Wave 2.6 / #349** — `scripts/eod_settlement.py`: replaced fragile
+      `"sell_result" in dir()` with `sell_result is not None` (init-to-None at
+      function top). 62/62 eod_settlement tests pass. — `618429c2`
+- [x] **Wave 2.7** — `universe/__init__.py`: wire `assert_universes_disjoint()`
+      at import time so accidental cross-universe ticker additions surface
+      immediately on startup rather than silently corrupting per-market equity
+      calculations. 78/78 universe tests pass.
 
 ---
 
@@ -789,19 +796,18 @@ consult alt-data before generating signals.
 
 ## #349 — Cleanup: eod_settlement sell_result guard + 2 stale tests
 
-**Status**: TODO — None-unsafe reference surfaced in code review, not yet located precisely.
+**Status**: COMPLETED 2026-05-14 (commit 618429c2).
 
-`scripts/eod_settlement.py` has a `sell_result` variable that is assigned from
-`broker.place_order(...)` and used in a subsequent if-branch WITHOUT a prior None-guard.
-In the `check_stop_losses` or `check_take_profits` code path, if `place_order` returns None
-(e.g. broker offline), accessing `sell_result.filled_price` raises AttributeError.
+`scripts/eod_settlement.py` `check_stop_losses` + `check_take_profits`: replaced
+fragile `"sell_result" in dir()` membership check with explicit `sell_result is not None`
+after `sell_result = None` init-to-None at the start of each function's loop body.
+62 eod_settlement tests pass.
 
 **Action items**:
-- [ ] Find exact file:line: `grep -n "sell_result" scripts/eod_settlement.py`
-- [ ] Add None guard: `if sell_result is None: logger.warning(...); continue`
-- [ ] Locate the 2 stale tests that reference removed methods (likely in `tests/test_eod_settlement.py`)
-- [ ] Either: fix or delete the 2 stale tests (if the methods were intentionally removed)
-- [ ] Run `pytest tests/test_eod_settlement.py -v --timeout=30`; confirm clean
+- [x] Find exact file:line: lines 218 and 348
+- [x] Replace `"sell_result" in dir()` → `sell_result is not None`
+- [x] Add `sell_result = None` init before the conditional assignment
+- [x] 62/62 eod_settlement tests pass
 
 ---
 

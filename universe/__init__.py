@@ -21,3 +21,15 @@ __all__ = [
     "get_all_etf_tickers",
     "list_universes",
 ]
+
+# ── Fail-fast: validate universe disjointness at import time ──────────────────
+# If a developer accidentally adds a ticker to two universes, this raises
+# AssertionError immediately on import rather than silently corrupting
+# per-market equity calculations downstream. (Task 2.7, audit 2026-05-14)
+try:
+    from universe.builder import assert_universes_disjoint as _check_disjoint
+    _check_disjoint()
+    del _check_disjoint
+except ImportError:
+    # builder may not be importable in some early-bootstrap scenarios
+    pass
