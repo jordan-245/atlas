@@ -108,7 +108,7 @@ class CommodityETFsMarket(_BaseUSETFMarket):
         return "DBC"
 
     def get_universe_tickers(self) -> List[str]:
-        return ["GLD", "SLV", "USO", "XOP", "CORN", "DBA", "DBB", "UNG", "CCJ", "FCX"]
+        return ["GLD", "SLV", "USO", "XOP", "CORN", "DBA", "DBB", "UNG", "CCJ"]
 
 
 class TreasuryETFsMarket(_BaseUSETFMarket):

@@ -1122,8 +1122,11 @@ def sync_market(
         try:
             from monitor.health_writer import heartbeat as _hb
             _hb("sync_protective_orders", "skipped", {"market": market_id, "reason": "market_disabled"})
-        except Exception:
-            pass
+        except Exception as _hb_skip_exc:
+            logger.debug(
+                "sync_protective_orders: heartbeat write for skipped market %s failed (non-fatal): %s",
+                market_id, _hb_skip_exc,
+            )
         return result
 
     logger.info(

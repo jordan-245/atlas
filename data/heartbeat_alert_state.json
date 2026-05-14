@@ -16,11 +16,11 @@
     "prev_expected_utc": "2026-05-09T08:00:00+00:00"
   },
   "reconcile_ledger": {
-    "last_alert_utc": "2026-05-11T11:39:27.286307+00:00",
+    "last_alert_utc": "2026-05-11T19:42:35.851523+00:00",
     "prev_expected_utc": "2026-05-09T09:30:00+00:00"
   },
   "research.sweep": {
-    "last_alert_utc": "2026-05-11T00:22:35.099414+00:00",
-    "prev_expected_utc": "2026-05-11T00:22:35.099414+00:00"
+    "last_alert_utc": "2026-05-14T01:55:46.098764+00:00",
+    "prev_expected_utc": "2026-05-14T01:55:46.098764+00:00"
   }
 }

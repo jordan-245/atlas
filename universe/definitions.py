@@ -104,9 +104,11 @@ UNIVERSES: dict[str, UniverseDefinition] = {
             "DBB",   # Invesco DB Base Metals
             "UNG",   # United States Natural Gas
             "CCJ",   # Cameco (uranium, equity proxy)
-            "FCX",   # Freeport-McMoRan (copper, equity proxy)
+            # FCX (Freeport-McMoRan) removed 2026-05-14 — canonical classification:
+            # FCX is an S&P 500 equity (copper miner), not a commodity ETF.
+            # It belongs in sp500 only. (See also universe/builder.py assert_universes_disjoint)
         ],
-        "description": "Commodity ETFs and equity proxies for energy, metals, and agriculture.",
+        "description": "Commodity ETFs and commodity-focused equity proxies for energy, metals, and agriculture.",
     },
     # ── Gold / crisis hedge ───────────────────────────────────────────────────
     "gold_etfs": {

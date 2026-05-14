@@ -649,6 +649,82 @@ def ensure_universe_current(config: Dict[str, Any]) -> bool:
     build_universe(config, save=True, verbose=False)
     return True
 
+
+
+# ── Universe disjointness guard ────────────────────────────────────────────────
+
+#: Known intentional ticker overlaps across universes.
+#: Each entry is a tuple (ticker, universe_a, universe_b) — BOTH sorted alphabetically
+#: for consistent lookup. Add new entries here ONLY with a comment explaining why.
+_UNIVERSE_KNOWN_OVERLAPS: frozenset[tuple[str, str, str]] = frozenset(
+    {
+        # GLD is BOTH a commodity proxy (commodity_etfs) AND a gold hedge (gold_etfs)
+        ("GLD", "commodity_etfs", "gold_etfs"),
+        # XLP/XLU are SPDR sector ETFs (sector_etfs) AND defensive hedges (defensive_etfs)
+        ("XLP", "defensive_etfs", "sector_etfs"),
+        ("XLU", "defensive_etfs", "sector_etfs"),
+    }
+)
+
+
+def assert_universes_disjoint() -> None:
+    """Verify no ticker appears in more than one canonical market universe.
+
+    Permitted overlaps are listed in ``_UNIVERSE_KNOWN_OVERLAPS`` above.
+    Any NEW overlap that is NOT in the whitelist raises ``AssertionError``
+    immediately, so universe-contamination bugs are caught at startup rather
+    than silently corrupting per-market equity calculations.
+
+    Raises:
+        AssertionError: If an unexpected cross-universe ticker is found.
+
+    Example::
+
+        # Called once at module import to catch accidental duplicates:
+        assert_universes_disjoint()
+
+    Note on KNOWN_OVERLAPS format
+    ------------------------------
+    Each whitelist entry is a 3-tuple ``(ticker, universe_a, universe_b)`` where
+    the two universe names are sorted **alphabetically**.  This normalises lookup
+    so we don't need to check both orderings.
+    """
+    from universe.definitions import UNIVERSES
+
+    # Build ticker → [list of markets] from all static universes
+    ticker_to_markets: dict[str, list[str]] = {}
+    for market_id, udef in UNIVERSES.items():
+        if udef.get("method") != "static":
+            continue  # skip dynamic (sp500) — resolved separately by the builder
+        for t in udef.get("tickers", []):
+            ticker_to_markets.setdefault(t, []).append(market_id)
+
+    violations: list[str] = []
+    for ticker, markets in ticker_to_markets.items():
+        if len(markets) <= 1:
+            continue  # no overlap — fine
+
+        # Check every pair of markets against the whitelist
+        all_whitelisted = True
+        for i in range(len(markets)):
+            for j in range(i + 1, len(markets)):
+                a, b = sorted([markets[i], markets[j]])
+                if (ticker, a, b) not in _UNIVERSE_KNOWN_OVERLAPS:
+                    all_whitelisted = False
+                    violations.append(
+                        f"{ticker!r} in both {markets[i]!r} and {markets[j]!r}"
+                    )
+
+    if violations:
+        raise AssertionError(
+            "Universe disjointness violation (FAIL-FAST):\n  "
+            + "\n  ".join(violations)
+            + "\n\nFix by either:\n"
+            "  (a) removing the duplicate ticker from one universe, OR\n"
+            "  (b) adding it to _UNIVERSE_KNOWN_OVERLAPS in universe/builder.py "
+            "with a comment explaining the dual-role."
+        )
+
 if __name__ == "__main__":
     import sys
     from utils.logging_config import setup_logging

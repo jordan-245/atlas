@@ -223,6 +223,63 @@ def auto_promote(
         strategy, delta, market,
     )
 
+    # ── Staleness guard: reject if research_best row is too old ─────────────
+    # Stale rows reflect old market conditions or pre-bugfix data.
+    # A re-sweep should refresh the candidate before promotion is attempted.
+    STALENESS_THRESHOLD_DAYS = 30  # tunable: lower = more conservative
+    try:
+        from db.atlas_db import get_db as _get_db_for_staleness
+        with _get_db_for_staleness() as _db:
+            _row = _db.execute(
+                "SELECT updated_at FROM research_best WHERE strategy=? AND universe=?",
+                (strategy, market),
+            ).fetchone()
+        if _row and _row["updated_at"]:
+            try:
+                _updated_at = datetime.fromisoformat(
+                    str(_row["updated_at"]).replace("Z", "+00:00")
+                )
+                if _updated_at.tzinfo is None:
+                    _updated_at = _updated_at.replace(tzinfo=timezone.utc)
+                _age_days = (datetime.now(timezone.utc) - _updated_at).total_seconds() / 86400
+                if _age_days > STALENESS_THRESHOLD_DAYS:
+                    _stale_reason = (
+                        f"research_best row is {_age_days:.1f}d old "
+                        f"(>{STALENESS_THRESHOLD_DAYS}d threshold) — re-sweep required"
+                    )
+                    logger.warning(
+                        "auto_promote: %s/%s — blocking promotion: %s",
+                        strategy, market, _stale_reason,
+                    )
+                    _notify({
+                        "promoted": False,
+                        "reason": _stale_reason,
+                        "strategy": strategy,
+                        "market": market,
+                        "delta": delta,
+                    })
+                    return {
+                        "promoted": False,
+                        "status": "blocked_stale",
+                        "reason": _stale_reason,
+                        "strategy": strategy,
+                        "market": market,
+                        "version": None,
+                    }
+            except Exception as _parse_exc:
+                logger.warning(
+                    "auto_promote: could not parse research_best.updated_at for %s/%s: %s "
+                    "— permissive fallback (proceeding with promotion gates)",
+                    strategy, market, _parse_exc,
+                )
+                # Permissive on parse failure — don't block due to schema issues
+    except Exception as _db_exc:
+        logger.warning(
+            "auto_promote: staleness DB lookup failed for %s/%s: %s — proceeding",
+            strategy, market, _db_exc,
+        )
+    # ── End staleness guard ───────────────────────────────────────────────────
+
     # ── Gate 1: Cooldown ─────────────────────────────────────────────────────
     if not _check_cooldown(strategy):
         reason = f"24h cooldown active for {strategy}"

@@ -625,3 +625,18 @@ Re-enable criteria: sp500 green ≥30 days (after 2026-06-06), freed capital dep
 - [ ] Run `python3 scripts/audit_promotion_integrity.py` post-rerun; expect 0 contaminated.
 - [ ] Surface in dashboard — contamination badge should disappear for all 14.
 - [ ] Audit contaminated-at-promotion events: connors_rsi2/sp500, mean_reversion/commodity_etfs, momentum_breakout/commodity_etfs, short_term_mr/sp500 (PAPER) — consider re-evaluation after solo backtests complete.
+
+## Task C — Operational sediment cleanup + knowledge index refresh (2026-05-12) ✅
+
+- [x] `scripts/cleanup_sediment.py` — 6 pattern groups, top-3 + 14d retention; `--dry-run` / `--apply`
+- [x] Ran cleanup: deleted `brokers/state/live_sector_etfs.json.pre-xlk-recovery-20260424T004819` (326 bytes, Apr 24)
+- [x] Audit JSON committed: `data/audit/sediment_cleanup_2026-05-12T095609Z.json`
+- [x] `scripts/regen_knowledge_index.py` — builds `docs/KNOWLEDGE_INDEX.md` (dirs, key files, strategies, markets, commits, test inventory)
+- [x] `scripts/regen_brain_summary.py` — builds `research/brain/SUMMARY.md` (lifecycle, top-10 Sharpe, promotions, integrity check)
+- [x] `scripts/check_doc_staleness.py` — exits 1 if KNOWLEDGE_INDEX or SUMMARY > 30d old
+- [x] `docs/KNOWLEDGE_INDEX.md` and `research/brain/SUMMARY.md` regenerated (2026-05-12, both age 0d)
+- [x] Cron entries added to `scripts/atlas.crontab`:
+      - `0 14 * * *` (04:00 UTC) — cleanup_sediment.py --apply
+      - `0 18 * * *` (08:00 UTC) — check_doc_staleness.py
+- [x] 17 tests: 9 in test_cleanup_sediment.py + 8 in test_doc_staleness.py — all passing
+- [x] Commit: `043dfdc0`

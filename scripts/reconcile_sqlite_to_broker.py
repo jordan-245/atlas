@@ -210,6 +210,32 @@ def reconcile(*, dry_run: bool) -> int:
                 stop_order  = pos.get("stop_order_id", "")
                 tp_order    = pos.get("tp_order_id", "")
 
+                # ── Stop-price invariant guards ────────────────────────────────
+                # Never write a row with a None, zero, or inverted stop price —
+                # such rows corrupt downstream risk calculations and can trigger
+                # false-positive HALTs via check_daily_drawdown.
+                if stop_price is None:
+                    logger.warning(
+                        "reconcile_sqlite_to_broker: skip %s — stop_price is None",
+                        ticker,
+                    )
+                    continue
+                if float(stop_price) <= 0:
+                    logger.warning(
+                        "reconcile_sqlite_to_broker: skip %s — stop_price=%s <= 0 "
+                        "(no-zero-stop guard)",
+                        ticker, stop_price,
+                    )
+                    continue
+                if entry_price and float(stop_price) >= entry_price:
+                    logger.error(
+                        "reconcile_sqlite_to_broker: skip %s — INVERTED stop_price=%s "
+                        ">= entry_price=%s",
+                        ticker, stop_price, entry_price,
+                    )
+                    continue
+                # ── End stop-price guards ──────────────────────────────────────
+
                 print(
                     f"{mode_tag}INSERT   {ticker}/{strategy}/{universe}  "
                     f"entry={entry_date}@{entry_price:.4f}  shares={shares}  "

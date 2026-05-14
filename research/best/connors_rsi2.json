@@ -90,7 +90,7 @@
     "runtime_s": 342.1
   },
   "description": "max_hold_days: 10 \u2192 5",
-  "experiments_run": 224,
+  "experiments_run": 241,
   "experiments_kept": 19,
   "updated_at": "2026-05-05T13:56:22.073366+00:00",
   "is_solo": false,

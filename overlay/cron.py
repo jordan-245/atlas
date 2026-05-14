@@ -109,10 +109,24 @@ def _main() -> None:
     """Parse CLI arguments and dispatch to the appropriate function."""
     import argparse
 
+    # ── Header print (flush immediately) ───────────────────────────────────
+    # Written BEFORE setup_logging() so the cron log file always has at least
+    # a header line even if a later import or DB-init step fails.  flush=True
+    # prevents block-buffering from swallowing output when stdout is redirected
+    # to a file (as in the pi-cron.sh `>> overlay_eval_YYYYMMDD.log` case).
+    print(
+        f"\n=== overlay cron start {datetime.now().isoformat()} ===",
+        flush=True,
+    )
+
     from utils.logging_config import setup_logging  # type: ignore
     from db.atlas_db import init_db  # type: ignore
 
-    setup_logging()
+    # force_console=True: adds a stdout StreamHandler so log lines are captured
+    # by the cron `>> overlay_eval_YYYYMMDD.log` redirect (stdout-only redirect).
+    # Without this, only print() output goes to the cron log file; logging output
+    # would go only to stderr and atlas.log (not the overlay_eval log).
+    setup_logging(force_console=True)
     init_db()  # Ensure schema is current (idempotent)
 
     parser = argparse.ArgumentParser(
@@ -142,19 +156,19 @@ def _main() -> None:
         from overlay.evaluator import evaluate_and_report  # type: ignore
 
         stats = evaluate_and_report(days=args.days)
-        print("\n=== Overlay Evaluation Results ===")
+        print("\n=== Overlay Evaluation Results ===", flush=True)
         for key, value in stats.items():
-            print(f"  {key}: {value}")
-        print()
+            print(f"  {key}: {value}", flush=True)
+        print(flush=True)
     else:
         decision = run_daily_overlay(mode=args.mode)
         if decision:
-            print("\n=== Overlay Decision (active mode) ===")
+            print("\n=== Overlay Decision (active mode) ===", flush=True)
             import json
-            print(json.dumps(decision, indent=2, default=str))
-            print()
+            print(json.dumps(decision, indent=2, default=str), flush=True)
+            print(flush=True)
         else:
-            print("Overlay run complete (log_only or no decision returned).")
+            print("Overlay run complete (log_only or no decision returned).", flush=True)
 
 
 if __name__ == "__main__":

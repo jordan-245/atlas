@@ -246,12 +246,14 @@ class LivePortfolio:
                             self.daily_high_water_date,
                         ),
                     )
-                    # Append latest equity_history entry (INSERT OR IGNORE for idempotence)
+                    # Write latest equity_history entry with INSERT OR REPLACE so that
+                    # the most-recent intraday value always wins in SQLite, matching
+                    # the last-write-wins semantics used in the JSON dedup guard above.
                     if self.equity_history:
                         latest = self.equity_history[-1]
                         db.execute(
                             """
-                            INSERT OR IGNORE INTO equity_history
+                            INSERT OR REPLACE INTO equity_history
                                 (market_id, date, equity, pnl)
                             VALUES (?, ?, ?, ?)
                             """,
@@ -489,7 +491,11 @@ class LivePortfolio:
                 pos.take_profit = m["take_profit"]
             if pos.strategy in ("unknown", ""):
                 pos.strategy = m.get("strategy", pos.strategy)
-            if pos.entry_date in ("unknown", "") and m.get("entry_date"):
+            # SQLite entry_date is authoritative for the ORIGINAL entry date.
+            # The broker reports position dates as today (or empty) — always
+            # override with the SQLite value when available so the state file
+            # reflects the true trade-open date, not the refresh timestamp.
+            if m.get("entry_date"):
                 pos.entry_date = m["entry_date"]
             if pos.sector in ("Unknown", "") and m.get("sector", "Unknown") != "Unknown":
                 pos.sector = m["sector"]
@@ -609,7 +615,11 @@ class LivePortfolio:
                     # via _enrich_from_plans); only fall back to state file if
                     # still unknown after all enrichment sources.
                     "strategy": pos.strategy if pos.strategy not in ("unknown", "") else prev.get("strategy", pos.strategy),
-                    "entry_date": prev.get("entry_date") or pos.entry_date,
+                    # pos.entry_date has been normalised by _enrich_from_plans
+                    # (SQLite Source 0 overwrites any broker-defaulted today-date).
+                    # Prefer pos.entry_date over prev so the JSON stays in sync with SQLite.
+                    # Fall back to prev only if pos has no date (new position, no SQLite row yet).
+                    "entry_date": pos.entry_date or prev.get("entry_date"),
                     "entry_price": pos.entry_price,
                     "shares": pos.shares,
                     # Always use live broker stop (more current than state)
@@ -1342,7 +1352,7 @@ class LivePortfolio:
         # NOTE: use `(t.get("pnl") or 0)` because reconciled broker-fill stubs may carry pnl=None
         # (see same pattern at line ~785). dict.get("pnl", 0) does NOT default when key exists with None.
         total_realized = round(sum((t.get("pnl") or 0) for t in self.closed_trades), 2)
-        self.equity_history.append({
+        _new_eq_entry = {
             "date": trade_date,
             "equity": eq,
             "cash": self.cash,
@@ -1351,7 +1361,17 @@ class LivePortfolio:
             "total_realized_pnl": total_realized,
             "total_closed_trades": len(self.closed_trades),
             "positions": position_details,
-        })
+        }
+        # Dedup guard: if the last entry is already for today, overwrite it
+        # (last-write-wins) rather than appending a duplicate.  Duplicate dates
+        # arise when record_equity() is called more than once on the same calendar
+        # day (e.g. intraday snapshot + EOD snapshot).  A duplicate-date list
+        # causes verify_dual_write Check 5/7 count mismatches vs SQLite.
+        if self.equity_history and self.equity_history[-1].get("date") == trade_date:
+            self.equity_history[-1] = _new_eq_entry
+            logger.debug("record_equity: updated existing entry for %s", trade_date)
+        else:
+            self.equity_history.append(_new_eq_entry)
         self.save_state()
 
     def execute_exit(self, ticker: str, exit_price: float, trade_date: str, exit_type: str) -> dict | None:

@@ -13498,5 +13498,28 @@
     "promoted": false,
     "runtime_s": 8.1,
     "agent_id": "autoresearch"
+  },
+  {
+    "experiment_id": "ar-20260514_020041",
+    "timestamp": "2026-05-13T16:00:41.789255+00:00",
+    "market": "gold_etfs",
+    "category": "autoresearch",
+    "strategy": "connors_rsi2",
+    "hypothesis": "atr_stop_mult: 0.04 \u2192 0.06",
+    "verdict": "pass",
+    "key_metrics": {
+      "sharpe": 0.7588,
+      "cagr_pct": 22.3416,
+      "max_drawdown_pct": 28.9263,
+      "total_trades": 405,
+      "profit_factor": 1.3981
+    },
+    "delta_vs_baseline": {},
+    "learnings": [
+      "autoresearch: keep \u2014 atr_stop_mult: 0.04 \u2192 0.06"
+    ],
+    "promoted": false,
+    "runtime_s": 8.0,
+    "agent_id": "autoresearch"
   }
 ]

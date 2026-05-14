@@ -633,7 +633,23 @@ def main():
         if _ledger_result.get("closed_phantom"):
             log.info("Ledger phantoms closed: %s", _ledger_result["closed_phantom"])
     except Exception as _lr_err:  # noqa: BLE001 — reconciliation touches broker+DB+file ops
-        log.warning("Ledger reconciliation failed (non-fatal): %s", _lr_err)
+        log.error(
+            "eod_settlement: ledger_reconciliation failed (non-fatal, continuing): %s",
+            _lr_err, exc_info=True,
+        )
+        # Telegram alert for this operationally-critical path (rate-limited: 1/hr per market)
+        try:
+            from utils.telegram import send_message, tg_escape as _tge
+            from datetime import datetime as _dt
+            _ts = _dt.now().strftime("%Y-%m-%dT%H:%M")
+            send_message(
+                "🚨 <b>eod_settlement</b>: ledger_reconciliation failed\n"
+                "Market: " + _tge(market_id) + "  Time: " + _tge(_ts) + "\n"
+                "Error: <code>" + _tge(type(_lr_err).__name__) + ": " + _tge(str(_lr_err)[:200]) + "</code>\n"
+                "Settlement continued — check logs/eod_settlement.log"
+            )
+        except Exception as _lr_tg_exc:
+            log.debug("eod_settlement: ledger-reconciliation Telegram alert failed: %s", _lr_tg_exc)
 
     # Reconcile broker-side fills (trailing stops, etc.)
     log.info("Reconciling broker-side fills...")
@@ -1120,6 +1136,6 @@ if __name__ == "__main__":
         try:
             from db.atlas_db import record_heartbeat
             record_heartbeat("eod_settlement", "failed", {"error": str(exc)[:200]})
-        except Exception:
-            pass
+        except Exception as _hb_crash_exc:
+            log.debug("eod_settlement: heartbeat failure-record write failed (non-fatal): %s", _hb_crash_exc)
         raise

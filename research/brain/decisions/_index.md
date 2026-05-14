@@ -1,6 +1,6 @@
 # Decisions
 
-> 28 entries.
+> 34 entries.
 
 | Name | Summary |
 |------|---------|
@@ -21,6 +21,12 @@
 | [promotion_mean_reversion_20260506_141312](promotion_mean_reversion_20260506_141312.md) | mean_reversion promoted on commodity_etfs: pending → pending:7d47d5878e9d, Sharp |
 | [promotion_mean_reversion_20260506_142844](promotion_mean_reversion_20260506_142844.md) | mean_reversion promoted on commodity_etfs: pending → pending:0a60c82dc526, Sharp |
 | [promotion_mean_reversion_20260506_232134](promotion_mean_reversion_20260506_232134.md) | mean_reversion promoted on commodity_etfs: unknown → v1.0, Sharpe Δ +0.0668 (aut |
+| [promotion_mean_reversion_20260514_023602](promotion_mean_reversion_20260514_023602.md) | mean_reversion promoted on sp500: pending → pending:test-pending-id, Sharpe Δ +0 |
+| [promotion_mean_reversion_20260514_023623](promotion_mean_reversion_20260514_023623.md) | mean_reversion promoted on sp500: pending → pending:test-pending-id, Sharpe Δ +0 |
+| [promotion_mean_reversion_20260514_023650](promotion_mean_reversion_20260514_023650.md) | mean_reversion promoted on sp500: pending → pending:test-pending-id, Sharpe Δ +0 |
+| [promotion_mean_reversion_20260514_023743](promotion_mean_reversion_20260514_023743.md) | mean_reversion promoted on sp500: pending → pending:test-pending-id, Sharpe Δ +0 |
+| [promotion_mean_reversion_20260514_023744](promotion_mean_reversion_20260514_023744.md) | mean_reversion promoted on sp500: pending → pending:test-pending-id, Sharpe Δ +0 |
+| [promotion_mean_reversion_20260514_023816](promotion_mean_reversion_20260514_023816.md) | mean_reversion promoted on sp500: pending → pending:test-pending-id, Sharpe Δ +0 |
 | [promotion_momentum_breakout_20260422_115125](promotion_momentum_breakout_20260422_115125.md) | momentum_breakout promoted on commodity_etfs: pending → pending:024a7fef21ee, Sh |
 | [promotion_momentum_breakout_20260422_120731](promotion_momentum_breakout_20260422_120731.md) | momentum_breakout promoted on commodity_etfs: unknown → v1.1, Sharpe Δ +0.9060 ( |
 | [promotion_momentum_breakout_20260424_141505](promotion_momentum_breakout_20260424_141505.md) | momentum_breakout promoted on commodity_etfs: pending → pending:dde0751b0dd7, Sh |

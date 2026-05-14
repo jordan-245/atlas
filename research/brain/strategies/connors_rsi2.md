@@ -1,14 +1,14 @@
 # connors_rsi2
 
-> **Status:** active | **Best Sharpe:** 0.9865 | **Trades:** 405
-> **Updated:** 2026-05-10 16:01
+> **Status:** active | **Best Sharpe:** 0.7588 | **Trades:** 405
+> **Updated:** 2026-05-13 16:00
 
 ## Current Best Params
 
 | Parameter | Value |
 |-----------|-------|
 | atr_period | 32 |
-| atr_stop_mult | 0.04 |
+| atr_stop_mult | 0.06 |
 | exit_mode | sma |
 | ibs_filter_enabled | False |
 | ibs_max | 0.5 |
@@ -25,10 +25,10 @@
 
 | Metric | Value |
 |--------|-------|
-| Sharpe | 0.9865 |
-| CAGR | 29.1% |
-| Profit Factor | 1.56 |
-| Max Drawdown | 31.3% |
+| Sharpe | 0.7588 |
+| CAGR | 22.3% |
+| Profit Factor | 1.40 |
+| Max Drawdown | 28.9% |
 | Total Trades | 405 |
 | Win Rate | 46.2% |
 
@@ -36,8 +36,6 @@
 
 | Date | Sharpe | Trades | PF | CAGR | Change |
 |------|--------|--------|----|------|--------|
-| 2026-05-07 16:03 | 0.6442 | 688 | 1.39 | 13.2% | sma_exit_period: 5 → 2 |
-| 2026-05-07 16:03 | 0.6442 | 688 | 1.39 | 13.2% | autoresearch_runner keep: sma_exit_period=2 |
 | 2026-05-07 16:04 | 0.6697 | 690 | 1.41 | 13.6% | atr_period: 19 → 21 |
 | 2026-05-07 16:04 | 0.6697 | 690 | 1.41 | 13.6% | autoresearch_runner keep: atr_period=21 |
 | 2026-05-08 16:00 | 0.4489 | 672 | 1.27 | 11.5% | atr_stop_mult: 0.28 → 0.14 |
@@ -66,3 +64,5 @@
 | 2026-05-10 16:00 | 0.9758 | 376 | 1.60 | 28.3% | autoresearch_runner keep: atr_stop_mult=0.04 |
 | 2026-05-10 16:01 | 0.9865 | 405 | 1.56 | 29.1% | rsi_entry: 36 → 40 |
 | 2026-05-10 16:01 | 0.9865 | 405 | 1.56 | 29.1% | autoresearch_runner keep: rsi_entry=40 |
+| 2026-05-13 16:00 | 0.7588 | 405 | 1.40 | 22.3% | atr_stop_mult: 0.04 → 0.06 |
+| 2026-05-13 16:00 | 0.7588 | 405 | 1.40 | 22.3% | autoresearch_runner keep: atr_stop_mult=0.06 |

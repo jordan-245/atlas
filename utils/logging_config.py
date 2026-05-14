@@ -303,6 +303,7 @@ def setup_logging(
     extra_log_file: str = "",
     level: int = logging.INFO,
     telegram_errors: bool = True,
+    force_console: bool = False,
 ) -> logging.Logger:
     """Configure logging for an Atlas script/service.
 
@@ -312,6 +313,12 @@ def setup_logging(
         level: Minimum log level (default INFO).
         telegram_errors: If True, collect ERROR+ records and send to
             Telegram as a batch at process exit.
+        force_console: If True, add a StreamHandler to *stdout* in addition
+            to the standard stderr handler.  Use this for scripts whose
+            output is redirected to a log file via ``>> file`` (which only
+            captures stdout by default) rather than ``>> file 2>&1``.
+            overlay/cron.py uses this to ensure all log lines appear in
+            the weekly ``overlay_eval_YYYYMMDD.log`` file.
 
     Returns:
         Root logger (or named logger if script_name given).
@@ -337,6 +344,14 @@ def setup_logging(
     stderr_h = logging.StreamHandler(sys.stderr)
     stderr_h.setFormatter(fmt)
     root.addHandler(stderr_h)
+
+    # Optional stdout handler — used when the calling process redirects stdout
+    # to a log file via `>> file` without `2>&1`.  Adds a second stream so that
+    # log lines are captured regardless of which stream the redirect targets.
+    if force_console:
+        stdout_h = logging.StreamHandler(sys.stdout)
+        stdout_h.setFormatter(fmt)
+        root.addHandler(stdout_h)
 
     # Main atlas.log (append)
     main_h = logging.FileHandler(LOG_DIR / "atlas.log", mode="a")

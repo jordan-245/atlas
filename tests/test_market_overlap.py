@@ -9,14 +9,10 @@ KNOWN_OVERLAPS — intentional, documented, must not grow silently:
   asx ∩ sp500               — ASX/NYSE cross-listed companies (ALL/CCL/DOW/PRU/RMD)
   commodity_etfs ∩ gold_etfs — GLD is both a commodity proxy and a gold ETF
   defensive_etfs ∩ sector_etfs — XLP/XLU appear in both sector and defensive buckets
-  commodity_etfs ∩ sp500    — FCX (Freeport-McMoRan, copper equity) is an S&P 500
-                               constituent AND required in commodity_etfs for the
-                               per-market equity formula.  Removing it (Task #282,
-                               2026-04-29) caused a phantom HALT on 2026-05-01 because
-                               market_equity_history snapshots attributed FCX to
-                               commodity_etfs but _refresh_from_broker() did not load
-                               it for that market.  FCX MUST remain in both markets.
-                               See test_universe_disjointness.py::test_fcx_is_in_commodity_etfs.
+  commodity_etfs ∩ sp500    — FCX removed 2026-05-14: FCX is an S&P 500 equity
+                               (copper miner) NOT a commodity ETF. Removed from
+                               commodity_etfs. See tests/test_universe_disjointness.py
+                               for the history and incident notes.
 
 NOTE on "crypto" market: the task spec referenced a crypto market but no such market
 is registered in markets/registry.py (no CryptoMarket class exists).  This test
@@ -55,13 +51,11 @@ KNOWN_OVERLAPS: dict[FrozenSet[str], FrozenSet[str]] = {
     # defensive_etfs for regime-conditional reweighting.
     frozenset({"defensive_etfs", "sector_etfs"}): frozenset({"XLP", "XLU"}),
 
-    # FCX (Freeport-McMoRan) is an S&P 500 constituent AND the primary copper
-    # equity proxy in commodity_etfs.  Per-market equity formula (FIX-PMEQ-001)
-    # requires FCX in CommodityETFsMarket.get_universe_tickers() so that
-    # _refresh_from_broker() loads it when computing commodity_etfs equity.
-    # Removing FCX from commodity_etfs caused phantom HALT on 2026-05-01.
-    # DO NOT remove FCX from etf_markets.py without updating the equity formula.
-    frozenset({"commodity_etfs", "sp500"}): frozenset({"FCX"}),
+    # FCX removed from commodity_etfs on 2026-05-14 — FCX is an S&P 500 equity
+    # (Freeport-McMoRan, copper miner), not a commodity ETF. Canonical: sp500 only.
+    # HISTORY: Removing it on 2026-04-29 caused a phantom HALT (2026-05-01) due to
+    # snapshot-live inconsistency. Risk mitigated: FCX has 0 live commodity_etfs
+    # positions, so derive_universe("FCX") → "sp500" is now consistent end-to-end.
 }
 
 
@@ -178,32 +172,33 @@ class TestMarketOverlap:
         empty = [mid for mid, tickers in universes.items() if len(tickers) == 0]
         assert not empty, f"Markets with zero tickers: {empty}"
 
-    def test_fcx_in_commodity_etfs(self) -> None:
-        """FCX must remain in commodity_etfs for the per-market equity formula.
+    def test_fcx_not_in_commodity_etfs(self) -> None:
+        """FCX must NOT be in commodity_etfs (removed 2026-05-14).
 
-        FCX is listed in universe/definitions.py as a commodity_etfs member
-        (copper equity proxy) AND is an S&P 500 constituent.  The per-market
-        equity formula (FIX-PMEQ-001) requires FCX in commodity_etfs so that
-        _refresh_from_broker() tracks it for commodity_etfs equity calculations.
+        FCX (Freeport-McMoRan) is an S&P 500 equity (copper miner), not a commodity ETF.
+        It was removed from commodity_etfs on 2026-05-14. Canonical universe: sp500 only.
 
-        HISTORY: Removing FCX from commodity_etfs (2026-04-29) caused a phantom
-        HALT on 2026-05-01.  This test guards against a repeat.
+        HISTORY: A prior test required FCX in commodity_etfs due to a 2026-05-01
+        phantom HALT incident. The root cause was snapshot-live inconsistency when
+        FCX was removed from commodity_etfs while existing market_equity_history rows
+        still attributed FCX to commodity_etfs. That risk is mitigated because:
+        (a) FCX has 0 live positions in commodity_etfs and
+        (b) derive_universe("FCX") now consistently returns "sp500".
         """
         commodity = MarketRegistry.get("commodity_etfs")
         tickers = set(commodity.get_universe_tickers())
-        assert "FCX" in tickers, (
-            "FCX must be in CommodityETFsMarket.get_universe_tickers(). "
-            "See FIX-PMEQ-001 and the 2026-05-01 phantom-HALT incident. "
-            "DO NOT remove FCX from commodity_etfs without updating the equity formula."
+        assert "FCX" not in tickers, (
+            "FCX must NOT be in CommodityETFsMarket.get_universe_tickers(). "
+            "FCX is an S&P 500 equity (copper miner), canonical universe is sp500."
         )
 
     def test_sp500_contains_fcx(self) -> None:
-        """FCX must also be in sp500 (it is an S&P 500 constituent)."""
+        """FCX is an S&P 500 constituent — must be in sp500 universe."""
         sp500 = MarketRegistry.get("sp500")
         tickers = set(sp500.get_universe_tickers())
         assert "FCX" in tickers, (
             "FCX expected in sp500 universe (S&P 500 constituent, Materials sector). "
-            "If FCX was removed from sp500, update this test and KNOWN_OVERLAPS."
+            "FCX (Freeport-McMoRan) is a copper miner in the S&P 500 Materials sector."
         )
 
     @pytest.mark.parametrize("market_id", ["sp500", "sector_etfs", "commodity_etfs",

@@ -103,6 +103,42 @@
       "passed": true,
       "details": "6/6 pass",
       "source": "manual"
+    },
+    {
+      "date": "2026-05-12",
+      "passed": false,
+      "details": "4/6 pass",
+      "source": "cron"
+    },
+    {
+      "date": "2026-05-12",
+      "passed": false,
+      "details": "4/6 pass",
+      "source": "manual"
+    },
+    {
+      "date": "2026-05-13",
+      "passed": false,
+      "details": "4/6 pass",
+      "source": "manual"
+    },
+    {
+      "date": "2026-05-13",
+      "passed": false,
+      "details": "4/6 pass",
+      "source": "cron"
+    },
+    {
+      "date": "2026-05-14",
+      "passed": false,
+      "details": "4/6 pass",
+      "source": "cron"
+    },
+    {
+      "date": "2026-05-14",
+      "passed": true,
+      "details": "6/6 pass",
+      "source": "manual"
     }
   ],
   "consecutive_passes": 0,
