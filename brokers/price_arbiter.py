@@ -28,20 +28,6 @@ def _load_config() -> dict:
         return dict(_DEFAULT_CFG)
 
 
-# TODO(#PERF-TG-CONSOLIDATE): rewrite to use utils.telegram.notify() if formatting can move into caller
-def _send_telegram_bg(msg: str) -> None:
-    """Fire-and-forget Telegram alert in a daemon thread (never blocks arbitration)."""
-    def _send():
-        try:
-            from utils.telegram import send_message
-            send_message(f"\U0001f6a8 {msg}")
-        except Exception as e:
-            logger.warning("telegram alert failed: %s", e)
-
-    t = threading.Thread(target=_send, daemon=True, name="price_arbiter_alert")
-    t.start()
-
-
 def _should_send_alert(ticker: str) -> bool:
     """Return True if a Telegram alert should be sent for this ticker.
 
@@ -119,7 +105,15 @@ def arbitrate(ticker: str, tiingo_price: float, alpaca_price: float) -> float:
         if within_rth:
             logger.critical(msg)
             if _should_send_alert(ticker):
-                _send_telegram_bg(msg)
+                def _tg_alert_send():
+                    try:
+                        from utils.telegram import send_message
+                        send_message(f"\U0001f6a8 {msg}")
+                    except Exception as e:
+                        logger.warning("telegram alert failed: %s", e)
+                threading.Thread(
+                    target=_tg_alert_send, daemon=True, name="price_arbiter_alert"
+                ).start()
         else:
             logger.warning(
                 "price divergence outside RTH — ticker=%s tiingo=$%.2f alpaca=$%.2f spread=%.2f%% (not alerting)",

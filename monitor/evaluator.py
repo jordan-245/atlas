@@ -394,7 +394,30 @@ def evaluate_all(send_telegram: bool = True) -> Dict:
 
     # Send Telegram alerts
     if send_telegram and all_alerts:
-        _send_telegram_alerts(all_alerts)
+        try:
+            import sys
+            sys.path.insert(0, str(PROJECT))
+            from utils.telegram import send_message
+            _tg_lines = ["🔔 <b>Position Monitor Alerts</b>", ""]
+            for a in all_alerts[:10]:
+                ticker = a.get("ticker", "?")
+                if a.get("type") == "health_critical":
+                    _tg_lines.append(f"🔴 <b>{ticker}</b> — {a['message']}")
+                elif a.get("type") == "invalidation_breach":
+                    _tg_lines.append(f"⛔ <b>{ticker}</b> — {a['message']}")
+                else:
+                    label = a.get("condition_label", "")
+                    old_status = a.get("old_status", "?")
+                    new_status = a.get("new_status", "?")
+                    icon = {"failing": "🔴", "warning": "🟡", "passing": "🟢"}.get(new_status, "⚪")
+                    val = a.get("value")
+                    val_str = f" ({val})" if val is not None else ""
+                    _tg_lines.append(f"{icon} <b>{ticker}</b> {label}: {old_status} → {new_status}{val_str}")
+            if len(all_alerts) > 10:
+                _tg_lines.append(f"\n… +{len(all_alerts) - 10} more alerts")
+            send_message("\n".join(_tg_lines))
+        except Exception as e:
+            logger.error("Failed to send Telegram alerts: %s", e)
 
     summary = store.get_summary()
     logger.info("Evaluated %d positions, %d alerts fired", len(positions), len(all_alerts))
@@ -405,38 +428,6 @@ def evaluate_all(send_telegram: bool = True) -> Dict:
         "summary": summary,
     }
 
-
-# TODO(#PERF-TG-CONSOLIDATE): rewrite to use utils.telegram.notify() if formatting can move into caller
-def _send_telegram_alerts(alerts: List[Dict]):
-    """Send alert summary to Telegram."""
-    try:
-        import sys
-        sys.path.insert(0, str(PROJECT))
-        from utils.telegram import send_message
-
-        lines = ["🔔 <b>Position Monitor Alerts</b>", ""]
-
-        for a in alerts[:10]:
-            ticker = a.get("ticker", "?")
-            if a.get("type") == "health_critical":
-                lines.append(f"🔴 <b>{ticker}</b> — {a['message']}")
-            elif a.get("type") == "invalidation_breach":
-                lines.append(f"⛔ <b>{ticker}</b> — {a['message']}")
-            else:
-                label = a.get("condition_label", "")
-                old = a.get("old_status", "?")
-                new = a.get("new_status", "?")
-                icon = {"failing": "🔴", "warning": "🟡", "passing": "🟢"}.get(new, "⚪")
-                val = a.get("value")
-                val_str = f" ({val})" if val is not None else ""
-                lines.append(f"{icon} <b>{ticker}</b> {label}: {old} → {new}{val_str}")
-
-        if len(alerts) > 10:
-            lines.append(f"\n… +{len(alerts) - 10} more alerts")
-
-        send_message("\n".join(lines))
-    except Exception as e:
-        logger.error("Failed to send Telegram alerts: %s", e)
 
 
 if __name__ == "__main__":

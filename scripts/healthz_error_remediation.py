@@ -131,31 +131,6 @@ def check_phase_state(conn) -> tuple[bool, dict]:
     }
 
 
-# ── Telegram alert ────────────────────────────────────────────────────────────
-
-
-# TODO(#PERF-TG-CONSOLIDATE): rewrite to use utils.telegram.notify() if formatting can move into caller
-def send_telegram_alert(failures: list[dict], summary: dict) -> None:
-    """Send a structured HTML Telegram alert listing each failing check."""
-    try:
-        from utils.telegram import send_message, _esc
-    except Exception as exc:
-        logger.warning("Cannot import utils.telegram — alert skipped: %s", exc)
-        return
-
-    lines = ["\U0001f6a8 <b>Atlas Auto-Remediation Health Check FAILED</b>", ""]
-    for f in failures:
-        check_name = _esc(str(f["check"]))
-        detail_str = _esc(json.dumps(f["detail"]))
-        lines.append(f"\u274c <b>{check_name}</b>: {detail_str}")
-    lines.append("")
-    lines.append("<i>Full summary:</i>")
-    lines.append(
-        "<code>" + _esc(json.dumps(summary, indent=2)[:1500]) + "</code>"
-    )
-    send_message("\n".join(lines))
-
-
 # ── Runner ────────────────────────────────────────────────────────────────────
 
 
@@ -200,7 +175,18 @@ def run_health(*, db_path: str | None = None, json_output: bool = False) -> int:
     # Send Telegram on failure; never on success (telegram.on_success=never).
     if rc != 0:
         try:
-            send_telegram_alert(failures, summary)
+            from utils.telegram import send_message, _esc
+            _tg_lines = ["\U0001f6a8 <b>Atlas Auto-Remediation Health Check FAILED</b>", ""]
+            for _f in failures:
+                _check_name = _esc(str(_f["check"]))
+                _detail_str = _esc(json.dumps(_f["detail"]))
+                _tg_lines.append(f"\u274c <b>{_check_name}</b>: {_detail_str}")
+            _tg_lines.append("")
+            _tg_lines.append("<i>Full summary:</i>")
+            _tg_lines.append(
+                "<code>" + _esc(json.dumps(summary, indent=2)[:1500]) + "</code>"
+            )
+            send_message("\n".join(_tg_lines))
         except Exception as exc:
             logger.warning("Telegram alert send failed: %s", exc)
 

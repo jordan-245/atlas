@@ -293,30 +293,31 @@ def test_check_phase_state_fails_when_config_missing(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_run_health_exits_zero_when_all_pass(monkeypatch):
+def test_run_health_exits_zero_when_all_pass():
     """run_health returns 0 when all checks pass (empty DB = valid phase 1 state)."""
-    # Mock send_telegram_alert so no actual Telegram calls
-    monkeypatch.setattr(healthz, "send_telegram_alert", MagicMock())
-    rc = healthz.run_health()
+    # Telegram path is never reached when rc==0 (guarded by "if rc != 0")
+    with patch("utils.telegram.send_message") as mock_send:
+        rc = healthz.run_health()
     assert rc == 0
+    mock_send.assert_not_called()
 
 
-def test_run_health_exits_one_when_check_fails(monkeypatch):
+def test_run_health_exits_one_when_check_fails():
     """run_health returns 1 when backlog exceeds threshold."""
     import db.atlas_db as adb
     # Insert 200 UNCLASSIFIED rows to breach the 100-row default threshold
     for i in range(105):
         _insert_error("UNCLASSIFIED", "NEW")
 
-    monkeypatch.setattr(healthz, "send_telegram_alert", MagicMock())
-    rc = healthz.run_health()
+    with patch("utils.telegram.send_message"):
+        rc = healthz.run_health()
     assert rc == 1
 
 
-def test_run_health_json_output(monkeypatch, capsys):
+def test_run_health_json_output(capsys):
     """--json flag produces valid JSON with ok/failures/summary keys."""
-    monkeypatch.setattr(healthz, "send_telegram_alert", MagicMock())
-    rc = healthz.run_health(json_output=True)
+    with patch("utils.telegram.send_message"):
+        rc = healthz.run_health(json_output=True)
     captured = capsys.readouterr()
     data = json.loads(captured.out)
     assert "ok" in data
@@ -324,43 +325,33 @@ def test_run_health_json_output(monkeypatch, capsys):
     assert "summary" in data
 
 
-def test_telegram_not_called_on_success(monkeypatch):
-    """send_telegram_alert is NEVER called when all checks pass (on_success=never)."""
-    mock_tg = MagicMock()
-    monkeypatch.setattr(healthz, "send_telegram_alert", mock_tg)
-    rc = healthz.run_health()
+def test_telegram_not_called_on_success():
+    """utils.telegram.send_message is NEVER called when all checks pass (on_success=never)."""
+    with patch("utils.telegram.send_message") as mock_send:
+        rc = healthz.run_health()
     assert rc == 0
-    mock_tg.assert_not_called()
+    mock_send.assert_not_called()
 
 
-def test_telegram_called_once_on_failure(monkeypatch):
-    """send_telegram_alert is called exactly once when any check fails."""
+def test_telegram_called_once_on_failure():
+    """utils.telegram.send_message is called exactly once when any check fails."""
     import db.atlas_db as adb
     # Cause backlog failure
     for _ in range(105):
         _insert_error("UNCLASSIFIED", "NEW")
 
-    mock_tg = MagicMock()
-    monkeypatch.setattr(healthz, "send_telegram_alert", mock_tg)
-    rc = healthz.run_health()
+    with patch("utils.telegram.send_message") as mock_send:
+        rc = healthz.run_health()
     assert rc == 1
-    mock_tg.assert_called_once()
+    mock_send.assert_called_once()
 
 
-def test_property_100_successful_runs_zero_telegram_calls(monkeypatch):
+def test_property_100_successful_runs_zero_telegram_calls():
     """Property test: 100 successful run_health calls → 0 Telegram calls."""
-    call_count = 0
-
-    def _mock_alert(failures, summary):
-        nonlocal call_count
-        call_count += 1
-
-    monkeypatch.setattr(healthz, "send_telegram_alert", _mock_alert)
-
-    for _ in range(100):
-        healthz.run_health()
-
-    assert call_count == 0
+    with patch("utils.telegram.send_message") as mock_send:
+        for _ in range(100):
+            healthz.run_health()
+    assert mock_send.call_count == 0
 
 
 # ---------------------------------------------------------------------------
@@ -368,22 +359,18 @@ def test_property_100_successful_runs_zero_telegram_calls(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_send_telegram_alert_escapes_content(monkeypatch):
-    """send_telegram_alert calls utils.telegram.send_message exactly once."""
+def test_inline_telegram_escapes_content():
+    """Inline Telegram block calls utils.telegram.send_message with escaped check name."""
+    import db.atlas_db as adb
+    # Cause backlog failure so the Telegram block fires
+    for _ in range(105):
+        _insert_error("UNCLASSIFIED", "NEW")
+
     sent = []
+    with patch("utils.telegram.send_message", side_effect=lambda text, **kw: sent.append(text)):
+        with patch("utils.telegram._esc", side_effect=lambda s: str(s).replace("&", "&amp;").replace("<", "&lt;")):
+            rc = healthz.run_health()
 
-    fake_tg = types.ModuleType("utils.telegram")
-    fake_tg.send_message = lambda text, **kwargs: sent.append(text)
-    fake_tg._esc = lambda s: str(s).replace("&", "&amp;").replace("<", "&lt;")
-    monkeypatch.setitem(sys.modules, "utils.telegram", fake_tg)
-
-    # Reload to use the mock
-    import importlib
-    import scripts.healthz_error_remediation as h
-    importlib.reload(h)
-
-    failures = [{"check": "classifier_backlog", "detail": {"unclassified_backlog": 200}}]
-    h.send_telegram_alert(failures, {"classifier_backlog": {"unclassified_backlog": 200}})
-
+    assert rc == 1
     assert len(sent) == 1
     assert "classifier_backlog" in sent[0]

@@ -586,6 +586,8 @@ def _log_daily_run(report: DailyReport) -> None:
 
 # ─── Telegram digest ─────────────────────────────────────────────────────────
 
+# PERF-TG-CONSOLIDATE: KEPT — ~40 LOC body (>30 LOC threshold). Inlining would produce
+# a 40-line block at the call site inside discover_daily(); abstraction value retained.
 def _send_telegram_digest(report: DailyReport) -> None:
     """Send a formatted Telegram message with the daily discovery summary."""
     passed_emoji = "✅" if report.strategies_passed_quickcheck else "⚪"

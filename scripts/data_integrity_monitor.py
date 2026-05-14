@@ -109,42 +109,6 @@ def _format_report(hits: list[dict], window_hours: int, now: datetime) -> str:
     return "\n".join(lines)
 
 
-# ─── Telegram ─────────────────────────────────────────────────────────────────
-
-# TODO(#PERF-TG-CONSOLIDATE): rewrite to use utils.telegram.notify() if formatting can move into caller
-def _send_telegram_alert(hits: list[dict], window_hours: int) -> bool:
-    """Send Telegram alert for integrity violations."""
-    if not hits:
-        return True
-
-    lines: list[str] = [
-        "🚨 <b>Atlas — Data Integrity Alert</b>",
-        "",
-        f"{len(hits)} suspicious patterns: identical metrics across ≥3 ETF universes",
-        "<i>(P1.1 bug canary: likely config/universe leak in research loop)</i>",
-        "",
-    ]
-    for h in hits[:5]:
-        lines.append(
-            f"• {h['strategy']}: Sharpe={h['s4']}, trades={h['trades']}"
-        )
-    if len(hits) > 5:
-        lines.append(f"  ... and {len(hits) - 5} more")
-
-    lines.extend([
-        "",
-        "Run: python3 scripts/data_integrity_monitor.py",
-    ])
-
-    message = "\n".join(lines)
-    try:
-        from utils.telegram import send_message  # noqa: PLC0415
-        return send_message(message)
-    except Exception as exc:
-        logger.error("Telegram send failed: %s", exc)
-        return False
-
-
 # ─── CLI ─────────────────────────────────────────────────────────────────────
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -201,9 +165,29 @@ def main(argv: list[str] | None = None) -> int:
         print(_format_report(hits, args.window_hours, now))
 
     if args.notify and hits:
-        sent = _send_telegram_alert(hits, args.window_hours)
-        if not sent:
-            logger.warning("Telegram alert failed")
+        _tg_lines: list[str] = [
+            "🚨 <b>Atlas — Data Integrity Alert</b>",
+            "",
+            f"{len(hits)} suspicious patterns: identical metrics across ≥3 ETF universes",
+            "<i>(P1.1 bug canary: likely config/universe leak in research loop)</i>",
+            "",
+        ]
+        for h in hits[:5]:
+            _tg_lines.append(
+                f"• {h['strategy']}: Sharpe={h['s4']}, trades={h['trades']}"
+            )
+        if len(hits) > 5:
+            _tg_lines.append(f"  ... and {len(hits) - 5} more")
+        _tg_lines.extend([
+            "",
+            "Run: python3 scripts/data_integrity_monitor.py",
+        ])
+        try:
+            from utils.telegram import send_message  # noqa: PLC0415
+            if not send_message("\n".join(_tg_lines)):
+                logger.warning("Telegram alert failed")
+        except Exception as exc:
+            logger.warning("Telegram alert failed: %s", exc)
 
     # Exit 1 if any suspicious patterns detected
     return 1 if hits else 0

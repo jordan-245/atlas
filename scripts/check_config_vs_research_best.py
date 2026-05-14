@@ -278,56 +278,6 @@ def _format_json(analysis: dict, now: datetime) -> str:
     return json.dumps(output, indent=2)
 
 
-# ─── Telegram ─────────────────────────────────────────────────────────────────
-
-# TODO(#PERF-TG-CONSOLIDATE): rewrite to use utils.telegram.notify() if formatting can move into caller
-def _send_telegram_alert(analysis: dict) -> bool:
-    """Send Telegram alert if any overdue or aging entries exist."""
-    overdue = analysis["overdue"]
-    aging = analysis["aging"]
-
-    if not overdue and not aging:
-        return True  # nothing to send
-
-    lines: list[str] = ["⚠️ <b>Atlas — Config Drift Monitor</b>", ""]
-
-    if overdue:
-        lines.append(
-            f"{len(overdue)} strategies have promotion-candidate improvements waiting:"
-        )
-        for item in overdue:
-            lines.append(
-                f"- {item['strategy']}/{item['universe']}: "
-                f"+{item['sharpe_delta']:.4f} Sharpe ({item['days_stable']:.0f}d stable)"
-            )
-        lines.append("")
-
-    if aging:
-        lines.append(
-            f"{len(aging)} strategies have aging best-params (≥{DAYS_AGING_ALERT}d):"
-        )
-        for item in aging[:10]:  # cap to avoid Telegram message overflow
-            lines.append(
-                f"- {item['strategy']}/{item['universe']}: "
-                f"{item['days_stable']:.0f}d stable"
-            )
-        if len(aging) > 10:
-            lines.append(f"  ... and {len(aging) - 10} more")
-
-    lines.extend([
-        "",
-        "Review: run python3 scripts/check_config_vs_research_best.py for full report",
-    ])
-
-    message = "\n".join(lines)
-    try:
-        from utils.telegram import send_message  # noqa: PLC0415
-        return send_message(message)
-    except Exception as exc:
-        logger.error("Telegram send failed: %s", exc)
-        return False
-
-
 # ─── CLI ─────────────────────────────────────────────────────────────────────
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -383,9 +333,41 @@ def main(argv: list[str] | None = None) -> int:
         print(_format_plain(analysis, now))
 
     if args.notify:
-        sent = _send_telegram_alert(analysis)
-        if not sent:
-            logger.warning("Telegram alert failed")
+        overdue = analysis["overdue"]
+        aging = analysis["aging"]
+        if overdue or aging:
+            _tg_lines: list[str] = ["⚠️ <b>Atlas — Config Drift Monitor</b>", ""]
+            if overdue:
+                _tg_lines.append(
+                    f"{len(overdue)} strategies have promotion-candidate improvements waiting:"
+                )
+                for item in overdue:
+                    _tg_lines.append(
+                        f"- {item['strategy']}/{item['universe']}: "
+                        f"+{item['sharpe_delta']:.4f} Sharpe ({item['days_stable']:.0f}d stable)"
+                    )
+                _tg_lines.append("")
+            if aging:
+                _tg_lines.append(
+                    f"{len(aging)} strategies have aging best-params (≥{DAYS_AGING_ALERT}d):"
+                )
+                for item in aging[:10]:  # cap to avoid Telegram message overflow
+                    _tg_lines.append(
+                        f"- {item['strategy']}/{item['universe']}: "
+                        f"{item['days_stable']:.0f}d stable"
+                    )
+                if len(aging) > 10:
+                    _tg_lines.append(f"  ... and {len(aging) - 10} more")
+            _tg_lines.extend([
+                "",
+                "Review: run python3 scripts/check_config_vs_research_best.py for full report",
+            ])
+            try:
+                from utils.telegram import send_message  # noqa: PLC0415
+                if not send_message("\n".join(_tg_lines)):
+                    logger.warning("Telegram alert failed")
+            except Exception as exc:
+                logger.warning("Telegram alert failed: %s", exc)
 
     # Exit 1 when there are actionable overdue promotions
     return 1 if analysis["overdue"] else 0

@@ -1627,6 +1627,9 @@ def sync_market(
 # Telegram summary
 # ═══════════════════════════════════════════════════════════════
 
+# PERF-TG-CONSOLIDATE: KEPT — format_telegram_message is ~75 LOC. Inlining would exceed
+# the 30 LOC threshold; the function has genuine abstraction value as a complex HTML formatter.
+# send_telegram_summary wraps format_telegram_message and is also kept as its thin caller.
 def format_telegram_message(
     market_results: list[dict],
     trade_date: str,
@@ -1701,7 +1704,6 @@ def format_telegram_message(
     return "\n".join(lines)
 
 
-# TODO(#PERF-TG-CONSOLIDATE): rewrite to use utils.telegram.notify() if formatting can move into caller
 def send_telegram_summary(
     market_results: list[dict],
     trade_date: str,

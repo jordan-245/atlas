@@ -645,6 +645,9 @@ def reconcile_positions(
 # Telegram Notification
 # ═══════════════════════════════════════════════════════════════
 
+# PERF-TG-CONSOLIDATE: KEPT — format_telegram_message is ~65 LOC. Inlining would exceed
+# the 30 LOC threshold; the function has genuine abstraction value as a complex HTML formatter.
+# send_telegram_summary wraps format_telegram_message and is also kept as its thin caller.
 def format_telegram_message(result: dict, fixed: bool) -> str:
     """Format Telegram HTML message for reconciliation results."""
     market = result["market_id"].upper()
@@ -709,7 +712,6 @@ def format_telegram_message(result: dict, fixed: bool) -> str:
     return "\n".join(lines)
 
 
-# TODO(#PERF-TG-CONSOLIDATE): rewrite to use utils.telegram.notify() if formatting can move into caller
 def send_telegram_summary(result: dict, fixed: bool) -> bool:
     """Send Telegram notification. Returns True on success."""
     try:
