@@ -830,3 +830,38 @@ In the `check_stop_losses` or `check_take_profits` code path, if `place_order` r
 - [x] mean_reversion/sector_etfs → RETIRED (passive universe, 0 open trades)
 - [x] momentum_breakout/sector_etfs → RETIRED (passive universe, 0 open trades)
 - NOT retired: momentum_breakout/sp500 (open trade CAT id=187, universe live_enabled=True)
+
+---
+
+## #352 — L4 kill-switch ATTRIBUTION_CUTOVER_DATE audit (2026-05-14)
+
+**Status**: VERIFIED
+
+- **Primary check_l4_drawdown**: VERIFIED clean
+  - `ATTRIBUTION_CUTOVER_DATE = "2026-04-29"` constant present in `core/remediation_kill_switch.py:47`
+  - SQL applies dual floor: `AND date >= ? AND date >= ?` bound to `(cutoff_date, ATTRIBUTION_CUTOVER_DATE)` — lines 127–137
+  - 4/4 existing tests pass (`tests/test_l4_drawdown_attribution_window.py`)
+  - Manual injection test (run then deleted): inserted pre-cutover row (2026-04-25 / $5400 global) + post-cutover row (2026-05-13 / $1300 per-market) → `check_l4_drawdown()` returned `None` ✅
+
+- **Other equity_history readers audited**:
+  - `scripts/intraday_monitor.py:284` `check_portfolio_drawdown()` — reads `portfolio.equity_history` (in-memory JSON); PROTECTED by `_ATTRIBUTION_RESET_DATE = "2026-04-29"` explicit date skip (`if snap_date < _ATTRIBUTION_RESET_DATE: continue`). Telegram alert only, not a kill switch. **CLEAN**
+  - `scripts/research_promote.py:418` `watchdog_check()` — reads `equity_history[-days:]` (last 5 entries) from live state JSON; NO explicit date filter. However: (a) it is Telegram/monitoring only, not a halt; (b) as of 2026-05-14 there are 15+ post-cutover entries so last-5 are all post-cutover. **RESIDUAL RISK: minor — see below**
+  - `scripts/eod_settlement.py:379,725` — reads `portfolio.equity_history[-1]` / `[-2]` for daily P&L delta only (prev day equity), not a drawdown calculation. **NOT AFFECTED**
+  - `scripts/verify_dual_write.py:905`, `scripts/audit_equity_history_dual_write.py:115` — audit/reporting tools, no trading decisions. **NOT AFFECTED**
+  - `brokers/live_portfolio.py:check_daily_drawdown()` — uses `market_equity_history` (different table) and session HWM, NOT `equity_history` table. **NOT AFFECTED**
+  - `risk/`, `portfolio/` — no equity_history reads at all. **CLEAN**
+
+- **Per-market drawdown calc (architectural improvement)**: NOT_NEEDED — existing ATTRIBUTION_CUTOVER_DATE filter is sufficient. The only real-risk path (`check_l4_drawdown`) is fully protected.
+
+- **Residual risk**: `scripts/research_promote.py::watchdog_check()` at line 418 uses `max(equity_history[-5:])` without an explicit date floor. If the live state file were reset to fewer than 5 entries with old pre-cutover global equity values included, this function could fire a false-positive "needs_review=True" Telegram alert. This is non-blocking (no trading halt), extremely unlikely in current state (15+ post-cutover entries exist), and lower priority. Filed as future cleanup: add `_ATTRIBUTION_RESET_DATE` filter to `watchdog_check()` when that function is next touched.
+
+- **Injection test output** (script deleted post-run):
+  ```
+  ATTRIBUTION_CUTOVER_DATE = '2026-04-29'
+  check_l4_drawdown() returned: None
+  L4 FALSE-POSITIVE PROTECTION: VERIFIED
+    Pre-cutover $5400 global-equity row correctly excluded.
+    Phantom 75% drawdown class is protected.
+  ```
+
+Resolved by commit: <see git log>
