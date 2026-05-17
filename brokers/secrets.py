@@ -32,9 +32,6 @@ REQUIRED_MODE = 0o600
 
 # Known secret keys and their descriptions
 SECRET_KEYS = {
-    # Interactive Brokers
-    "IBKR_ACCOUNT_ID": "IBKR account ID (e.g. U1234567 or DU1234567 for paper)",
-
     # Alpaca — live real-money trading
     "ALPACA_API_KEY": "Alpaca live API key (from Alpaca dashboard → Live Trading)",
     "ALPACA_SECRET_KEY": "Alpaca live secret key (from Alpaca dashboard → Live Trading)",
@@ -111,7 +108,7 @@ def get_secret(key: str, prompt: bool = False) -> Optional[str]:
         3. Interactive prompt (if prompt=True)
 
     Args:
-        key: Secret key name (e.g. "IBKR_ACCOUNT_ID")
+        key: Secret key name (e.g. "ALPACA_API_KEY")
         prompt: If True and secret not found, prompt interactively.
 
     Returns:

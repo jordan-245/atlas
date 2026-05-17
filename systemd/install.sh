@@ -41,13 +41,6 @@ fi
 # It cannot be `systemctl enable`d directly — it is triggered by
 # atlas-discovery.timer, which IS enabled below. Same pattern for
 # atlas-silent-failure-watchdog.service.
-#
-# NOTE: ib-gateway-watchdog.timer is intentionally NOT enabled here —
-# it is currently disabled on the host (the watchdog requires IB Gateway
-# containers to be present; enabling it on a host without them would produce
-# spurious restart attempts). Enable manually with
-# `systemctl enable --now ib-gateway-watchdog.timer` when IB containers are
-# provisioned. The unit file is mirrored for version-control completeness.
 TIMERS_TO_ENABLE=(
     atlas-heartbeat-watchdog.timer
     atlas-silent-failure-watchdog.timer

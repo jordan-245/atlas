@@ -89,7 +89,7 @@ def check_infra(project: Path) -> list:
     if broker_name == "alpaca":
         results.append({"check": "alpaca_api", "verdict": "ok", "message": "Broker is Alpaca (REST API, no gateway needed)"})
 
-    # (IBKR broker removed — no gateway check needed)
+    # No broker gateway check needed (Alpaca uses REST API directly)
 
     # Telegram bot service
     try:

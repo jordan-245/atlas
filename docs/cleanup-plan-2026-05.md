@@ -250,16 +250,22 @@ sudo systemctl daemon-reload
 
 ### SUB-TASK 2b — Remove IBKR + Moomoo dead deps (#329)
 
-**Commit:** `88c2b0e2`
+**Status:** ✅ DONE (2026-05-18 — IBKR removal; Moomoo package already removed 2026-05-14)
+
+**Phase 1 — Package deps (commit `88c2b0e2`):**
 **Files changed:** `requirements.txt` (2 lines deleted: `moomoo-api==9.6.5608`, `ib-insync==0.9.86`)
 
 **Audit:**
 - `grep -rE "^import ib_insync|^from ib_insync|^import moomoo|^from moomoo"` → 0 results
 - Both packages confirmed dead (Atlas uses Alpaca; ASX→IBKR never shipped)
 
-**Verification:** `python3 -c "import brokers.alpaca.broker; import strategies.momentum_breakout; print('imports ok')"` → `imports ok`
+**Phase 2 — Active code references (2026-05-18):**
+**Files deleted (4):** `systemd/ib-gateway-watchdog.{service,timer}`, `ops/ib-gateway-watchdog.sh`, `ops/README-ib-gateway-watchdog.md`
+**Files modified (8):** `systemd/install.sh` (removed IB comment block), `ops/unified-healthcheck.sh` (removed `check_ib_gateway` fn + call + display), `brokers/secrets.py` (removed `IBKR_ACCOUNT_ID` entry + docstring), `tests/test_config_schema.py` (replaced `interactive_brokers` with `fidelity`), `scripts/eod_settlement.py` (rewrote comment), `scripts/intraday_monitor.py` (rewrote comment), `pi-package/atlas-ops/skills/atlas-healthz/scripts/healthz.py` (simplified comment), `docs/cleanup-plan-2026-05.md` (this update)
 
-**Held:** Nothing. Clean execution.
+**Held — Moomoo:** `config/schema.py` broker enum still contains `"moomoo"` — left for separate Moomoo cleanup task.
+
+**Verification:** `grep -rnE 'ib_insync|IBKR|ib.gateway|ibgateway' --include='*.py' --include='*.sh' /root/atlas/` → 0 active results
 
 ---
 

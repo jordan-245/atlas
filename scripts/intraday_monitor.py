@@ -396,7 +396,7 @@ def main():
             return
 
     # ── Enrich positions with stop prices from plan/state ──────
-    # IBKR doesn't return stop_price — read from today's plan file
+    # stop_price is not always returned by the broker — read from today's plan file
     # or the live state file as fallback.
     _plan_stops = {}
     _state_stops = {}

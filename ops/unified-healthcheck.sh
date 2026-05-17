@@ -38,19 +38,6 @@ count_active_timers() {
     systemctl list-timers --no-pager --no-legend | grep -c "$pattern" || echo "0"
 }
 
-check_ib_gateway() {
-    # Check if IB Gateway process is running
-    if pgrep -u ubuntu -f 'run.sh' > /dev/null 2>&1; then
-        # Check if port 4002 is listening
-        if ss -tlnp | grep -q ':4002'; then
-            echo "✅"
-        else
-            echo "⚠️ running, no port"
-        fi
-    else
-        echo "❌"
-    fi
-}
 
 check_data_freshness() {
     local snapshots_dir="/root/atlas/data/snapshots"
@@ -190,7 +177,6 @@ CRONUS_RISK=$(check_service "cronus-risk-guardian")
 CRONUS_ALERT=$(check_service "cronus-alert-sender")
 CRONUS_TIMERS=$(count_active_timers "cronus")
 
-IB_GATEWAY=$(check_ib_gateway)
 DATA_FRESH=$(check_data_freshness)
 DISK=$(check_disk_usage)
 BACKUP=$(check_backup)
@@ -222,7 +208,7 @@ ${CRONUS_TRADER} trader | ${CRONUS_RISK} risk-guardian | ${CRONUS_ALERT} alert-s
 ${SUPERCOACH_API} API
 
 <b>Infrastructure</b>
-${IB_GATEWAY} IB Gateway | ${DISK} Disk | ${BACKUP} Backup
+${DISK} Disk | ${BACKUP} Backup
 ${DATA_FRESH} Data fresh | ${LARGE_LOGS} Log sizes
 
 <b>NRL-Predict</b>

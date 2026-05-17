@@ -641,7 +641,7 @@ def main():
     log.info("Updating position excursions (MAE/MFE)...")
     portfolio.update_positions(prices)
 
-    # Protective order sync removed: IBKR removed — per-broker sync handled by sync_protective_orders.py cron
+    # Protective order sync is handled by the sync_protective_orders.py cron job
 
     # ── Ledger-broker reconciliation ─────────────────────────
     # Catches LIMIT fills that happened after order submission but before

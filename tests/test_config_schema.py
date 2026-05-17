@@ -425,7 +425,7 @@ class TestInvalidEnum:
         assert any("trading.mode" in e and "[ENUM]" in e for e in errs)
 
     def test_invalid_broker(self):
-        cfg = _cfg(**{"trading.broker": "interactive_brokers"})
+        cfg = _cfg(**{"trading.broker": "fidelity"})
         errs = validate_config(cfg)
         assert any("trading.broker" in e and "[ENUM]" in e for e in errs)
 
