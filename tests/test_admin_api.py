@@ -73,12 +73,12 @@ def _insert_open_trade(market_id: str, strategy: str = "momentum_breakout") -> N
 # ── GET /api/admin/universes ──────────────────────────────────────────────────
 
 def test_get_universes_no_overrides(client):
-    """All 8 universes returned; with empty override table, effective == config."""
+    """All 3 active universes returned; with empty override table, effective == config."""
     r = client.get("/api/admin/universes", auth=_AUTH)
     assert r.status_code == 200
     data = r.json()
     assert "universes" in data
-    assert len(data["universes"]) == 8
+    assert len(data["universes"]) == 3  # was 8; commodity_etfs/sector_etfs absorbed after consolidation
     for u in data["universes"]:
         assert u["effective_state"] == u["config_state"]
 

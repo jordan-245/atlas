@@ -442,7 +442,7 @@ def generate_eod_report(portfolio, prices, trade_date, stop_exits, tp_exits, mar
 
     try:
         from markets import get_market
-        _settle_tz = get_market(market_id).operator_tz() if 'market_id' in dir() else BRISBANE
+        _settle_tz = get_market(market).operator_tz()  # market is always defined (parameter)
     except (ImportError, AttributeError, RuntimeError) as _tz_e:  # market module import/call
         log.debug("Could not detect operator timezone (using Brisbane fallback): %s", _tz_e)
         _settle_tz = BRISBANE
