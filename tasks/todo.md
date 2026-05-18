@@ -1136,3 +1136,24 @@ When `_build_summary()` would emit a label starting with "Broadly bullish" or "B
 6. Single commit referencing #332 and docs/cleanup-plan-2026-05.md.
 
 **Reference:** Tier 3 Day 0 commit (this batch) + docs/cleanup-plan-2026-05.md "Tier 3 Execution Log".
+
+## Re-run fresh research on ETF candidates per #252 report recommendation
+
+**Scheduled:** TBD (post-Decision 3A 2026-05-18)
+**Source:** `data/audit/etf_research_standings_2026-05-18.md` Resolution section
+**Decision frame:** 3A from Atlas Batch Closer batch of 2026-05-18
+
+**3 actual candidates (from #252 standings, Sharpe > 0.3):**
+1. `gold_etfs / connors_rsi2` — STRONG (current Sharpe 0.7588, trend ↑+0.888, 51 runs)
+2. `sector_etfs / momentum_breakout` — current Sharpe 0.3998, trend ↓-0.156, 19 runs
+3. `gold_etfs / momentum_breakout` — current Sharpe 0.3343 + degradation warning, 8 runs
+
+**Prerequisite work (blocker for any future promotion):**
+- Create per-universe `config/active/gold_etfs.json` (gold_etfs candidate is strongest — start there)
+- Define starting_equity allocation, risk parameters, cron schedule, sync_protective enrollment
+- Add to `monitor/evaluator.py` market tuple, `scripts/sync_protective_orders.py` `_MARKETS` tuple, `pi-cron.sh` per-universe entries
+
+**Action when scheduled:**
+1. Re-run fresh research seeded from peak parameters identified in standings report (peak Sharpe 1.0849 simultaneous across universes 2026-04-20 for mean_reversion)
+2. If current market conditions still support 1.0+ Sharpe → consider promotion path (which requires the prerequisite work above)
+3. If degradation continues → re-classify as research-only retention
