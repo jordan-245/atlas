@@ -70,7 +70,7 @@ TZ=Australia/Brisbane
 # ── 12:00 AEST daily (= 02:00 UTC) — hourly OHLCV backfill (#264) ─────────────────────────────────────
 # Primes data/cache/hourly/<TICKER>.parquet for SP500 + held positions + SPY/QQQ/VIX.
 # Storage budget ~1.7MB; runtime ~5-10 min depending on cache hit rate.
-0 2 * * * /usr/bin/flock -n /tmp/backfill_hourly.lock bash -c 'cd /root/atlas && timeout 20m python3 scripts/backfill_hourly_bars.py' >> /root/atlas/logs/backfill_hourly.log 2>&1
+0 12 * * * /usr/bin/flock -n /tmp/backfill_hourly.lock bash -c 'cd /root/atlas && timeout 20m python3 scripts/backfill_hourly_bars.py' >> /root/atlas/logs/backfill_hourly.log 2>&1
 
 # ── 23:15/23:20 AEST Mon–Fri — execute approved trade plans (15 min before US open)
 15 23 * * 1-5 /usr/bin/flock -n /tmp/execute_approved.lock bash -c 'cd /root/atlas && timeout 10m python3 scripts/execute_approved.py -m sp500' >> /root/atlas/logs/execute_approved.log 2>&1
