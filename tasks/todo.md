@@ -1121,3 +1121,18 @@ When `_build_summary()` would emit a label starting with "Broadly bullish" or "B
 - Any file in `overlay/sources/` other than `chart_intel.py`
 - `data/atlas.db` schema — no new DB columns required
 - Vision-side code (`overlay/sources/chart_renders.py`, vision prompt, `overlay_vision_ab` logging)
+
+## #332 Day 14 follow-up — Attic 6 deprecated strategies (~2026-06-01)
+
+**Scheduled:** ~2026-06-01 (14 days after Day 0 marking on 2026-05-18).
+**Blockers:** none if dwell period clean (no incidents referencing any of the 6 deprecated strategies between 2026-05-18 and 2026-06-01).
+
+**Actions:**
+1. `git mv strategies/{trend_following,opening_gap,sector_rotation,short_term_mr,bb_squeeze,mtf_momentum}.py _attic/2026-05/strategies/`
+2. `git mv tests/test_{trend_following,opening_gap,sector_rotation,short_term_mr,bb_squeeze,mtf_momentum}*.py _attic/2026-05/strategies/tests/` (if any exist)
+3. Strip references from `research/portfolio_optimizer.py`, `research/vectorised_sweep.py`, `research/best/*.json`
+4. Remove the 6 strategy blocks from each `config/active/*.json` (they're already `enabled: false` with `deprecated_at` tag from Tier 3 Day 0)
+5. Verify pytest + verify_dual_write deltas remain ≤ baseline
+6. Single commit referencing #332 and docs/cleanup-plan-2026-05.md.
+
+**Reference:** Tier 3 Day 0 commit (this batch) + docs/cleanup-plan-2026-05.md "Tier 3 Execution Log".

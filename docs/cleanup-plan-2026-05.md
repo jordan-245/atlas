@@ -389,3 +389,50 @@ b2f9f0cf attic: retire dashboard/cache/ legacy stub (#330)
 - 2c: `git mv _attic/2026-05/dashboard/cache/ dashboard/cache/`
 - 2d: `git checkout pre-cleanup-2026-05-12 -- config/active/crypto.json config/active/defensive_etfs.json config/active/gold_etfs.json config/active/sector_etfs.json config/active/sp500.json config/active/treasury_etfs.json` (sidecars remain; re-extraction is idempotent)
 - 2a: `git checkout pre-cleanup-2026-05-12 -- config/active/asx.json config/active/crypto.json config/active/treasury_etfs.json config/active/gold_etfs.json config/active/defensive_etfs.json` (or `git mv _attic/2026-05/markets/*.json config/active/`)
+
+---
+
+## Tier 3 Execution Log — Day 0 (2026-05-18)
+
+**Executor:** Backend Developer (Claude Code)
+**Task:** #332
+**Scope:** Mark 6 disabled-everywhere strategies as deprecated. Day 0 actions ONLY (no `git mv` to attic — that's Day 14, ~2026-06-01).
+
+**6 strategies marked deprecated_at=2026-05-18** (all 3 markets: sp500, commodity_etfs, sector_etfs):
+- trend_following
+- opening_gap
+- sector_rotation
+- short_term_mr
+- bb_squeeze
+- mtf_momentum
+
+**Excluded from this tier (kept active):**
+- momentum_breakout (active in sp500, commodity_etfs, sector_etfs)
+- connors_rsi2 (active in sp500, commodity_etfs)
+- mean_reversion (active in commodity_etfs, sector_etfs)
+- dividend_capture (disabled-everywhere but NOT in the user's deprecation list — left untouched)
+
+**Changes:**
+- 3 `config/active/*.json` files: added `deprecated_at: "2026-05-18"` + `_deprecation_reason` keys to each of the 6 strategy blocks (18 strategy×market combos). All 6 were already `enabled: false` + `weight: 0` — no live config change.
+- `research/vectorised_sweep.py`: added `ACTIVE_STRATEGIES = ["momentum_breakout", "connors_rsi2", "mean_reversion"]` constant after `logger = logging.getLogger(__name__)` (lines ~38–50). Also added a defensive assert in `sweep_mean_reversion()` body: `assert "mean_reversion" in ACTIVE_STRATEGIES` — makes intent explicit that this sweep only targets active strategies and should be updated if mean_reversion were ever deprecated.
+
+**Recent-log audit (last 7 days):**
+All 6 deprecated strategies appear in recent logs, but ONLY in non-execution contexts:
+- `autoresearch_{strategy}_2026051[78].log`: nightly research runner attempts sweeps for these strategies in PAPER mode, but ALL fail immediately with `AssertionError: ResearchSession market mismatch: config.market=None != arg='crypto'`. Zero sweeps completed for any of the 6 deprecated strategies.
+- `atlas.log`: `short_term_mr` generates signals in PAPER state (research mode) but ALL signals are marked `rejected` by `journal.logger`. No live trades executed.
+- `reconcile_shadow.log`: `sector_rotation` appears only in a contamination warning message for `mean_reversion/sp500` promotion evaluation (historical contamination reference, not active trading).
+- `auto_promote_paper.log`: `short_term_mr/sp500` evaluated for promotion → SKIP (n=0, insufficient sample).
+- `research_window_crypto_*.log`, `llm_loop_*.log`: cross-references in multi-strategy log files (mentions, not executions).
+- **Conclusion: No active live trades executed by any of the 6 deprecated strategies in the last 7 days.**
+
+**Day 14 follow-up (~2026-06-01):**
+Tracked in `tasks/todo.md`. Actions:
+- `git mv strategies/{trend_following,opening_gap,sector_rotation,short_term_mr,bb_squeeze,mtf_momentum}.py _attic/2026-05/strategies/`
+- `git mv tests/test_{trend_following,opening_gap,sector_rotation,short_term_mr,bb_squeeze,mtf_momentum}*.py _attic/2026-05/strategies/tests/` (if present)
+- Strip references from `research/portfolio_optimizer.py`, `research/vectorised_sweep.py`, `research/best/*.json`
+- Verify pytest + verify_dual_write deltas remain ≤ baseline
+
+**Verification:**
+- All 3 config JSON files parse cleanly (python3 -c "import json; json.load(open(...))" — all OK)
+- 6 strategies confirmed `enabled=false` + `weight=0` BEFORE adding deprecation keys (assertions in the script enforced this — no live config change)
+- pytest delta: see below

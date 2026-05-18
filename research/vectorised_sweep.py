@@ -35,6 +35,19 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Tier 3 Day 0 (2026-05-18, #332): only sweep currently-active strategies.
+# Disabled strategies (trend_following, opening_gap, sector_rotation,
+# short_term_mr, bb_squeeze, mtf_momentum) are marked deprecated_at=2026-05-18
+# in config/active/*.json and slated for git-mv to _attic on Day 14 (~2026-06-01).
+# See docs/cleanup-plan-2026-05.md.
+# This file already sweeps mean_reversion exclusively — it is the only strategy
+# in ACTIVE_STRATEGIES that uses vectorised grid-search.  The constant lives here
+# as a canonical reference so callers / research loop scripts can import it and
+# guard against inadvertently sweeping deprecated strategies.
+ACTIVE_STRATEGIES: list[str] = ["momentum_breakout", "connors_rsi2", "mean_reversion"]
+# ---------------------------------------------------------------------------
+
 __all__ = [
     "sweep_mean_reversion",
     "_vectorised_rsi",
@@ -264,6 +277,11 @@ def sweep_mean_reversion(
         parameter combination.  Returns an empty DataFrame (same columns) if
         the param grid is empty, missing keys, or no usable data is found.
     """
+    # This sweep targets mean_reversion — confirmed in ACTIVE_STRATEGIES.
+    assert "mean_reversion" in ACTIVE_STRATEGIES, (
+        "sweep_mean_reversion called but mean_reversion not in ACTIVE_STRATEGIES — "
+        "check Tier 3 Day 14 attic actions in docs/cleanup-plan-2026-05.md"
+    )
     _empty = pd.DataFrame(columns=_OUTPUT_COLS)
 
     # ── guard: empty / invalid param grid ────────────────────────────────
