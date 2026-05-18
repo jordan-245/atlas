@@ -144,18 +144,16 @@ export const ATLAS_JOB_CATALOG: AtlasJobSpec[] = [
   {
     name: "dashboard_generate_data",
     category: "reporting",
-    summary: "Refresh dashboard JSON payloads from latest portfolio, plan, and backtest artifacts.",
-    commandPreview: "python dashboard/generate_data.py",
-    estimatedRuntimeSec: 60,
-    reads: ["paper_engine/portfolio_state.json", "paper_engine/plans/*.json", "journal/*.json"],
-    writes: ["dashboard/data/*.json"],
-    artifacts: [
-      {
-        kind: "dashboard_json",
-        path: "dashboard/data/*.json",
-        description: "Generated dashboard payload files."
-      }
-    ],
+    // RETIRED 2026-05-18: dashboard/generate_data.py no longer exists.
+    // Dashboard data is served directly from FastAPI (services/api/dashboard.py)
+    // with a 30 s in-process cache.  This entry is kept for catalog stability
+    // (external callers that reference this job name get a no-op exit 0).
+    summary: "[RETIRED 2026-05-18] No-op stub — dashboard is now served live from FastAPI (services/api/dashboard.py). Kept for backward compatibility; exits 0 with a log message.",
+    commandPreview: "python -c "print('[dashboard_generate_data] retired — no-op'); sys.exit(0)"",
+    estimatedRuntimeSec: 5,
+    reads: [],
+    writes: [],
+    artifacts: [],
     approvalHint: "safe"
   },
   {

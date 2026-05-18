@@ -244,8 +244,14 @@ function resolveJobCommand(job: AtlasJobName, rawArgs?: RunArgs) {
       return buildPythonScriptInvocation(scriptArgs[0], scriptArgs.slice(1));
     }
     case "dashboard_generate_data":
+      // RETIRED 2026-05-18 — dashboard data is now served directly from FastAPI
+      // (services/api/dashboard.py with 30 s in-process cache).  The legacy
+      // dashboard/generate_data.py script no longer exists.  Return a no-op
+      // that exits 0 so callers (e.g. postclose cron) do not exit 2.
       assertNoExtraArgs(job, args);
-      return buildPythonScriptInvocation("dashboard/generate_data.py", []);
+      return buildPythonScriptInvocation("-c", [
+        "import sys; print("[dashboard_generate_data] retired 2026-05-18 — dashboard served from FastAPI (services/api/dashboard.py); no-op"); sys.exit(0)"
+      ]);
     case "cli_ingest":
       return buildCliInvocation("ingest", args);
     case "cli_universe":
