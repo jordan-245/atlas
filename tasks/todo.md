@@ -989,3 +989,135 @@ the 2026-04-30 deletion incident.
 **Follow-up tasks:**
 - [ ] supercoach-site: Human decision needed — weekly re-scrape cadence (e.g. `0 19 * * 0 root python3 -m scrapers --no-resume >> /root/supercoach-site/scraper.log 2>&1`)? Confirm before creating /etc/cron.d/supercoach-site.
 - [ ] NRL-Predict: Verify R12 tips actually submitted Tue 2026-05-19 17:00 by checking logs/nrl-cron-tips.log post-run.
+
+---
+
+## #285 — chat_server.py decomposition (CLOSED 2026-05-18)
+
+✅ COMPLETE. `services/chat_server.py` is now 220 LOC — pure FastAPI shell with middleware + 17 router includes (no business logic).
+
+- Phase 1-2 landed Apr 29
+- Phase 3-7 landed Apr 30 (`a1e8370d` → `3c2ee08d`, -1565 LOC)
+- Phase 8-11 landed May 11 (`c106a54e` and earlier — final routers extracted)
+
+Routers in `services/api/`: admin, approvals, chat_sessions, dashboard, dashboard_builder, error_remediation, finance, health, lifecycle, monitor_legacy, portfolio, promotions, regime, research, research_matrix, risk, static_serve (17 total).
+
+Per `docs/phase-c-god-file-decomposition-detail.md`: "Decomposition complete. No further structural work in scope for task #226." Task #285 closed — any further god-file work is tracked under #226 PR2 (`protective_orders` extraction) and #226 PR3 (reconciler extract) per `docs/decisions/2026-05-18-post-batch-roadmap.md`.
+
+---
+
+## #226 — God-file decomposition plan (READY FOR EXECUTION)
+
+✅ PLAN PUBLISHED 2026-05-18 → `docs/phase-c-god-file-decomposition-detail.md`
+
+Scope: 3 god files identified. Estimated 22 days total.
+- PR2: `protective_orders` extraction (3 days) — independent
+- PR3: reconciler extract + slim live_executor.py core (5 days) — requires #267+#276+#278
+- Candidate #6: alpaca/broker.py `sync_all_protective_orders` extract (4 days) — independent
+
+Sequencing per `docs/decisions/2026-05-18-post-batch-roadmap.md` §3 — Order A (strict serial; Candidate #6 parallel from week 3). 5-6 weeks calendar.
+
+Dependencies on #267 (dual-write cut), #276 (reconcile.py retirement), #278 (trade state machine) — all gated on dual-write 5/5.
+
+---
+
+## [Task added 2026-05-18] Upgrade overlay text-summary feature set
+
+**Origin:** #258 follow-up — text vs vision contradiction audit
+**Owner:** TBD (Engineering)
+**Files:** overlay/sources/chart_intel.py, overlay/tests/test_chart_intel.py (new)
+**Status:** SPEC ONLY — do not implement until prioritized
+
+---
+
+### Background
+
+The text vs vision audit (Task #258) identified that `_build_summary()` in `overlay/sources/chart_intel.py` can emit "Broadly bullish" labels even when technical indicators suggest distribution behaviour (low volume at resistance). Four feature additions are specified below to close this gap.
+
+> ⚠️ **Do NOT implement now — spec only.** Do not modify `chart_intel.py` or any other file until this task is explicitly prioritized and assigned. Do NOT touch `overlay/engine.py` or any vision-side code.
+
+---
+
+### Important pre-implementation note
+
+Review `chart_intel.py` before coding. As of 2026-05-18, the following indicators are **already implemented** behind the `ATLAS_ENHANCED_CHART_INTEL=1` feature flag:
+- `_obv_slope()` — OBV 20-day linear regression slope
+- `_resistance_anchor()` — 60-day rolling high + touch count
+- `_price_volume_divergence()` — price up + volume declining slope
+- `_at_resistance_low_volume()` — suppression guard predicate
+- `_build_summary()` already has a distribution-top override when `ENHANCED_CHART_INTEL_ENABLED` is true
+
+The spec below describes the **target state** when the feature flag is removed and the logic is promoted to always-on (with updated parameters per spec items 1-4). The implementation task is therefore: review, adjust parameters to spec, remove env-var gate, and write full test coverage.
+
+---
+
+### Spec items
+
+#### 1. OBV slope (20-day)
+
+- Compute On-Balance Volume (OBV) over all available history, then fit a linear regression to the last 20 daily OBV values.
+- Normalize slope by mean OBV magnitude so the value is ticker-comparable (already done in current implementation).
+- Expose as `obv_slope_20d` in the per-ticker result dict (positive = accumulation, negative = distribution when price is rising).
+- No threshold gating in this field — surface raw value; interpretation happens in summary logic.
+
+#### 2. Multi-month resistance anchor (90-day, 3-touch threshold)
+
+- Identify the most-tested resistance level over the last **90 trading days** (current implementation uses 60 days — update to 90).
+- Definition: the price level touched within **0.5%** by 3 or more distinct swing highs (current implementation uses 2% tolerance — tighten to 0.5%).
+- Expose as:
+  - `resistance_90d`: float — the resistance price level
+  - `resistance_90d_touches`: int — number of swing highs within 0.5% of that level
+  - `distance_to_resistance_pct`: float — `(resistance_90d - last_close) / last_close * 100` (positive = below resistance)
+- If touches < 3, field is present but `resistance_90d_touches` = actual touch count; do NOT suppress the field.
+
+#### 3. Price-volume divergence slope (20-day rolling)
+
+- Compute 20-day rolling slope of `(daily price % change)` vs `(daily volume % change)`.
+- Flag as bearish divergence when: price trend is up (20d price change > 0) AND volume slope is negative (volume declining as price rises).
+- Expose as:
+  - `price_volume_divergence`: bool — True if bearish divergence detected
+  - `pv_divergence_vol_slope`: float — normalized volume slope (negative = volume declining)
+- Current implementation uses a single `_price_volume_divergence()` bool; add the slope field for transparency.
+
+#### 4. Suppression guard in `_build_summary()`
+
+When `_build_summary()` would emit a label starting with "Broadly bullish" or "Bullish bias":
+
+**Check both conditions simultaneously:**
+- (a) Is `distance_to_resistance_pct` ≤ 1.0% (i.e., current close within 1% of multi-month resistance)?
+- (b) Is 5-day average volume < 90-day average volume? (i.e., `vol_5d_avg / vol_90d_avg < 1.0`)
+
+**If both (a) and (b) are true:**
+- Downgrade label to: `"Bullish but at resistance on weak volume"`
+- Add a `suppression_reason` key to the summary result (or as a top-level key in `get_chart_analysis()` return dict):
+  ```json
+  "suppression_reason": "SPY within 0.8% of 90d resistance (3 touches) on 5d volume 23% below 90d avg"
+  ```
+- The `suppression_reason` string must include: ticker, distance-to-resistance-%, touch count, and volume ratio.
+
+**If only one of (a) or (b) is true:** Do not suppress; emit the normal label.
+
+---
+
+### Acceptance criteria
+
+- [ ] `get_chart_analysis()` return dict includes `obv_slope_20d`, `resistance_90d`, `resistance_90d_touches`, `distance_to_resistance_pct`, `price_volume_divergence`, `pv_divergence_vol_slope` for each ticker (always-on, no env-var gate).
+- [ ] `_build_summary()` returns `"Bullish but at resistance on weak volume"` (not "Broadly bullish") when SPY is within 1% of 90d resistance (≥3 touches) AND 5d volume < 90d average volume.
+- [ ] `suppression_reason` field is present in output when suppression fires; absent when it does not.
+- [ ] All existing tests in `overlay/tests/` continue to pass unchanged.
+- [ ] New unit tests in `overlay/tests/test_chart_intel.py` cover: (i) OBV slope sign for a synthetic accumulation vs distribution series, (ii) resistance anchor touch count with 0.5% tolerance, (iii) suppression guard fires and does not fire under boundary conditions, (iv) `pv_divergence_vol_slope` sign for known synthetic data.
+
+---
+
+### File ownership
+
+| File | Owner |
+|------|-------|
+| `overlay/sources/chart_intel.py` | Assigned engineer (sole writer) |
+| `overlay/tests/test_chart_intel.py` | Same engineer (new file) |
+
+**Out of scope (do NOT touch):**
+- `overlay/engine.py` — vision pipeline, prompt construction, decision logging
+- Any file in `overlay/sources/` other than `chart_intel.py`
+- `data/atlas.db` schema — no new DB columns required
+- Vision-side code (`overlay/sources/chart_renders.py`, vision prompt, `overlay_vision_ab` logging)
