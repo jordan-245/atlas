@@ -24,7 +24,7 @@ router = APIRouter(prefix="/api/finance", tags=["finance"])
 logger = logging.getLogger(__name__)
 
 # SERVE_DIR: mirror of chat_server.SERVE_DIR (pure path constant — safe to define locally)
-_SERVE_DIR = Path("/root/atlas") / "dashboard" / "data"
+_SERVE_DIR = Path("/root/atlas") / "services" / "static"
 
 # ── Route-local cache ─────────────────────────────────────────────────────────
 _finance_cache: dict = {"data": None, "ts": 0.0}

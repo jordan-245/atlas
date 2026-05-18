@@ -20,8 +20,10 @@ backtest/results/*.db
 # Generated index (rebuilt by `python -m backtest.index build`)
 backtest/results/index.json
 
-# Dashboard generated data (rebuilt by generate_data.py)
-dashboard/data/
+# was: dashboard/data/ — migrated to services/static/ on 2026-05-18 (#337)
+# Runtime-generated files in new location are ignored:
+services/static/finance-data.json
+services/static/sentiment-data.json
 
 # Broker credentials — NEVER commit
 .env
@@ -87,7 +89,7 @@ config/versions/archive/
 backtest/results/oos_promotion_*.json
 research/mr_creative.py
 research/mr_research.py
-dashboard/data/
+# dashboard/data/ — removed 2026-05-18 (#337), migrated to services/static/
 data/atlas.db
 data/atlas.db-wal
 data/atlas.db-shm

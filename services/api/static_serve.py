@@ -22,7 +22,7 @@ router = APIRouter(tags=["static"])
 logger = logging.getLogger("chat_server.static_serve")
 
 _PROJECT_ROOT = Path("/root/atlas")
-_SERVE_DIR = _PROJECT_ROOT / "dashboard" / "data"
+_SERVE_DIR = _PROJECT_ROOT / "services" / "static"
 _REACT_DIR = _PROJECT_ROOT / "dashboard-ui" / "dist"
 
 
@@ -58,7 +58,7 @@ def serve_static(
 
     - Exact file matches (JS/CSS/SVG) → serve directly with cache headers
     - Everything else → serve index.html (SPA client-side routing)
-    - Fallback to legacy dashboard/data/ for old static files
+    - Fallback to legacy services/static/ for old static files
     """
     if not path:
         path = "index.html"
@@ -78,7 +78,7 @@ def serve_static(
     except (ValueError, OSError):
         pass
 
-    # --- Fallback to legacy dashboard/data/ for old static files (.json etc) ---
+    # --- Fallback to legacy services/static/ for old static files (.json etc) ---
     try:
         serve_root = _SERVE_DIR.resolve()
         legacy_file = (_SERVE_DIR / path).resolve()
