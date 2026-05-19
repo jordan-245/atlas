@@ -424,7 +424,7 @@ def main():
 
         # ── Fix 3: cross-check sanity assertion ──────────────────────────
         _verify_ok, _verify_msg = _verify_broker_submissions(
-            plan["execution_report"], market_id, trade_date, run_start_iso
+            plan["execution_report"], market_id, trade_date, run_start_iso, config
         )
         if not _verify_ok:
             log.error("EXECUTE_APPROVED INTEGRITY VIOLATION: %s", _verify_msg)
@@ -515,38 +515,90 @@ def _verify_broker_submissions(
     market_id: str,
     trade_date: str,
     window_start_iso: str,
+    config: dict,
 ) -> tuple[bool, str]:
-    """Cross-reference plan's claimed LIVE submissions vs broker_orders table.
+    """Verify live submissions by querying Alpaca directly — NOT the SQLite mirror.
 
-    Paper submissions are trusted from the in-process report (paper account
-    sync is out-of-scope for live-trading integrity).
+    The broker_orders SQLite table is populated by sync_broker_orders cron every
+    5 minutes.  Querying it seconds after submit() returns causes a false-positive
+    race: the mirror is empty but the order exists at Alpaca.
 
-    Returns (ok, message).  Fail-OPEN on DB error — a broken sanity check
-    must never itself block order execution.
+    Fix: look up each submitted order_id directly via the broker API.
+
+    Logic:
+      - Extract live order_ids from execution_report["entries"] where
+        broker_mode=="live" and success==True.
+      - For each order_id, call broker.get_order_status(order_id).
+        · result.success=True  → order confirmed present (any status) → PASS
+        · result.success=False → order absent at broker → GHOST → FAIL
+      - Fail-open on broker API/connection errors so the sanity check never
+        itself blocks order execution.
+
+    Returns (ok, message).
     """
     live_claimed = execution_report.get("live_submitted", 0)
     if live_claimed == 0:
         return True, "no live submissions claimed — nothing to verify"
+
+    # Extract order IDs from the per-entry detail (populated by _entry_summary)
+    entries = execution_report.get("entries", [])
+    live_order_ids: list[str] = [
+        e.get("order_id") or e.get("alpaca_order_id") or ""
+        for e in entries
+        if e.get("broker_mode") == "live" and e.get("success")
+    ]
+    live_order_ids = [oid for oid in live_order_ids if oid]
+
+    if not live_order_ids:
+        # No IDs available — can't verify positively, but don't block
+        log.warning(
+            "verify: %d live submission(s) claimed but no order_ids in entries — fail-open",
+            live_claimed,
+        )
+        return True, (
+            f"verify skipped: {live_claimed} live claimed but 0 order_ids in entries (fail-open)"
+        )
+
+    broker = None
     try:
-        from db.atlas_db import get_db
-        with get_db() as _db:
-            rows = _db.execute(
-                "SELECT order_id, symbol, status FROM broker_orders "
-                "WHERE submitted_at >= ? AND side = 'buy' "
-                "AND (parent_id IS NULL OR parent_id = '')",
-                (window_start_iso,),
-            ).fetchall()
-        live_actual = len(rows)
-        if live_actual < live_claimed:
+        from brokers.alpaca.broker import AlpacaBroker
+        broker = AlpacaBroker(config, live=True, mode="live")
+        if not broker.connect():
+            log.warning("verify: broker.connect() failed — fail-open")
+            return True, "verify skipped: broker connection failed (fail-open)"
+
+        missing_ids: list[str] = []
+        for order_id in live_order_ids:
+            result = broker.get_order_status(order_id)
+            if result.success:
+                log.info(
+                    "verify: order_id=%s confirmed at Alpaca (status=%s)",
+                    order_id, result.status,
+                )
+            else:
+                log.warning(
+                    "verify: order_id=%s NOT found at Alpaca — possible ghost: %s",
+                    order_id, result.message,
+                )
+                missing_ids.append(order_id)
+
+        if missing_ids:
             return False, (
-                f"VERIFY MISMATCH: plan claims {live_claimed} live submissions "
-                f"but broker_orders has {live_actual} since {window_start_iso}. "
-                f"Symbols seen: {[r[1] for r in rows]}"
+                f"GHOST DETECTED: {len(missing_ids)} live order_id(s) absent at Alpaca: "
+                f"{missing_ids}. Claimed {live_claimed} live submission(s)."
             )
-        return True, f"verified {live_actual} live submissions in broker_orders"
+        return True, f"verified {len(live_order_ids)} live submission(s) confirmed at Alpaca"
+
     except Exception as _e:
-        log.warning("sanity check DB query failed (fail-open): %s", _e)
-        return True, f"sanity check skipped due to DB error: {_e}"
+        log.warning("verify: broker API error — fail-open: %s", _e)
+        return True, f"verify skipped due to broker API error: {_e}"
+
+    finally:
+        if broker is not None:
+            try:
+                broker.disconnect()
+            except Exception:
+                pass
 
 
 def _notify_execution(market_id: str, trade_date: str, report: dict, *, live_ok: int = 0, paper_ok: int = 0, live_total: int = 0, paper_total: int = 0):  # noqa: E501

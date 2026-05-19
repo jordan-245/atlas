@@ -316,3 +316,175 @@ def test_verify_mismatch_sets_executed_verify_failed():
     assert verify_msg[:50] in er["verify_error"], (
         f"verify_error content mismatch: {er['verify_error']!r}"
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Scenario 6: Race-condition regression — _verify_broker_submissions must query
+#             Alpaca directly, NOT the SQLite broker_orders mirror.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestVerifyBrokerSubmissionsRace:
+    """Regression: _verify_broker_submissions must query broker, not SQLite mirror.
+
+    Race: submit returns OK → SQLite mirror hasn't synced yet (5-min cron) →
+    old impl said VERIFY FAILED.  New impl asks Alpaca directly → sees order →
+    correctly stamps EXECUTED.
+
+    Commit 5b8c33e1 introduced the bug; this PR fixes it.
+    """
+
+    # ── shared helpers ────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _report(order_id: str = "test-order-0001", n_live: int = 1) -> dict:
+        """Build a minimal execution_report with one live successful entry."""
+        entries = [
+            {
+                "ticker": "FTNT",
+                "side": "BUY",
+                "qty": 4,
+                "price": 126.51,
+                "success": True,
+                "broker_mode": "live",
+                "order_id": order_id,
+                "status": "pending_new",
+                "reason": "status=pending_new",
+            }
+        ]
+        return {
+            "live_submitted": n_live,
+            "paper_submitted": 0,
+            "entries": entries,
+        }
+
+    @staticmethod
+    def _config() -> dict:
+        return {
+            "trading": {"mode": "live", "live_enabled": True},
+            "alpaca": {},
+        }
+
+    # ── test 1: broker has order, SQLite mirror is empty (the race) ───────────
+
+    def test_mirror_empty_but_broker_has_order_passes_verify(self):
+        """SQLite mirror empty (5-min lag) but Alpaca returns order → PASS.
+
+        The old code queried broker_orders SQLite and got 0 rows → FAIL.
+        The new code queries Alpaca directly → finds order → PASS.
+        """
+        from unittest.mock import MagicMock, patch
+
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.status = "pending_new"
+
+        mock_broker = MagicMock()
+        mock_broker.connect.return_value = True
+        mock_broker.get_order_status.return_value = mock_result
+
+        with patch("brokers.alpaca.broker.AlpacaBroker", return_value=mock_broker):
+            ok, msg = mod._verify_broker_submissions(
+                self._report(order_id="real-alpaca-id-001"),
+                "sp500",
+                "2026-05-19",
+                "2026-05-19T13:14:01+00:00",
+                self._config(),
+            )
+
+        assert ok is True, f"expected verify to PASS, got False: {msg}"
+        assert "confirmed" in msg or "verified" in msg, f"unexpected success msg: {msg}"
+        # Verify we asked the broker, not SQLite
+        mock_broker.get_order_status.assert_called_once_with("real-alpaca-id-001")
+
+    # ── test 2: broker confirms order absent (real ghost) ─────────────────────
+
+    def test_broker_confirms_order_absent_fails_verify(self):
+        """Broker returns success=False for the order_id → real ghost → FAIL."""
+        from unittest.mock import MagicMock, patch
+
+        mock_result = MagicMock()
+        mock_result.success = False
+        mock_result.message = "order not found"
+
+        mock_broker = MagicMock()
+        mock_broker.connect.return_value = True
+        mock_broker.get_order_status.return_value = mock_result
+
+        with patch("brokers.alpaca.broker.AlpacaBroker", return_value=mock_broker):
+            ok, msg = mod._verify_broker_submissions(
+                self._report(order_id="ghost-order-0001"),
+                "sp500",
+                "2026-05-19",
+                "2026-05-19T13:14:01+00:00",
+                self._config(),
+            )
+
+        assert ok is False, f"expected verify to FAIL (ghost detected), got True: {msg}"
+        assert "GHOST" in msg or "absent" in msg.lower(), (
+            f"verify failure message should mention ghost/absent: {msg}"
+        )
+
+    # ── test 3: broker API error → fail-open (do not block execution) ─────────
+
+    def test_broker_api_error_fails_open(self):
+        """Broker connection raises → fail-open, returns (True, ...) not (False, ...)."""
+        from unittest.mock import MagicMock, patch
+
+        mock_broker = MagicMock()
+        mock_broker.connect.side_effect = ConnectionError("broker unreachable in test")
+
+        with patch("brokers.alpaca.broker.AlpacaBroker", return_value=mock_broker):
+            ok, msg = mod._verify_broker_submissions(
+                self._report(order_id="test-order-0002"),
+                "sp500",
+                "2026-05-19",
+                "2026-05-19T13:14:01+00:00",
+                self._config(),
+            )
+
+        assert ok is True, f"expected fail-open (True), got False: {msg}"
+        assert "broker API error" in msg or "skipped" in msg, (
+            f"fail-open message should mention 'broker API error' or 'skipped': {msg}"
+        )
+
+    # ── test 4: get_order_status raises mid-loop → fail-open ──────────────────
+
+    def test_get_order_status_raises_mid_call_fails_open(self):
+        """If get_order_status itself raises (not just returns failure) → fail-open."""
+        from unittest.mock import MagicMock, patch
+
+        mock_broker = MagicMock()
+        mock_broker.connect.return_value = True
+        mock_broker.get_order_status.side_effect = RuntimeError("Alpaca 503 service unavailable")
+
+        with patch("brokers.alpaca.broker.AlpacaBroker", return_value=mock_broker):
+            ok, msg = mod._verify_broker_submissions(
+                self._report(order_id="test-order-0003"),
+                "sp500",
+                "2026-05-19",
+                "2026-05-19T13:14:01+00:00",
+                self._config(),
+            )
+
+        assert ok is True, f"expected fail-open (True) on exception, got False: {msg}"
+        assert "broker API error" in msg or "skipped" in msg
+
+    # ── test 5: zero live claims → always passes without touching broker ───────
+
+    def test_zero_live_claims_skips_broker_call(self):
+        """When live_submitted=0, no broker call is made (nothing to verify)."""
+        from unittest.mock import MagicMock, patch
+
+        report = {"live_submitted": 0, "paper_submitted": 1, "entries": []}
+
+        mock_broker = MagicMock()
+
+        with patch("brokers.alpaca.broker.AlpacaBroker", return_value=mock_broker):
+            ok, msg = mod._verify_broker_submissions(
+                report, "sp500", "2026-05-19", "2026-05-19T13:14:01+00:00", self._config()
+            )
+
+        assert ok is True
+        assert "nothing to verify" in msg or "no live" in msg.lower()
+        mock_broker.connect.assert_not_called()
+        mock_broker.get_order_status.assert_not_called()
