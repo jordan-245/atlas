@@ -632,6 +632,7 @@ class TradePlanGenerator:
         current ``cli.py`` flow.
         """
         all_signals: list = []
+        all_filter_rejections: list = []
         for strat in strategies:
             try:
                 # Precompute indicators if strategy supports it
@@ -639,6 +640,9 @@ class TradePlanGenerator:
                     strat.precompute(sp500_data)
                 sigs = strat.generate_signals(sp500_data, equity, existing_positions)
                 all_signals.extend(sigs)
+                # Collect filter rejections from strategy (e.g. sma200_filter)
+                _filt = getattr(strat, "last_filter_rejections", []) or []
+                all_filter_rejections.extend(_filt)
             except Exception as exc:
                 logger.error("Strategy %s error: %s", strat.name, exc)
 
@@ -676,7 +680,35 @@ class TradePlanGenerator:
         # Sort by confidence descending before plan construction
         all_signals.sort(key=lambda s: s.confidence, reverse=True)
 
-        return self.generate_plan(all_signals, exit_recommendations, prices, trade_date)
+        plan = self.generate_plan(all_signals, exit_recommendations, prices, trade_date)
+        # Merge strategy filter rejections (e.g. sma200_filter) into plan.rejected_entries
+        if all_filter_rejections:
+            _market_id = self.config.get("market", "")
+            _normalized: list = []
+            for _rej in all_filter_rejections:
+                _normalized.append({
+                    "ticker": _rej.get("ticker", ""),
+                    "strategy": _rej.get("strategy", ""),
+                    "entry_price": _rej.get("entry_price", 0.0),
+                    "stop_price": _rej.get("stop_price", 0.0),
+                    "take_profit": _rej.get("take_profit", None),
+                    "position_size": _rej.get("position_size", 0),
+                    "position_value": _rej.get("position_value", 0.0),
+                    "risk_amount": _rej.get("risk_amount", 0.0),
+                    "confidence": _rej.get("confidence", 0.0),
+                    "rationale": _rej.get("rationale", ""),
+                    "features": _rej.get("features", {}),
+                    "sector": _rej.get("sector", "Unknown"),
+                    "market_id": _rej.get("market_id", _market_id),
+                    "rejection_reason": _rej.get("rejection_reason", "strategy_filter"),
+                    "rejection_detail": _rej.get("rejection_detail", {}),
+                })
+            plan["rejected_entries"] = plan.get("rejected_entries", []) + _normalized
+            logger.info(
+                "plan: merged %d strategy filter rejections into rejected_entries",
+                len(_normalized),
+            )
+        return plan
 
     def _run_regime_aware_plan(
         self,
@@ -756,6 +788,7 @@ class TradePlanGenerator:
 
         # e + f. Run active strategies on each universe, tagging signals.
         all_signals: list = []
+        all_filter_rejections: list = []
         for universe_name, universe_data in multi_data.items():
             for strat in active_strategies:
                 try:
@@ -766,6 +799,12 @@ class TradePlanGenerator:
                     for sig in sigs:
                         sig.universe = universe_name  # f. tag with originating universe
                     all_signals.extend(sigs)
+                    # Collect filter rejections from strategy (e.g. sma200_filter)
+                    _filt = getattr(strat, "last_filter_rejections", []) or []
+                    for _frej in _filt:
+                        _frej_copy = dict(_frej)
+                        _frej_copy.setdefault("universe", universe_name)
+                        all_filter_rejections.append(_frej_copy)
                 except Exception as exc:
                     logger.error(
                         "Strategy %s / universe %s error: %s",
@@ -842,6 +881,37 @@ class TradePlanGenerator:
         plan = self.generate_plan(
             constructed.signals, exit_recommendations, prices, trade_date
         )
+
+        # Merge strategy filter rejections (e.g. sma200_filter) into plan.rejected_entries.
+        # These are pre-signal rejections — candidates that never became signals because
+        # an internal strategy guard (sma200_filter) blocked them upstream.
+        if all_filter_rejections:
+            _regime_market_id = self.config.get("market", "")
+            _filter_normalized: list = []
+            for _rej in all_filter_rejections:
+                _filter_normalized.append({
+                    "ticker": _rej.get("ticker", ""),
+                    "strategy": _rej.get("strategy", ""),
+                    "entry_price": _rej.get("entry_price", 0.0),
+                    "stop_price": _rej.get("stop_price", 0.0),
+                    "take_profit": _rej.get("take_profit", None),
+                    "position_size": _rej.get("position_size", 0),
+                    "position_value": _rej.get("position_value", 0.0),
+                    "risk_amount": _rej.get("risk_amount", 0.0),
+                    "confidence": _rej.get("confidence", 0.0),
+                    "rationale": _rej.get("rationale", ""),
+                    "features": _rej.get("features", {}),
+                    "sector": _rej.get("sector", "Unknown"),
+                    "market_id": _rej.get("market_id", _regime_market_id),
+                    "rejection_reason": _rej.get("rejection_reason", "strategy_filter"),
+                    "rejection_detail": _rej.get("rejection_detail", {}),
+                    "universe": _rej.get("universe", ""),
+                })
+            plan["rejected_entries"] = plan.get("rejected_entries", []) + _filter_normalized
+            logger.info(
+                "plan: merged %d strategy filter rejections into regime plan.rejected_entries",
+                len(_filter_normalized),
+            )
 
         # P1-9 fix: inject constructor-rejected signals into plan.rejected_entries.
         # PortfolioConstructor.construct() rejects most signals (e.g. 40 of 43).

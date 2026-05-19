@@ -155,6 +155,19 @@ def get_strategies(config):
             exc,
         )
 
+    # Observability: log strategies that are disabled in config so the absence
+    # of expected entries in rejected_entries is explainable (e.g. mean_reversion
+    # is currently enabled=false for sp500 — without this log, an empty
+    # rejected_entries for that strategy is ambiguous).
+    all_known = set(_STRATEGY_REGISTRY.keys())
+    disabled_strats = all_known - live_enabled - paper_names
+    if disabled_strats:
+        logger.info(
+            "get_strategies: %d strategies are disabled in config "
+            "(enabled=false in strategies.*) for market=%s: %s",
+            len(disabled_strats), market_id, sorted(disabled_strats),
+        )
+
     # 3. Combined set — live ∪ paper, with paper params overriding live config.
     #    Iteration order: live-enabled first (stable, no dedup needed); then
     #    paper-only (sorted for determinism).  If a name appears in BOTH live

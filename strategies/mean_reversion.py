@@ -73,6 +73,7 @@ class MeanReversion(BaseStrategy):
         # US-optimization: IBS confirmation filter (low IBS = selling exhaustion)
         self.ibs_max = strat_cfg.get("ibs_max", 1.0)  # 1.0 = disabled
         self._precomputed = False
+        self.last_filter_rejections: list = []
         self._logger.info(
             f"MeanReversion initialized: rsi_period={self.rsi_period}, "
             f"rsi_oversold={self.rsi_oversold}, "
@@ -117,6 +118,7 @@ class MeanReversion(BaseStrategy):
             1. RSI(rsi_period) < rsi_oversold
             2. Z-score(zscore_lookback) < zscore_entry
         """
+        self.last_filter_rejections = []
         return self._generate_long_signals(data, equity, existing_positions)
 
     def _generate_long_signals(
@@ -173,9 +175,24 @@ class MeanReversion(BaseStrategy):
                 if self.sma200_filter:
                     sma200_val = self._get_indicator(df, "_mr_sma200", lambda d: d["close"].rolling(200).mean()).iloc[-1]
                     if pd.isna(sma200_val) or close.iloc[-1] < sma200_val:
-                        self._logger.debug(
-                            f"{ticker}: below SMA(200) "
-                            f"(close={close.iloc[-1]:.2f}, sma200={sma200_val if not pd.isna(sma200_val) else 'N/A'}), skipping"
+                        sma200_display = float(sma200_val) if not pd.isna(sma200_val) else None
+                        self.last_filter_rejections.append({
+                            "ticker": ticker,
+                            "strategy": "mean_reversion",
+                            "rejection_reason": "sma200_filter",
+                            "rejection_detail": {
+                                "close": float(close.iloc[-1]),
+                                "sma200": sma200_display,
+                                "below_sma200_pct": (
+                                    float((close.iloc[-1] - sma200_val) / sma200_val * 100)
+                                    if (sma200_display is not None and sma200_val > 0) else None
+                                ),
+                            },
+                            "confidence": 0.0,  # filtered before confidence calc
+                        })
+                        self._logger.info(
+                            f"{ticker}: REJECTED by sma200_filter "
+                            f"(close={close.iloc[-1]:.2f} < sma200={sma200_display if sma200_display else 'N/A'})"
                         )
                         continue
 
