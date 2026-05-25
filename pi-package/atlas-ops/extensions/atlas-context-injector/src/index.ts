@@ -12,10 +12,19 @@
  *   - Inject relevant context into system prompt so the agent starts oriented
  *
  * This eliminates the 2-5 minute orientation tax every session currently pays.
+ *
+ * Fixes applied (2026-05-25):
+ *   A. Oneshot timer services (atlas-dashboard-refresh) no longer falsely flagged DOWN.
+ *      A healthy oneshot = timer active + last result success, even when service is inactive.
+ *   B. Portfolio equity derived from live broker state file (equity_history), not stale
+ *      equity_curve log. File mtime drives freshness — stale (>24h) gets a warning label.
+ *   C. Active markets discovered dynamically from config/active/*.json — decommissioned
+ *      universes (asx, sector_etfs, commodity_etfs) are auto-excluded when their config
+ *      file is absent.
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 // ---------------------------------------------------------------------------
@@ -50,6 +59,26 @@ function readTextSafe(path: string, maxLines = 50): string | null {
 }
 
 // ---------------------------------------------------------------------------
+// Fix C: Active market discovery from config/active/*.json
+// Replaces the old hardcoded MARKETS = ["sp500", "asx"].
+// Only markets with a live config file in config/active/ are included.
+// Excludes: regime.json, *.bak*, *.pre*, archive/ subdir entries.
+// ---------------------------------------------------------------------------
+
+function discoverActiveMarkets(root: string): string[] {
+  try {
+    const activeDir = join(root, "config", "active");
+    const files = readdirSync(activeDir)
+      .filter(f => f.endsWith(".json"))
+      .filter(f => f !== "regime.json")
+      .filter(f => !f.includes(".bak") && !f.includes(".pre"));
+    return files.map(f => f.replace(/\.json$/, ""));
+  } catch {
+    return ["sp500"]; // safe fallback
+  }
+}
+
+// ---------------------------------------------------------------------------
 // System state snapshot
 // ---------------------------------------------------------------------------
 
@@ -64,6 +93,8 @@ interface EquitySnapshot {
   equity: number;
   pnl: number;
   estimated?: boolean;
+  staleDays?: number;   // > 0 if source file is stale (mtime > 24h)
+  mtimeDate?: string;   // YYYY-MM-DD of source file mtime (for stale warning label)
 }
 
 interface ConfigSnapshot {
@@ -77,7 +108,7 @@ interface ConfigSnapshot {
 
 interface SystemSnapshot {
   services: ServiceStatus[];
-  failedServices: string[];      // core services that are not active
+  failedServices: string[];      // core services that are not active AND have no healthy timer
   failedOptional: string[];      // optional services that crashed (status=failed)
   stoppedOptional: string[];     // optional services intentionally stopped (inactive)
   coreCount: number;
@@ -87,12 +118,19 @@ interface SystemSnapshot {
   timestamp: string;
 }
 
-// Core services must be running for daily trading operations.
-// Optional services (research) may be intentionally stopped.
+// Core services must be running continuously for daily trading operations.
+// atlas-dashboard-refresh is a Type=oneshot service driven by an hourly timer —
+// it is INTENTIONALLY inactive between firings. It lives in ONESHOT_TIMER_SERVICES.
 const CORE_SERVICES = [
   "atlas-dashboard",
-  "atlas-dashboard-refresh",
   "atlas-telegram-bot",
+];
+
+// Fix A: Oneshot services driven by systemd timers.
+// These show "inactive" between firings, which is HEALTHY.
+// Health check: corresponding .timer unit must be active + last Result=success.
+const ONESHOT_TIMER_SERVICES = [
+  "atlas-dashboard-refresh",
 ];
 
 const OPTIONAL_SERVICES = [
@@ -101,37 +139,175 @@ const OPTIONAL_SERVICES = [
   "atlas-research-window",
 ];
 
-const ATLAS_SERVICES = [...CORE_SERVICES, ...OPTIONAL_SERVICES];
+const ATLAS_SERVICES = [...CORE_SERVICES, ...ONESHOT_TIMER_SERVICES, ...OPTIONAL_SERVICES];
 
-const MARKETS = ["sp500", "asx"];
+// ---------------------------------------------------------------------------
+// Fix A: Check if a oneshot service's timer is active and last run succeeded.
+// Returns true  → service is healthy (scheduled, between firings).
+// Returns false → timer is missing or failed → service is genuinely down.
+// ---------------------------------------------------------------------------
+
+async function isOneshotTimerHealthy(pi: ExtensionAPI, serviceName: string): Promise<boolean> {
+  const timerName = serviceName.replace(/\.service$/, "") + ".timer";
+  try {
+    const result = await pi.exec("systemctl", [
+      "show",
+      timerName,
+      "--property=ActiveState,Result",
+    ], { timeout: 3000 });
+
+    const props: Record<string, string> = {};
+    for (const line of result.stdout.trim().split("\n")) {
+      const eqIdx = line.indexOf("=");
+      if (eqIdx >= 0) {
+        props[line.slice(0, eqIdx).trim()] = line.slice(eqIdx + 1).trim();
+      }
+    }
+    // Timer must be active AND last run must have succeeded
+    return props["ActiveState"] === "active" && props["Result"] === "success";
+  } catch {
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Fix B: Read equity from live broker state file (equity_history),
+// with mtime-based freshness check.
+//
+// Priority:
+//   1. brokers/state/live_{market}.json → equity_history[] (dual-write, daily update)
+//   2. logs/equity_curve_{market}.json → fallback (legacy, may be stale)
+//
+// Freshness: statSync(filePath).mtime — if > 24h, staleDays > 0 and a stale label
+// is shown. Never use a missing/undefined JSON date field; always fall back to mtime.
+// ---------------------------------------------------------------------------
+
+function readEquitySnapshot(root: string, market: string): EquitySnapshot | null {
+  const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+  // --- Primary: brokers/state/live_{market}.json equity_history ---
+  const liveStatePath = join(root, "brokers", "state", `live_${market}.json`);
+  const liveState = readJsonSafe<Record<string, unknown>>(liveStatePath);
+  if (
+    liveState &&
+    Array.isArray(liveState.equity_history) &&
+    liveState.equity_history.length > 0
+  ) {
+    const last = liveState.equity_history[liveState.equity_history.length - 1] as Record<string, unknown>;
+    if (typeof last.equity === "number") {
+      let staleDays = 0;
+      let mtimeDate: string | undefined;
+      try {
+        const mtime = statSync(liveStatePath).mtime;
+        const ageMs = Date.now() - mtime.getTime();
+        staleDays = ageMs > MS_PER_DAY ? Math.floor(ageMs / MS_PER_DAY) : 0;
+        mtimeDate = mtime.toISOString().slice(0, 10);
+      } catch { /* ignore stat error */ }
+
+      // Use the date field from the last equity_history entry if available;
+      // fall back to mtime date. Never use eq.date if it doesn't exist.
+      const date =
+        (typeof last.date === "string" && last.date) ? last.date :
+        (mtimeDate ?? new Date().toISOString().slice(0, 10));
+
+      const pnl =
+        typeof last.total_realized_pnl === "number" ? last.total_realized_pnl :
+        typeof last.pnl === "number" ? last.pnl :
+        0;
+
+      return { date, equity: last.equity, pnl, staleDays, mtimeDate };
+    }
+  }
+
+  // --- Fallback: logs/equity_curve_{market}.json ---
+  const curvePath = join(root, "logs", `equity_curve_${market}.json`);
+  const curve = readJsonSafe<Array<Record<string, unknown>>>(curvePath);
+  if (curve && curve.length > 0) {
+    const last = curve[curve.length - 1];
+    if (typeof last.equity === "number") {
+      let staleDays = 0;
+      let mtimeDate: string | undefined;
+      try {
+        const mtime = statSync(curvePath).mtime;
+        const ageMs = Date.now() - mtime.getTime();
+        staleDays = ageMs > MS_PER_DAY ? Math.floor(ageMs / MS_PER_DAY) : 0;
+        mtimeDate = mtime.toISOString().slice(0, 10);
+      } catch { /* ignore */ }
+
+      // For stale curve files, use mtime date instead of the embedded eq.date
+      // (the embedded date is the last data point date, not the freshness date).
+      const date = staleDays > 0
+        ? (mtimeDate ?? new Date().toISOString().slice(0, 10))
+        : (typeof last.date === "string" && last.date)
+          ? last.date
+          : (mtimeDate ?? new Date().toISOString().slice(0, 10));
+
+      const pnl = typeof last.pnl === "number" ? last.pnl : 0;
+      const estimated = last.estimated === true;
+
+      return { date, equity: last.equity, pnl, estimated, staleDays, mtimeDate };
+    }
+  }
+
+  return null;
+}
 
 async function getSystemSnapshot(pi: ExtensionAPI): Promise<SystemSnapshot> {
   const root = atlasRoot();
 
-  // Check services — distinguish core (must run) from optional (may be stopped)
+  // Fix C: discover active markets dynamically
+  const markets = discoverActiveMarkets(root);
+
+  // Check services — distinguish core from oneshot-timer from optional
   const services: ServiceStatus[] = [];
   const failedServices: string[] = [];
   const failedOptional: string[] = [];
   const stoppedOptional: string[] = [];
   const coreSet = new Set(CORE_SERVICES);
+  const oneshotSet = new Set(ONESHOT_TIMER_SERVICES);
   let coreUp = 0;
+
   try {
     const result = await pi.exec("systemctl", [
       "is-active",
       ...ATLAS_SERVICES,
     ], { timeout: 5000 });
     const statuses = result.stdout.trim().split("\n");
+
     for (let i = 0; i < ATLAS_SERVICES.length; i++) {
       const name = ATLAS_SERVICES[i];
       const status = statuses[i]?.trim() ?? "unknown";
       const active = status === "active";
-      services.push({ name, active, status });
 
       if (coreSet.has(name)) {
+        // Persistent core service
+        services.push({ name, active, status });
         if (active) coreUp++;
         else failedServices.push(name);
+
+      } else if (oneshotSet.has(name)) {
+        // Fix A: Oneshot timer service — "inactive" is normal between firings.
+        // Classify as healthy if the associated .timer is active + last Result=success.
+        if (active) {
+          // Rare: caught mid-run
+          services.push({ name, active: true, status: "active" });
+          coreUp++;
+        } else {
+          const timerHealthy = await isOneshotTimerHealthy(pi, name);
+          if (timerHealthy) {
+            // Healthy oneshot: timer scheduled, last run succeeded
+            services.push({ name, active: true, status: "scheduled" });
+            coreUp++;
+          } else {
+            // Timer missing or failed → genuinely down
+            services.push({ name, active: false, status });
+            failedServices.push(name);
+          }
+        }
+
       } else {
         // Optional service
+        services.push({ name, active, status });
         if (active) { /* fine */ }
         else if (status === "failed") failedOptional.push(name);
         else stoppedOptional.push(name); // inactive = intentionally stopped
@@ -140,22 +316,20 @@ async function getSystemSnapshot(pi: ExtensionAPI): Promise<SystemSnapshot> {
   } catch {
     for (const name of ATLAS_SERVICES) {
       services.push({ name, active: false, status: "unknown" });
-      if (coreSet.has(name)) failedServices.push(name);
+      if (coreSet.has(name) || oneshotSet.has(name)) failedServices.push(name);
       else failedOptional.push(name);
     }
   }
 
-  // Read equity curves
+  // Fix B: Read equity from live state file with mtime freshness
   const equity: Record<string, EquitySnapshot | null> = {};
-  for (const market of MARKETS) {
-    const curvePath = join(root, "logs", `equity_curve_${market}.json`);
-    const curve = readJsonSafe<EquitySnapshot[]>(curvePath);
-    equity[market] = curve && curve.length > 0 ? curve[curve.length - 1] : null;
+  for (const market of markets) {
+    equity[market] = readEquitySnapshot(root, market);
   }
 
-  // Read configs
+  // Read configs (only for active markets)
   const configs: ConfigSnapshot[] = [];
-  for (const market of MARKETS) {
+  for (const market of markets) {
     const configPath = join(root, "config", "active", `${market}.json`);
     const config = readJsonSafe<Record<string, unknown>>(configPath);
     if (config) {
@@ -181,7 +355,7 @@ async function getSystemSnapshot(pi: ExtensionAPI): Promise<SystemSnapshot> {
     failedServices,
     failedOptional,
     stoppedOptional,
-    coreCount: CORE_SERVICES.length,
+    coreCount: CORE_SERVICES.length + ONESHOT_TIMER_SERVICES.length,
     coreUp,
     equity,
     configs,
@@ -284,6 +458,22 @@ function classifyIntent(prompt: string): Intent {
 }
 
 // ---------------------------------------------------------------------------
+// Equity display helper
+// ---------------------------------------------------------------------------
+
+function formatEquityLine(market: string, eq: EquitySnapshot): string {
+  const pnlSign = eq.pnl >= 0 ? "+" : "";
+  const base = `- ${market.toUpperCase()}: $${eq.equity.toFixed(2)} (realized PnL: ${pnlSign}$${eq.pnl.toFixed(2)}, as of ${eq.date})`;
+  if ((eq.staleDays ?? 0) > 0) {
+    return base + ` ⚠ stale (last file update: ${eq.mtimeDate ?? "unknown"})`;
+  }
+  if (eq.estimated) {
+    return base + " [estimated]";
+  }
+  return base;
+}
+
+// ---------------------------------------------------------------------------
 // Context injection
 // ---------------------------------------------------------------------------
 
@@ -309,7 +499,7 @@ function buildInjection(intent: Intent, state: SystemSnapshot): string {
   const equityLines: string[] = [];
   for (const [market, eq] of Object.entries(state.equity)) {
     if (eq) {
-      equityLines.push(`- ${market.toUpperCase()}: $${eq.equity.toFixed(2)} (PnL: $${eq.pnl.toFixed(2)}, ${eq.date})${eq.estimated ? " [estimated]" : ""}`);
+      equityLines.push(formatEquityLine(market, eq));
     }
   }
   if (equityLines.length > 0) {
@@ -352,7 +542,7 @@ function buildInjection(intent: Intent, state: SystemSnapshot): string {
     case "config":
       sections.push(
         "### Config Context\n" +
-        "- Active configs: `config/active/sp500.json`, `config/active/asx.json`\n" +
+        "- Active configs: `config/active/sp500.json` (and other active markets)\n" +
         "- Candidates: `config/candidates/`\n" +
         "- Backups: `config/versions/active_config_pre_reopt_*.json`\n" +
         "- Promotion flow: validate OOS → risk gate check → backup → copy → verify\n" +
@@ -406,7 +596,7 @@ function buildInjection(intent: Intent, state: SystemSnapshot): string {
         "### Data Context\n" +
         "- Cache: `data/cache/` (yfinance price data)\n" +
         "- Ingest: `python scripts/cli.py ingest -m <market>`\n" +
-        "- Universe: `data/universe_sp500.json`, `data/universe_asx.json`\n" +
+        "- Universe: `data/universe_sp500.json`\n" +
         "- Check freshness: look at cache file mtimes\n" +
         "- LESSON: Always ingest fresh data before backtesting or plan generation"
       );
@@ -419,7 +609,7 @@ function buildInjection(intent: Intent, state: SystemSnapshot): string {
         "- Full audit: use atlas-healthz skill\n" +
         "- Dashboard: https://localhost:8501 (auth-protected)\n" +
         "- Telegram alerts: check bot for recent messages\n" +
-        "- Services: " + state.services.map(s => `${s.active ? "🟢" : "🔴"} ${s.name}`).join(", ")
+        "- Services: " + state.services.map(s => `${s.active ? "🟢" : "🔴"} ${s.name}${s.status === "scheduled" ? " (scheduled)" : ""}`).join(", ")
       );
       break;
   }
@@ -439,7 +629,11 @@ function formatStatusWidget(state: SystemSnapshot): string[] {
   for (const [market, eq] of Object.entries(state.equity)) {
     if (eq) {
       const pnlSign = eq.pnl >= 0 ? "+" : "";
-      eqParts.push(`${market.toUpperCase()} $${eq.equity.toFixed(2)} (${pnlSign}$${eq.pnl.toFixed(2)})`);
+      let entry = `${market.toUpperCase()} $${eq.equity.toFixed(2)} (${pnlSign}$${eq.pnl.toFixed(2)})`;
+      if ((eq.staleDays ?? 0) > 0) {
+        entry += ` ⚠${eq.staleDays}d stale`;
+      }
+      eqParts.push(entry);
     }
   }
   if (eqParts.length > 0) {
