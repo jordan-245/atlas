@@ -61,6 +61,75 @@ _RECONCILE_LED_LOG = _LOG_DIR / "reconcile_ledger.log"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Shadow-mode dedup guard — pre-checks before record_trade_entry
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _open_trade_exists(ticker: str, universe: str) -> bool:
+    """Return True when an open trade already exists for (ticker, universe).
+
+    Used by _ShadowAtlasDB and directly in tests to verify the pre-check logic.
+    Fail-open on any exception: returns False so the caller can decide whether
+    to proceed; the DB-level UNIQUE index provides the final safety net.
+    """
+    try:
+        from db import atlas_db
+        with atlas_db.get_db() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM trades WHERE ticker=? AND universe=? AND status='open' LIMIT 1",
+                (ticker, universe),
+            ).fetchone()
+        return row is not None
+    except Exception as exc:
+        log.debug(
+            "_open_trade_exists(%s, %s): query failed — fail-open (assume not exists): %s",
+            ticker, universe, exc,
+        )
+        return False
+
+
+class _ShadowAtlasDB:
+    """Thin atlas_db wrapper that suppresses the WARNING in db.trades when a
+    duplicate open trade would be inserted during shadow/dry-run mode.
+
+    Problem: reconcile_fills(db=atlas_db, dry_run=True) is the intended call,
+    and the dry_run gate in core.reconcile prevents the actual INSERT.  However,
+    if any edge-case code path reaches atlas_db.record_trade_entry before the
+    dry_run gate fires, the UNIQUE index on trades(ticker, universe) WHERE
+    status='open' raises an IntegrityError that db.trades logs as a WARNING.
+    That WARNING is noise in the shadow context; it is a real signal in
+    production paths (reconcile_ledger, reconcile_positions) that use atlas_db
+    directly and must keep emitting it.
+
+    This shim intercepts record_trade_entry calls made during the shadow run,
+    checks for an existing open trade via a cheap SELECT, and returns None
+    silently (at DEBUG level) when one is found.  All other atlas_db methods
+    are forwarded unchanged via __getattr__.
+    """
+
+    def __init__(self, real_db):
+        self._real = real_db
+
+    def __getattr__(self, name: str):
+        return getattr(self._real, name)
+
+    def record_trade_entry(self, ticker, *args, **kwargs):
+        # Resolve universe: either positional arg[1] (after strategy) or kwarg
+        if len(args) >= 2:
+            universe = args[1]  # positional order: strategy=args[0], universe=args[1]
+        else:
+            universe = kwargs.get("universe")
+
+        if universe is not None and _open_trade_exists(ticker, universe):
+            log.debug(
+                "reconcile_shadow._ShadowAtlasDB: open trade already exists for %s/%s "
+                "— skipping record_trade_entry (shadow pre-check)",
+                ticker, universe,
+            )
+            return None
+        return self._real.record_trade_entry(ticker, *args, **kwargs)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Log parsing — extract last-run summary from old scripts' logs
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -261,6 +330,12 @@ def _shadow_market(
     from core.reconcile import reconcile_fills, reconcile_positions
     from db import atlas_db
 
+    # Wrap atlas_db with the shadow shim so record_trade_entry calls in the
+    # dry-run path are intercepted before they can hit the UNIQUE index and
+    # emit a WARNING.  Production write paths (reconcile_ledger, reconcile_
+    # positions) use atlas_db directly and keep the WARNING active.
+    _shadow_db = _ShadowAtlasDB(atlas_db)
+
     ts = datetime.now(timezone.utc).isoformat()
     log.info("=" * 60)
     log.info("shadow [%s] START", market_id.upper())
@@ -273,7 +348,7 @@ def _shadow_market(
         report_fills = reconcile_fills(
             market_id=market_id,
             broker=broker,
-            db=atlas_db,
+            db=_shadow_db,
             dry_run=True,
         )
         log.info(
@@ -290,7 +365,7 @@ def _shadow_market(
         report_pos = reconcile_positions(
             market_id=market_id,
             broker=broker,
-            db=atlas_db,
+            db=_shadow_db,
             dry_run=True,
         )
         log.info(
