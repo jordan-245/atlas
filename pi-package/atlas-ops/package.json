@@ -7,10 +7,12 @@
   "keywords": ["pi-package", "atlas", "trading", "automation"],
   "scripts": {
     "build": "echo 'No build step (Pi loads TS via jiti)'",
-    "check": "echo 'Add tsc/eslint later when implementation solidifies'"
+    "check": "echo 'Add tsc/eslint later when implementation solidifies'",
+    "verify-tui": "npx tsx extensions/atlas-tui-widget/tests/verify.ts"
   },
   "peerDependencies": {
     "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-tui": "*",
     "@sinclair/typebox": "*"
   },
   "pi": {
@@ -22,7 +24,8 @@
       "./extensions/atlas-risk-gates/src",
       "./extensions/atlas-safety-gates/src",
       "./extensions/atlas-state/src",
-      "./extensions/atlas-status-dashboard/src"
+      "./extensions/atlas-status-dashboard/src",
+      "./extensions/atlas-tui-widget/src"
     ],
     "skills": ["./skills"]
   }

@@ -1220,3 +1220,29 @@ To be added after commit.
   - `scripts/reset_per_market_hwm.py` → `("sp500",)`
   - `monitor/evaluator.py` inline loop → `("sp500", "asx")`
   - `scripts/healthz_hourly.sh` loop → `for MKT in sp500`
+
+---
+
+## Atlas TUI Widget — Implementation Note (2026-05-25)
+
+**Extension**: `pi-package/atlas-ops/extensions/atlas-tui-widget/src/index.ts`
+
+Implemented Dashboard Pro style Pi TUI widget. Mounts automatically on `session_start`.
+
+**What was built:**
+- Persistent widget above editor: metrics bar (tool totals, ✓/✗ counts, elapsed) + 5-entry activity feed
+- Footer status bar (compact one-liner, always visible)
+- Full lifecycle hook coverage: `session_start/shutdown`, `agent_start/end`, `tool_execution_start/end`
+- `/atlas-tui` command to toggle; `/atlas-tui reset` to clear session stats
+- Pure rendering functions exported for testing (no Pi session needed)
+- Verification script: `npm run verify-tui` — 38 tests covering width-safety, status colors, bounded memory, active-tool caps, arg summaries, and duration formatting
+- Docs: `docs/atlas-tui-widget.md`
+
+**Files changed:**
+- `pi-package/atlas-ops/extensions/atlas-tui-widget/src/index.ts` (new, Pi runtime wiring)
+- `pi-package/atlas-ops/extensions/atlas-tui-widget/src/core.ts` (new, pure state/render logic)
+- `pi-package/atlas-ops/extensions/atlas-tui-widget/tests/verify.ts` (new)
+- `pi-package/atlas-ops/package.json` — added extension to `pi.extensions` array and `verify-tui` script
+- `docs/atlas-tui-widget.md` (new)
+
+**Verification:** `cd /root/atlas/pi-package/atlas-ops && npm run verify-tui` passes (38/38).
