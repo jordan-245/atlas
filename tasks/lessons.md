@@ -201,3 +201,10 @@ them crashes with `TypeError: float + NoneType`. Crashed eod_settlement on
 Already used elsewhere in same files. Sweep `t.get("pnl", 0)` callers when
 convenient — `backtest/metrics.py` and `scripts/strategy_evaluator.py` still
 have unprotected sites that would crash on stub-laden ledgers.
+
+### 46. New TUI surfaces must replace old UI, not stack on top
+When adding a redesigned Pi TUI, audit existing `ctx.ui.setStatus`, `setWidget`,
+and footer/status extensions. The user wants one clean surface; stacking the new
+activity widget above the editor while leaving the old equity/P&L panel below the
+input creates clutter. Rule: retire or gate the old UI in the same change that
+introduces the replacement.

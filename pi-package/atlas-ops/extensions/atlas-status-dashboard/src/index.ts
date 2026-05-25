@@ -172,37 +172,12 @@ function formatStatusLine(state: QuickState): string {
 // Extension entry point
 // ---------------------------------------------------------------------------
 
-// Throttle updates — don't hammer systemctl on every turn
-let lastUpdate = 0;
-let cachedStatus = "";
-const UPDATE_INTERVAL_MS = 60_000; // 1 minute
+// NOTE: Display disabled — equity/P&L status panel removed per user request.
+// The atlas-tui-widget (aboveEditor) now owns all live status display.
+// Internal helpers (getQuickState, formatStatusLine) are preserved for
+// programmatic use if needed in future.
 
-export default function atlasStatusDashboard(pi: ExtensionAPI) {
-
-  async function updateStatus(ctx: { ui: { setStatus: (id: string, text: string) => void } }) {
-    const now = Date.now();
-    if (cachedStatus && (now - lastUpdate) < UPDATE_INTERVAL_MS) {
-      ctx.ui.setStatus("atlas", cachedStatus);
-      return;
-    }
-
-    try {
-      const state = await getQuickState(pi);
-      cachedStatus = formatStatusLine(state);
-      lastUpdate = now;
-      ctx.ui.setStatus("atlas", cachedStatus);
-    } catch {
-      ctx.ui.setStatus("atlas", "⚪ Atlas status unavailable");
-    }
-  }
-
-  // Set status on session start
-  pi.on("session_start", async (_event, ctx) => {
-    await updateStatus(ctx);
-  });
-
-  // Refresh after each turn (throttled to 1/min)
-  pi.on("turn_end", async (_event, ctx) => {
-    await updateStatus(ctx);
-  });
+export default function atlasStatusDashboard(_pi: ExtensionAPI) {
+  // No-op: status bar registration removed so equity/P&L no longer
+  // appears below the editor input area.
 }
