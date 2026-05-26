@@ -8,7 +8,7 @@ bug (DB-fallback enforcing overrides despite overlay.enabled=false) caused actua
 position-size reductions.
 
 Usage:
-    python3 scripts/audit_overlay_decisions.py [--db PATH] [--output PATH] [--dry-run] [--limit N]
+    python3 scripts/tools/archive/2026-05-repo-reset/audit_overlay_decisions.py [--db PATH] [--output PATH] [--dry-run] [--limit N]
 
 Milestone: overlay-silent-bug-fix
 """

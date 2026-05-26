@@ -18,7 +18,7 @@ Outputs results to data/mean_reversion_guard_comparison_<ISO>.json
 and prints a markdown table + decision to stdout.
 
 Usage:
-    python3 scripts/backtest_mean_reversion_guard_comparison.py
+    python3 scripts/tools/archive/2026-05-repo-reset/backtest_mean_reversion_guard_comparison.py
 """
 
 from __future__ import annotations

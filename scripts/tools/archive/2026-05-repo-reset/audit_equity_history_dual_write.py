@@ -6,7 +6,7 @@ live_*.json state file.  Deduplicates JSON rows by date taking the LAST entry
 (matches verify_dual_write Check-7 semantics).
 
 Usage:
-    python3 scripts/audit_equity_history_dual_write.py
+    python3 scripts/tools/archive/2026-05-repo-reset/audit_equity_history_dual_write.py
 
 Output:
     stdout — human-readable divergence report

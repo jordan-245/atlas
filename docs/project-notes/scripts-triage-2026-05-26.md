@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-26
 **Task:** #363
-**Status:** Inventory complete; destructive moves deferred until repo hygiene commit is stable.
+**Status:** Inventory complete; first safe no-reference archive pass committed separately after repo hygiene.
 
 ## Rule
 
@@ -75,26 +75,42 @@ From the installed crontab / `scripts/atlas.crontab`:
 - `scripts/git-hooks/**`
 - `scripts/migrations/**` (schema/history; archive only after migration registry policy exists)
 
+## Archived in first safe pass
+
+These had no live cron/systemd/import/test/runbook references outside their own docstrings at move time. They were moved to `scripts/tools/archive/2026-05-repo-reset/`:
+
+- `scripts/tools/archive/2026-05-repo-reset/audit_equity_history_dual_write.py`
+- `scripts/tools/archive/2026-05-repo-reset/audit_overlay_decisions.py`
+- `scripts/tools/archive/2026-05-repo-reset/backtest_allocation_compare.py`
+- `scripts/tools/archive/2026-05-repo-reset/backtest_mean_reversion_guard_comparison.py`
+- `scripts/tools/archive/2026-05-repo-reset/investigate_same_bar_round_trips.py`
+
 ## Archive candidates for #363 follow-up
 
-These names match one-off prefixes and were not identified as live cron/systemd entrypoints in this pass. Each still needs `rg` reference check immediately before moving:
+These names match one-off prefixes but still have tests/docs/migration references or need a narrower manual check before moving:
 
-- `scripts/audit_*.py`
-- `scripts/backfill_cat_stop_price.py`
-- `scripts/backfill_oos_metrics_research_best.py`
-- `scripts/backfill_regime_research_best.py`
-- `scripts/backfill_strategy_lifecycle.py`
-- `scripts/backfill_stub_closed_trades.py`
-- `scripts/backtest_*_comparison.py`
-- `scripts/dedupe_overlay_decisions.py`
-- `scripts/find_dashboard_json_writer.py`
-- `scripts/fix_equity_history_divergences_2026-05-14.py`
-- `scripts/fix_ledger_sync.py`
-- `scripts/forensic_chtr_fills.py`
-- `scripts/investigate_*.py`
-- `scripts/review_vision_ab.py`
-- `scripts/seed_asx_equity.py`
-- `scripts/trigger_commodity_promotion.py`
+- `scripts/audit_duplicate_trades.py` — migration message reference
+- `scripts/audit_health_source_changes.py` — audit doc reference
+- `scripts/audit_per_market_equity.py` — data audit doc labels as daily sanity audit
+- `scripts/audit_promotion_backlog.py` — tested by canary/research-best tests
+- `scripts/audit_promotion_integrity.py` — consumed by `research/integrity.py`
+- `scripts/audit_state_order_id_collisions.py` — cleanup-plan reference
+- `scripts/backfill_cat_stop_price.py` — explicit regression test requires file presence
+- `scripts/backfill_oos_metrics_research_best.py` — strategy-promotion docs + tests
+- `scripts/backfill_regime_research_best.py` — tests
+- `scripts/backfill_strategy_lifecycle.py` — tests
+- `scripts/backfill_stub_closed_trades.py` — no source refs except this doc; verify whether still useful before moving
+- `scripts/backtest_overlay_phase3a.py` — schema/runbook reference
+- `scripts/backtest_same_bar_mitigation_comparison.py` — active same-bar decision context
+- `scripts/dedupe_overlay_decisions.py` — operator tool; no live cron ref
+- `scripts/find_dashboard_json_writer.py` — no source refs except this doc; likely next archive candidate
+- `scripts/fix_equity_history_divergences_2026-05-14.py` — tests
+- `scripts/fix_ledger_sync.py` — historical chat/data reference only; likely next archive candidate after ignoring runtime chat refs
+- `scripts/forensic_chtr_fills.py` — tests
+- `scripts/investigate_discovery.py` — tests document root cause there
+- `scripts/review_vision_ab.py` — tests and chart-vision audit docs
+- `scripts/seed_asx_equity.py` — tests instruct operator to run it
+- `scripts/trigger_commodity_promotion.py` — referenced by sandbox summary script
 
 ## Next action
 

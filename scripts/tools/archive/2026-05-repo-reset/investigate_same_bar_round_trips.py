@@ -6,7 +6,7 @@ then cross-references the trade ledger (SQLite) to classify each round-trip
 as INVISIBLE / PARTIAL / RECORDED.
 
 Run:
-    cd /root/atlas && python3 scripts/investigate_same_bar_round_trips.py
+    cd /root/atlas && python3 scripts/tools/archive/2026-05-repo-reset/investigate_same_bar_round_trips.py
 
 Writes:
     docs/audits/same-bar-round-trips-audit.md
