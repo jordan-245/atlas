@@ -6,6 +6,23 @@ tracks real work against real commits.
 
 ---
 
+## 🔧 IN PROGRESS — #364/#365 returns/performance audit fix (2026-05-27)
+
+- [ ] Fix #364 accounting source-of-truth failures:
+  - [ ] Per-market allocation audit must ignore/retire disabled markets and reconcile active allocation to broker equity.
+  - [ ] Eliminate impossible negative `positions_value` in active equity reporting.
+  - [ ] Resolve stale SP500 high-water mark after 2026-04-29 recalibration.
+  - [ ] Reconcile live JSON vs SQLite trade/equity ledgers or make one canonical source explicit.
+- [ ] Fix #365 CLI regressions:
+  - [ ] `scripts/cli.py -m sp500 history` no longer crashes on `OrderStatus`.
+  - [ ] `scripts/cli.py -m sp500 ledger` reports recent closed trades from the canonical ledger.
+  - [ ] `atlas_jobs_run cli_backtest` no longer emits unsupported `--days` for current CLI.
+- [ ] Verification gates:
+  - [ ] `python3 scripts/audit_per_market_equity.py` passes.
+  - [ ] `python3 scripts/check_equity_config_sum.py` passes.
+  - [ ] `python3 scripts/cli.py -m sp500 status`, `ledger`, `history`, and `backtest` succeed.
+  - [ ] Focused pytest coverage for touched accounting/CLI paths passes.
+
 ## ✅ DONE — Wave 1 audit fixes (commits 4413501e..b085c620)
 
 - [x] Orphan DB cleanup + archive stale backups — `4413501e`
