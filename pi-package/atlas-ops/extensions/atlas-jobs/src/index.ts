@@ -166,11 +166,20 @@ function buildPythonScriptInvocation(scriptPath: string, scriptArgs: string[]) {
   return { cmd, args, command: commandString(cmd, args) };
 }
 
+// Subcommands of scripts/cli.py that accept `--date YYYY-MM-DD` after the
+// subcommand name. Keep in sync with the argparse definitions in scripts/cli.py.
+const SUBCOMMANDS_ACCEPTING_DATE = new Set(["plan", "approve", "ingest"]);
+// Subcommands that accept `--days N`. `backtest` is intentionally NOT in this
+// set — scripts/cli.py's backtest subparser has no --days option, so forwarding
+// it would crash argparse with `unrecognized arguments: --days N`.
+const SUBCOMMANDS_ACCEPTING_DAYS = new Set(["ledger", "history", "fees"]);
+
 function buildCliInvocation(subcommand: string, params?: RunArgs, extraFlags?: string[]) {
   const args = { ...(params ?? {}) };
   // -m/--market is a GLOBAL flag in scripts/cli.py argparse (defined on top-level
   // parser BEFORE add_subparsers), so it MUST come BEFORE the subcommand.
-  // Subcommand-specific flags (--date, --days) come AFTER.
+  // Subcommand-specific flags (--date, --days) come AFTER, and ONLY for the
+  // subcommands that declare them in argparse.
   const cliArgs = ["scripts/cli.py"];
   const market = consumeArg<string>(args, "market");
   if (market !== undefined) {
@@ -178,11 +187,11 @@ function buildCliInvocation(subcommand: string, params?: RunArgs, extraFlags?: s
   }
   cliArgs.push(subcommand);
   const date = consumeArg<string>(args, "date");
-  if (date !== undefined) {
+  if (date !== undefined && SUBCOMMANDS_ACCEPTING_DATE.has(subcommand)) {
     cliArgs.push("--date", String(date));
   }
   const days = consumeArg<number | string>(args, "days");
-  if (days !== undefined) {
+  if (days !== undefined && SUBCOMMANDS_ACCEPTING_DAYS.has(subcommand)) {
     cliArgs.push("--days", String(days));
   }
   if (extraFlags) {

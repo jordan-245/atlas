@@ -790,29 +790,41 @@ class LivePortfolio:
         """Manual positions not managed by Atlas."""
         return [p for p in self.positions if p.strategy in ("unknown", "")]
 
-    def equity(self, prices: dict[str, float] = None) -> float:
-        """Atlas-only equity: inferred cash + Atlas position values.
+    def _atlas_slice(self, prices: dict[str, float] = None) -> tuple[float, float]:
+        """Return (atlas_positions_value, atlas_cash) for the per-market slice.
 
         Manual positions (strategy='unknown') share the same broker account but
         are NOT Atlas-managed.  We therefore do NOT use self.cash (total broker
         cash) — it is inflated when manual positions exist in the account.
 
-        Instead we infer the Atlas cash slice as:
+        We infer the Atlas cash slice as:
             atlas_cash = starting_equity - sum(entry_costs) + total_realized_pnl
 
         This accounts for profits/losses from closed trades being returned
         to the cash pool, keeping Atlas equity continuous across trade exits.
+
+        Returns:
+            (atlas_positions_value, atlas_cash) both as floats.  Both values are
+            non-negative by construction unless realized losses exceed starting
+            equity — in which case ``atlas_cash`` can legitimately go negative.
         """
         atlas_pos = self.atlas_positions
         atlas_pos_value = sum(
             p.current_value(prices.get(p.ticker, p.entry_price) if prices else p.entry_price)
             for p in atlas_pos
         )
-        # Infer cash: starting capital minus what is currently deployed,
-        # plus realized P&L from closed trades.
         atlas_entry_cost = sum(p.entry_value for p in atlas_pos)
         total_realized_pnl = sum((t.get("pnl") or 0) for t in self.closed_trades)
         atlas_cash = self.starting_equity - atlas_entry_cost + total_realized_pnl
+        return atlas_pos_value, atlas_cash
+
+    def equity(self, prices: dict[str, float] = None) -> float:
+        """Atlas-only equity: inferred cash + Atlas position values.
+
+        See :meth:`_atlas_slice` for cash inference.  Equivalent to
+        ``atlas_pos_value + atlas_cash`` for the per-market slice.
+        """
+        atlas_pos_value, atlas_cash = self._atlas_slice(prices)
         return round(atlas_cash + atlas_pos_value, 2)
 
     def broker_equity(self) -> float:
@@ -1286,8 +1298,18 @@ class LivePortfolio:
         self.halt_reason = ""
 
     def portfolio_summary(self, prices: dict[str, float] = None) -> dict:
-        """Build portfolio summary."""
-        eq = self.equity(prices)
+        """Build per-market portfolio summary.
+
+        ``equity``, ``cash`` and ``positions_value`` are the **Atlas slice**
+        for this market — they are internally consistent
+        (``equity == cash + positions_value``).  ``broker_cash`` / ``broker_equity``
+        expose the full broker-level totals for callers that need them.
+        Mixing the slice (``equity``) with the global (``self.cash``) was the
+        source of impossible negative ``positions_value`` writes into
+        ``equity_curve`` (F-04 regression).
+        """
+        atlas_pos_value, atlas_cash = self._atlas_slice(prices)
+        eq = round(atlas_cash + atlas_pos_value, 2)
         total_pnl = eq - self.starting_equity
         total_pnl_pct = round(total_pnl / self.starting_equity * 100, 2) if self.starting_equity else 0
 
@@ -1315,7 +1337,10 @@ class LivePortfolio:
         return {
             "date": today_str,
             "equity": eq,
-            "cash": self.cash,
+            "cash": round(atlas_cash, 2),
+            "positions_value": round(atlas_pos_value, 2),
+            "broker_cash": self.cash,
+            "broker_equity": self._broker_equity,
             "starting_equity": self.starting_equity,
             "total_pnl": round(total_pnl, 2),
             "total_pnl_pct": total_pnl_pct,
@@ -1348,7 +1373,12 @@ class LivePortfolio:
             )
             return
 
-        eq = self.equity(prices)
+        # F-04 fix: derive positions_value and cash from the **Atlas slice** so
+        # the equity_curve row is internally consistent (eq == cash + positions_value).
+        # Prior implementation used `eq - self.cash`, mixing the per-market slice with
+        # the FULL broker cash and producing impossible negative positions_value rows.
+        atlas_pos_value, atlas_cash = self._atlas_slice(prices)
+        eq = round(atlas_cash + atlas_pos_value, 2)
         # Per-position snapshot for future attribution analysis
         position_details = []
         for p in self.positions:
@@ -1371,8 +1401,8 @@ class LivePortfolio:
         _new_eq_entry = {
             "date": trade_date,
             "equity": eq,
-            "cash": self.cash,
-            "positions_value": round(eq - self.cash, 2),
+            "cash": round(atlas_cash, 2),
+            "positions_value": round(atlas_pos_value, 2),
             "num_positions": len(self.positions),
             "total_realized_pnl": total_realized,
             "total_closed_trades": len(self.closed_trades),

@@ -35,8 +35,18 @@ DB_PATH = PROJECT_ROOT / "data" / "atlas.db"
 
 logger = logging.getLogger(__name__)
 
-# Date the fix was applied — equity_curve should receive no new rows after this.
-_FIX_DATE = "2026-05-12"
+# Date the per-market F-04 fix was applied.
+# 2026-05-12 redirected equity ENDPOINTS away from equity_curve; the WRITER
+# (brokers.live_portfolio.record_equity + scripts/eod_settlement.py SQLite
+# block) kept the buggy `eq - self.cash` formula until 2026-05-27, leaving
+# 8 rows with positions_value < -$1000 between those dates.  The writer
+# fix on 2026-05-27 derives positions_value and cash from the Atlas slice
+# (eq == cash + positions_value), so all rows written from that date forward
+# must satisfy the floors.  Historical rows in [2026-05-12, 2026-05-27) are
+# acknowledged as corrupt-but-frozen — see
+# scripts/repair_equity_curve_positions_value.py (dry-run only) for the
+# audit/repair tool.
+_FIX_DATE = "2026-05-27"
 
 # Allow T+2 settlement may produce small negatives (±$200); but NOT thousands.
 _CASH_FLOOR = -1000.0

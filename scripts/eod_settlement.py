@@ -796,14 +796,29 @@ def main():
     # SQLite primary write: equity curve + portfolio/position snapshots
     try:
         from db import atlas_db
-        positions_value = round(eq - portfolio.cash, 2)
+        # F-04 fix: derive positions_value/cash from the Atlas slice so the
+        # equity_curve row is internally consistent (eq == cash + positions_value).
+        # The prior `eq - portfolio.cash` formula mixed the per-market slice with
+        # full broker cash and produced impossible negative positions_value rows.
+        try:
+            _atlas_pos_value, _atlas_cash = portfolio._atlas_slice(prices)
+        except AttributeError:
+            # Older portfolio implementations (paper-only) lack _atlas_slice;
+            # fall back to the safe positive-only formula.
+            _atlas_pos_value = sum(
+                p.shares * prices.get(p.ticker, p.entry_price)
+                for p in portfolio.positions
+            )
+            _atlas_cash = max(0.0, eq - _atlas_pos_value)
+        positions_value = round(_atlas_pos_value, 2)
+        recorded_cash = round(_atlas_cash, 2)
         daily_pnl_pct = round(daily_pnl / prev_equity * 100, 2) if prev_equity > 0 else 0
         total_pnl_pct = round(total_pnl / portfolio.starting_equity * 100, 2) if portfolio.starting_equity > 0 else 0
         atlas_db.record_equity(
             date=trade_date,
             market_id=market_id,
             equity=eq,
-            cash=portfolio.cash,
+            cash=recorded_cash,
             positions_value=positions_value,
             day_pnl=daily_pnl,
             regime_state=None,

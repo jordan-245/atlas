@@ -63,7 +63,10 @@ Each entry: `{ "date": "YYYY-MM-DD", "equity": float, "pnl": float, "fx_rate": f
 ## Performance metrics from backtest
 
 ```bash
-cd /root/atlas && python3 scripts/cli.py -m sp500 backtest --days 252
+cd /root/atlas && python3 scripts/cli.py -m sp500 backtest
 ```
 
-Or use `atlas_jobs_run` tool with job `cli_backtest`.
+The walk-forward window is config-driven
+(`config/active/<market>.json -> backtest.{train_window_days,test_window_days,step_days}`).
+The `backtest` subcommand does NOT accept `--days` or `--date` — use
+`atlas_jobs_run` with job `cli_backtest` and only the `market` arg.

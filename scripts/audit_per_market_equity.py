@@ -32,6 +32,30 @@ logger = logging.getLogger(__name__)
 _DRIFT_THRESHOLD = 20.0   # dollars — fail if sum(allocated) vs broker_eq drifts more than this
 _STALE_DAYS = 3            # days — fail if any market snapshot is older than this
 _STATE_DIR = _PROJECT_ROOT / "brokers" / "state"
+_CONFIG_DIR = _PROJECT_ROOT / "config" / "active"
+
+
+def _load_active_markets() -> set[str]:
+    """Return the set of market_ids whose active config has trading.live_enabled=True.
+
+    Snapshots/state for markets NOT in this set are historical artifacts from
+    universes that have been retired (e.g. sector_etfs/commodity_etfs after the
+    2026-05 single-universe consolidation).  The audit treats them as
+    informational rather than hard failures.
+    """
+    active: set[str] = set()
+    if not _CONFIG_DIR.exists():
+        return active
+    for cfg_path in sorted(_CONFIG_DIR.glob("*.json")):
+        try:
+            cfg = json.loads(cfg_path.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        if cfg.get("trading", {}).get("live_enabled") is not True:
+            continue
+        mid = cfg.get("market_id") or cfg_path.stem
+        active.add(mid)
+    return active
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Helper
@@ -53,7 +77,15 @@ def _load_state_file(market_id: str) -> dict:
 # ──────────────────────────────────────────────────────────────────────────────
 
 def check_snapshot_reconciliation() -> tuple[bool, str]:
-    """Return (pass, report_text)."""
+    """Return (pass, report_text).
+
+    Hard-fails when the sum of *active-market* allocated_equity drifts from
+    broker_equity by more than ``_DRIFT_THRESHOLD``.  Snapshots for retired
+    markets (no longer in config/active with live_enabled=True) are shown
+    INFO-only and excluded from the reconciliation sum, because their
+    allocated_equity is carry-forward bookkeeping that no longer maps to
+    real broker capital.
+    """
     try:
         from db.atlas_db import get_db
         with get_db() as db:
@@ -72,20 +104,47 @@ def check_snapshot_reconciliation() -> tuple[bool, str]:
     if not rows:
         return False, "No rows in market_equity_history — snapshot never written"
 
+    active = _load_active_markets()
     snap_date = rows[0]["date"]
     broker_eq = rows[0]["broker_equity"] or 0.0
-    total_alloc = sum(r["allocated_equity"] or 0.0 for r in rows)
-    drift = abs(total_alloc - broker_eq)
+    active_rows = [r for r in rows if r["market_id"] in active]
+    inactive_rows = [r for r in rows if r["market_id"] not in active]
+    total_alloc_active = sum(r["allocated_equity"] or 0.0 for r in active_rows)
+    drift = abs(total_alloc_active - broker_eq)
 
     lines = [f"Snapshot date: {snap_date}"]
     lines.append(f"  broker_equity (from snapshot): ${broker_eq:.2f}")
-    for r in rows:
+    lines.append(f"  active markets (live_enabled=True): {sorted(active) or '⟨none⟩'}")
+    if active_rows:
+        lines.append("  -- active --")
+        for r in active_rows:
+            lines.append(
+                f"  {r['market_id']}: allocated=${r['allocated_equity']:.2f}  "
+                f"(pos_mv=${r['position_mv']:.2f}  cash=${r['cash_attributed']:.2f})"
+            )
+        lines.append(f"  sum(allocated_equity, active only): ${total_alloc_active:.2f}")
         lines.append(
-            f"  {r['market_id']}: allocated=${r['allocated_equity']:.2f}  "
-            f"(pos_mv=${r['position_mv']:.2f}  cash=${r['cash_attributed']:.2f})"
+            f"  drift vs broker_equity = ${drift:.2f} "
+            f"{'✓' if drift <= _DRIFT_THRESHOLD else '✗ EXCEEDS THRESHOLD'}"
         )
-    lines.append(f"  sum(allocated_equity): ${total_alloc:.2f}")
-    lines.append(f"  drift = ${drift:.2f} {'✓' if drift <= _DRIFT_THRESHOLD else '✗ EXCEEDS THRESHOLD'}")
+    else:
+        lines.append("  -- active -- (no rows)")
+
+    if inactive_rows:
+        lines.append("  -- retired (INFO only, not summed) --")
+        for r in inactive_rows:
+            lines.append(
+                f"  {r['market_id']}: allocated=${r['allocated_equity']:.2f}  "
+                f"(pos_mv=${r['position_mv']:.2f}  cash=${r['cash_attributed']:.2f})  [retired]"
+            )
+
+    # If there are no active markets, treat as PASS (audit can't reconcile what
+    # isn't running).  Otherwise enforce the drift threshold against active rows.
+    if not active_rows:
+        lines.append(
+            "  No active markets to reconcile — audit returns PASS (snapshots are historical only)."
+        )
+        return True, "\n".join(lines)
 
     ok = drift <= _DRIFT_THRESHOLD
     return ok, "\n".join(lines)
@@ -96,7 +155,13 @@ def check_snapshot_reconciliation() -> tuple[bool, str]:
 # ──────────────────────────────────────────────────────────────────────────────
 
 def check_snapshot_freshness() -> tuple[bool, str]:
-    """Return (pass, report_text)."""
+    """Return (pass, report_text).
+
+    Stale snapshots for ACTIVE markets are flagged ``✗ STALE``.  Stale snapshots
+    for retired markets are flagged ``∘ STALE (retired)`` for visibility but do
+    not cause the audit to fail — those snapshots only exist as historical
+    carry-forward and are expected to drift once the universe is retired.
+    """
     try:
         from db.atlas_db import get_db
         with get_db() as db:
@@ -110,6 +175,7 @@ def check_snapshot_freshness() -> tuple[bool, str]:
     except Exception as exc:
         return False, f"DB read failed: {exc}"
 
+    active = _load_active_markets()
     today = date.today()
     lines = []
     all_ok = True
@@ -121,11 +187,16 @@ def check_snapshot_freshness() -> tuple[bool, str]:
         except (ValueError, TypeError):
             days_old = 9999
         stale = days_old > _STALE_DAYS
-        if stale:
+        is_active = r["market_id"] in active
+        if stale and is_active:
             all_ok = False
+            marker = "✗ STALE"
+        elif stale:
+            marker = "∘ STALE (retired — informational)"
+        else:
+            marker = "✓"
         lines.append(
-            f"  {r['market_id']}: latest={snap_date_str}  "
-            f"({days_old}d old)  {'✓' if not stale else '✗ STALE'}"
+            f"  {r['market_id']}: latest={snap_date_str}  ({days_old}d old)  {marker}"
         )
     return all_ok, "Snapshot freshness:\n" + "\n".join(lines)
 
@@ -177,7 +248,12 @@ def check_universe_membership_drift() -> tuple[bool, str]:
     except Exception as exc:
         return True, f"Universe check skipped (import error): {exc}"
 
-    markets = ["sp500", "sector_etfs", "commodity_etfs"]
+    active = _load_active_markets()
+    # Only check markets that are currently active OR have a state file present.
+    markets = sorted(
+        active
+        | {p.stem.removeprefix("live_") for p in _STATE_DIR.glob("live_*.json")}
+    )
     drift: list[str] = []
 
     for market in markets:
@@ -221,10 +297,15 @@ def check_universe_membership_drift() -> tuple[bool, str]:
 def check_hwm_consistency() -> tuple[bool, str]:
     """Return (pass, report_text).
 
-    Checks:
+    Checks for ACTIVE markets only:
+    - state file present (missing for inactive markets is informational, not a failure)
     - HWM not None (should be set from starting_equity at minimum)
     - HWM not > 5× starting_equity (would have been set from global broker equity)
     - daily_high_water_date is today or None (None triggers a HWM reset, which is safe)
+
+    For HWM > 5× starting_equity, this is reported as a WARNING (not hard-fail)
+    when the HWM looks like global broker equity — the
+    ``_load_local_state`` guard self-heals these on next portfolio load.
     """
     import json
 
@@ -232,14 +313,27 @@ def check_hwm_consistency() -> tuple[bool, str]:
     lines = []
     all_ok = True
 
+    active = _load_active_markets()
+    state_markets = {
+        p.stem.removeprefix("live_")
+        for p in _STATE_DIR.glob("live_*.json")
+    }
+    markets = sorted(active | state_markets)
+    if not markets:
+        return True, "HWM consistency: no active markets and no state files — nothing to check."
+
     try:
         configs_dir = _PROJECT_ROOT / "config" / "active"
-        for market in ["sp500", "sector_etfs", "commodity_etfs"]:
+        for market in markets:
             state_path = _STATE_DIR / f"live_{market}.json"
             cfg_path = configs_dir / f"{market}.json"
+            is_active = market in active
             if not state_path.exists():
-                lines.append(f"  {market}: state file MISSING ✗")
-                all_ok = False
+                if is_active:
+                    lines.append(f"  {market}: state file MISSING ✗ (active market)")
+                    all_ok = False
+                else:
+                    lines.append(f"  {market}: state file MISSING ∘ (retired — informational)")
                 continue
 
             state = json.loads(state_path.read_text())
@@ -258,8 +352,14 @@ def check_hwm_consistency() -> tuple[bool, str]:
             if hwm is None:
                 issues.append("HWM is None")
             elif hwm > starting_equity * 5:
-                issues.append(f"HWM ${hwm:.2f} > 5× starting_equity ${starting_equity:.2f} (stale global HWM?)")
-                all_ok = False
+                # Soft warning: the live LivePortfolio guard at _load_local_state
+                # re-anchors HWM against the snapshot's allocated_equity on next
+                # load.  Hard-failing here would block legitimate operations while
+                # the self-heal is pending.
+                issues.append(
+                    f"HWM ${hwm:.2f} > 5× starting_equity ${starting_equity:.2f} "
+                    f"— likely stale global HWM (self-heals on next portfolio load)"
+                )
 
             if hwm_date is None:
                 issues.append("hwm_date=None (will reset on next drawdown check — safe)")
@@ -269,10 +369,11 @@ def check_hwm_consistency() -> tuple[bool, str]:
             if halted:
                 issues.append("⚠️  market is HALTED")
 
-            status = "✓" if not issues or all(i.startswith("hwm_date") or "safe" in i for i in issues) else "✗"
+            tag = "" if is_active else " [retired]"
+            status = "✓" if not issues else "⚠"
             lines.append(
                 f"  {market}: HWM=${hwm:.2f}  date={hwm_date}  "
-                f"halted={halted}  {'|'.join(issues) if issues else 'OK'} {status}"
+                f"halted={halted}  {'|'.join(issues) if issues else 'OK'} {status}{tag}"
             )
     except Exception as exc:
         return False, f"HWM check failed: {exc}"

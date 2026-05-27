@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 
+from brokers.base import OrderStatus
 from brokers.execution_journal import journal_entry as _journal_entry
 
 logger = logging.getLogger("atlas.execution_analytics")

@@ -39,9 +39,9 @@ python3 -c "import json; print(json.load(open('config/active/sp500.json'))['vers
 
 ```bash
 cd /root/atlas && python3 scripts/cli.py -m sp500 backtest
-# Options:
-#   --days 252        # lookback period (default: full history)
-#   --date 2026-03-14 # end date
+# NOTE: the backtest subcommand has no --days/--date flags. The walk-forward
+# window is config-driven (config/active/<market>.json -> backtest.*). Use
+# Method 3 (ResearchSession) below when you need to vary the window per run.
 ```
 
 ### Method 2: atlas_jobs_run (async, tracked)
@@ -50,7 +50,7 @@ cd /root/atlas && python3 scripts/cli.py -m sp500 backtest
 Tool: atlas_jobs_run
 Params: {
   "job": "cli_backtest",
-  "args": { "market": "sp500", "days": "252" }
+  "args": { "market": "sp500" }
 }
 ```
 

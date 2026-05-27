@@ -146,7 +146,7 @@ python3 scripts/cli.py -m <market> <command> [options]
 |---------|---------|-------------|
 | `ingest` | Download/update market data | `-m sp500` |
 | `universe` | Build trading universe | `-m sp500` |
-| `backtest` | Run walk-forward backtest | `-m sp500 --days 252` |
+| `backtest` | Run walk-forward backtest | `-m sp500` (window is config-driven, no --days/--date) |
 | `plan` | Generate daily trade plan | `-m sp500 --date YYYY-MM-DD` |
 | `approve` | Approve a pending trade plan | `-m sp500` |
 | `status` | Show portfolio status | `-m sp500` |

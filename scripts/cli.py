@@ -548,18 +548,58 @@ def cmd_status(args):
 
 
 def cmd_ledger(args):
-    ledger = TradeLedger()
+    """Show closed-trade performance from the SQLite ``trades`` table.
+
+    Canonical source: ``data/atlas.db``. The legacy ``journal/trade_ledger.json``
+    audit file is no longer written to (see ``journal.logger.TradeLedger._save``
+    — Wave D1 SQLite cutover, 2026-04-28). All CLI/report consumers must read
+    from SQLite, not the JSON file.
+    """
+    from db import trades as _db_trades
+    market_id = getattr(args, "market", DEFAULT_MARKET)
     days = args.days or 30
-    perf = ledger.performance_summary(days=days)
-    print("\nTRADE LEDGER (last %d days)" % days)
+    perf = _db_trades.performance_summary(days=days)
+    closed = _db_trades.get_closed_trades(days=days, universe=market_id)
+
+    print("\nTRADE LEDGER \u2014 %s (last %d days)" % (market_id, days))
     print("=" * 50)
-    if perf.get("total_trades", 0) == 0:
+    n_market = len(closed)
+    n_total = perf.get("trades", 0)
+    if n_total == 0 and n_market == 0:
         print("No closed trades in this period.")
         return
-    print("   Total trades:   %d" % perf["total_trades"])
-    print("   Win rate:       %s%%" % perf["win_rate"])
-    print("   Total PnL:      %s" % format_aud(perf["total_pnl"]))
-    print("   Profit Factor:  %s" % perf["profit_factor"])
+
+    # Per-market summary derived from the filtered closed-trade list so the
+    # numbers shown match the ticker breakdown below.
+    if closed:
+        m_pnls = [(t.get("pnl") or 0) for t in closed]
+        m_wins = [p for p in m_pnls if p > 0]
+        m_losses = [p for p in m_pnls if p <= 0]
+        m_gp = sum(m_wins) if m_wins else 0.0
+        m_gl = abs(sum(m_losses)) if m_losses else 0.0
+        m_pf = round(min(m_gp / m_gl, 99.99), 2) if m_gl > 0 else (99.99 if m_gp > 0 else 0.0)
+        m_wr = round(len(m_wins) / len(m_pnls) * 100, 1) if m_pnls else 0.0
+        m_total_pnl = round(sum(m_pnls), 2)
+        print("   Total trades:   %d" % n_market)
+        print("   Win rate:       %.1f%%" % m_wr)
+        print("   Total PnL:      %s" % format_aud(m_total_pnl))
+        print("   Profit Factor:  %s" % m_pf)
+        print("   Last 5 closes:")
+        for t in closed[:5]:
+            print("     %s  %-6s  %s  pnl=%s  %s" % (
+                (t.get("exit_date") or "")[:10],
+                t.get("ticker", "?")[:6],
+                t.get("exit_reason", "")[:14].ljust(14),
+                format_aud(t.get("pnl") or 0),
+                t.get("strategy", ""),
+            ))
+    else:
+        # No trades in this market window, but global perf exists — surface
+        # the broader figure so operators can see Atlas is actually trading.
+        print("   No closed trades for market=%s in last %d days." % (market_id, days))
+        print("   Global totals (all markets): trades=%d win_rate=%.1f%% PF=%s" % (
+            n_total, perf.get("win_rate", 0.0), perf.get("profit_factor", 0.0),
+        ))
 
 
 def cmd_review(args):
