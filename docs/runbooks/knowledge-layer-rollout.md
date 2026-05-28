@@ -141,7 +141,24 @@ python3 scripts/backfill_knowledge.py
 ```
 
 **Verify**: JSON summary prints `would_process.pdf_files` and
-`would_process.spec_entries`. Both should be > 0 in production.
+`would_process.spec_entries`.
+
+- `pdf_files > 0` is **required**. Zero PDFs means there's nothing for the
+  knowledge layer to work with — STOP and ask the operator where the
+  download pipeline normally writes (typically `research/discovery/papers/`,
+  populated by `research.discovery.arxiv_api.fetch_new_papers`).
+- `spec_entries == 0` is a **yellow flag, not a stop**. Specs are an
+  *output* of the discovery pipeline (`research.discovery.discovery._extract_specs`
+  writes `research/discovery/specs/specs_<date>.json`). A fresh-ish system
+  often has papers without specs. Two options:
+    1. **Proceed**: apply backfill now (creates sources from PDFs, zero
+       claims). Then run `python3 -m research.discovery.run` to populate
+       specs, then re-run `scripts/backfill_knowledge.py --apply` to
+       capture them. This is the recommended path when starting fresh.
+    2. **Defer**: apply backfill now for sources only; let the existing
+       discovery cron populate specs over the next day(s); Phase 1.5
+       extraction will pick them up automatically once they appear.
+  Surface the choice to the operator if `spec_entries == 0`.
 
 ```bash
 python3 scripts/backfill_knowledge.py --apply
