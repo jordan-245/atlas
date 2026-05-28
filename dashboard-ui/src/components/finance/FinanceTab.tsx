@@ -1,17 +1,18 @@
+import { useMemo } from 'react'
 import { useFinanceData } from '../../api/queries'
 import { Skeleton } from '../layout/Skeleton'
 import { SectionBoundary } from '../layout/SectionBoundary'
 import { FinSummaryStrip } from './FinSummaryStrip'
-import { SpendingPaceChart } from './SpendingPaceChart'
-import { BankAccountsGrid } from './BankAccountsGrid'
-import { SpendingBars } from './SpendingBars'
-import { BudgetGrid } from './BudgetGrid'
-import { MonthlyComparison } from './MonthlyComparison'
+import { BurnDownMountain } from './BurnDownMountain'
+import { CategoryBurnGrid } from './CategoryBurnGrid'
+import { SaverPots } from './SaverPots'
+import { WhatIfPanel } from './WhatIfPanel'
+import { HistoricalOverspend } from './HistoricalOverspend'
 import { RecurringExpenses } from './RecurringExpenses'
 import { RecentTransactions } from './RecentTransactions'
+import { avgMonthlyNet } from './_burndown-math'
 
-// FinanceTabSkeleton — shimmer placeholders that mirror the actual layout
-// Uses <Skeleton> component (shimmer animation, not raw animate-pulse).
+// FinanceTabSkeleton — shimmer placeholders that mirror the actual B4 layout.
 function FinanceTabSkeleton() {
   return (
     <div className="space-y-4 md:space-y-6" aria-busy="true" aria-label="Loading finance data">
@@ -19,16 +20,21 @@ function FinanceTabSkeleton() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
       </div>
-      {/* Bank accounts */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {[1, 2, 3].map((i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
+      {/* Burn-down mountain hero */}
+      <Skeleton className="h-80 rounded-xl" />
+      {/* Category burn grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-28 rounded-xl" />)}
       </div>
-      {/* Budget grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {[1, 2, 3].map((i) => <Skeleton key={i} className="h-28 rounded-xl" />)}
+      {/* Saver pots */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-52 rounded-xl" />)}
       </div>
-      {/* Spending bars */}
-      <Skeleton className="h-32 rounded-xl" />
+      {/* What-if + history */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Skeleton className="h-56 rounded-xl" />
+        <Skeleton className="h-56 rounded-xl" />
+      </div>
     </div>
   )
 }
@@ -37,9 +43,25 @@ export function FinanceTab() {
   const finance = useFinanceData(true)
   const { data, isLoading } = finance
 
+  // Memoise the average monthly net — used by both SaverPots (for ETAs) and
+  // WhatIfPanel (for the cut-and-save projection). Computed once per data
+  // change to avoid recomputing on every render.
+  const monthlyNet = useMemo(
+    () => avgMonthlyNet(data?.insights?.monthly_comparison),
+    [data?.insights?.monthly_comparison],
+  )
+
   if (isLoading || !data) {
     return <FinanceTabSkeleton />
   }
+
+  const paceData = data.insights?.pace_data ?? []
+  const totalBudget = data.insights?.total_monthly_budget ?? 0
+  const hasMountainData = paceData.length > 0 && totalBudget > 0
+  const categories = data.monthly_spending?.by_parent_category ?? []
+  const trends = data.insights?.category_trends
+  const accounts = data.accounts ?? []
+  const comparison = data.insights?.monthly_comparison ?? []
 
   return (
     <div className="space-y-4 md:space-y-6 stagger">
@@ -49,68 +71,71 @@ export function FinanceTab() {
         </SectionBoundary>
       </div>
 
-      <div className="animate-in">
-        <SectionBoundary title="Spending Pace">
-          {data.insights?.pace_data && data.insights.pace_data.length > 0
-            ? <SpendingPaceChart
-                paceData={data.insights.pace_data}
-                paceStatus={data.insights.pace_status}
-                paceDiff={data.insights.pace_diff}
-              />
-            : null}
-        </SectionBoundary>
-      </div>
+      {hasMountainData && (
+        <div className="animate-in">
+          <SectionBoundary title="Burn-down">
+            <BurnDownMountain
+              paceData={paceData}
+              totalMonthlyBudget={totalBudget}
+              dailyAvg={data.insights?.daily_avg ?? 0}
+              daysLeft={data.insights?.days_left}
+              projectedTotal={data.insights?.projected_total}
+              paceStatus={data.insights?.pace_status}
+              paceDiff={data.insights?.pace_diff}
+            />
+          </SectionBoundary>
+        </div>
+      )}
 
-      <div className="animate-in">
-        <SectionBoundary title="Accounts">
-          {data.accounts && data.accounts.length > 0
-            ? <BankAccountsGrid accounts={data.accounts} />
-            : null}
-        </SectionBoundary>
-      </div>
+      {categories.length > 0 && (
+        <div className="animate-in">
+          <SectionBoundary title="Categories">
+            <CategoryBurnGrid categories={categories} trends={trends} />
+          </SectionBoundary>
+        </div>
+      )}
 
-      <div className="animate-in">
-        <SectionBoundary title="Categories">
-          {data.monthly_spending?.by_parent_category && data.monthly_spending.by_parent_category.length > 0
-            ? <SpendingBars
-                categories={data.monthly_spending.by_parent_category}
-                total={data.monthly_spending.total}
-              />
-            : null}
-        </SectionBoundary>
-      </div>
+      {accounts.length > 0 && (
+        <div className="animate-in">
+          <SectionBoundary title="Savers">
+            <SaverPots accounts={accounts} avgMonthlyNet={monthlyNet} />
+          </SectionBoundary>
+        </div>
+      )}
 
-      <div className="animate-in">
-        <SectionBoundary title="Budgets">
-          {data.insights?.account_limits && Object.keys(data.insights.account_limits).length > 0
-            ? <BudgetGrid accountLimits={data.insights.account_limits} accounts={data.accounts ?? []} />
-            : null}
-        </SectionBoundary>
-      </div>
+      {(comparison.length > 0 || totalBudget > 0) && (
+        <div className="animate-in grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <SectionBoundary title="What-if">
+            <WhatIfPanel
+              accounts={accounts}
+              avgMonthlyNet={monthlyNet}
+              monthlyComparison={comparison}
+            />
+          </SectionBoundary>
+          <SectionBoundary title="History">
+            <HistoricalOverspend
+              monthlyComparison={comparison}
+              totalMonthlyBudget={totalBudget}
+            />
+          </SectionBoundary>
+        </div>
+      )}
 
-      <div className="animate-in">
-        <SectionBoundary title="Monthly">
-          {data.insights?.monthly_comparison && data.insights.monthly_comparison.length > 0
-            ? <MonthlyComparison rows={data.insights.monthly_comparison} />
-            : null}
-        </SectionBoundary>
-      </div>
+      {data.insights?.recurring && data.insights.recurring.length > 0 && (
+        <div className="animate-in">
+          <SectionBoundary title="Recurring">
+            <RecurringExpenses items={data.insights.recurring} />
+          </SectionBoundary>
+        </div>
+      )}
 
-      <div className="animate-in">
-        <SectionBoundary title="Recurring">
-          {data.insights?.recurring && data.insights.recurring.length > 0
-            ? <RecurringExpenses items={data.insights.recurring} />
-            : null}
-        </SectionBoundary>
-      </div>
-
-      <div className="animate-in">
-        <SectionBoundary title="Transactions">
-          {data.recent_transactions && data.recent_transactions.length > 0
-            ? <RecentTransactions transactions={data.recent_transactions} />
-            : null}
-        </SectionBoundary>
-      </div>
+      {data.recent_transactions && data.recent_transactions.length > 0 && (
+        <div className="animate-in">
+          <SectionBoundary title="Transactions">
+            <RecentTransactions transactions={data.recent_transactions} />
+          </SectionBoundary>
+        </div>
+      )}
     </div>
   )
 }
