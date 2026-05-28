@@ -1,16 +1,10 @@
-import { ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
-import { ChartGate } from '../shared/ChartGate'
+import { useMemo } from 'react'
+import { Chart } from '../shared/Chart'
 import type { PacePoint } from '../../api/types'
-import { ChartTooltip } from '../shared/ChartTooltip'
 import { fmtDateShort, fmtCcy } from '../../lib/format'
-import {
-  CHART_GRID,
-  CHART_TICK,
-  CHART_ANIM,
-  CHART_CURSOR,
-  SERIES_PORTFOLIO,
-  SERIES_BENCHMARK,
-} from '../../lib/chart-palette'
+import { useCssVars } from '../../hooks/useCssVar'
+import { gradientFill } from '../../lib/chart-defaults'
+import type { ChartData, ChartOptions } from 'chart.js'
 
 interface Props {
   paceData: PacePoint[]
@@ -25,10 +19,100 @@ function badgeClass(status: string | undefined): string {
 }
 
 export function SpendingPaceChart({ paceData, paceStatus, paceDiff }: Props) {
-  // Derive budget target from last budget data point
+  const colors = useCssVars([
+    '--color-series-portfolio',
+    '--color-series-benchmark',
+    '--color-text-muted',
+  ] as const)
+
+  const portfolioColor = colors['--color-series-portfolio'] || '#22c55e'
+  const benchmarkColor = colors['--color-series-benchmark'] || '#a1a1aa'
+  const mutedColor    = colors['--color-text-muted']       || '#8b929d'
+
   const budgetTarget = paceData.length > 0
     ? paceData[paceData.length - 1]?.budget
     : undefined
+
+  const chartConfig = useMemo<ChartData<'line'>>(() => ({
+    labels: paceData.map((d) => d.date),
+    datasets: [
+      {
+        label: 'Actual',
+        data: paceData.map((d) => d.actual ?? null) as number[],
+        borderColor: portfolioColor,
+        borderWidth: 2,
+        fill: true,
+        backgroundColor: gradientFill(portfolioColor, 0.20) as unknown as string,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        tension: 0.25,
+        spanGaps: true,
+      },
+      {
+        label: 'Budget',
+        data: paceData.map((d) => d.budget ?? null) as number[],
+        borderColor: benchmarkColor,
+        borderWidth: 1.5,
+        borderDash: [4, 4],
+        fill: false,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        tension: 0.25,
+        spanGaps: true,
+      },
+      ...(budgetTarget != null ? [{
+        label: '_target',
+        data: paceData.map(() => budgetTarget) as number[],
+        borderColor: mutedColor,
+        borderWidth: 1,
+        borderDash: [6, 4],
+        fill: false,
+        pointRadius: 0,
+        pointHoverRadius: 0,
+        tension: 0,
+      }] : []),
+    ],
+  }), [paceData, portfolioColor, benchmarkColor, mutedColor, budgetTarget])
+
+  const chartOptions = useMemo<ChartOptions<'line'>>(() => ({
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        filter: (item) => (item.dataset.label ?? '').charAt(0) !== '_',
+        callbacks: {
+          title: (items) => (items[0]?.label ? fmtDateShort(items[0].label) : ''),
+          label: (ctx) => {
+            const name = ctx.dataset.label ?? ''
+            const v = typeof ctx.parsed.y === 'number' ? ctx.parsed.y : 0
+            return `${name}: ${fmtCcy(v)}`
+          },
+        },
+      },
+    },
+    scales: {
+      x: {
+        ticks: {
+          color: 'var(--color-text-muted)',
+          font: { size: 10 },
+          maxRotation: 0,
+          autoSkipPadding: 24,
+          callback(value) {
+            return fmtDateShort(this.getLabelForValue(Number(value)) as string)
+          },
+        },
+      },
+      y: {
+        ticks: {
+          color: 'var(--color-text-muted)',
+          font: { size: 10 },
+          callback(v) {
+            return '$' + Math.round(Number(v)).toLocaleString('en-US')
+          },
+        },
+      },
+    },
+    animation: { duration: 600, easing: 'easeOutQuart' },
+  }), [])
 
   return (
     <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5 dash-card">
@@ -40,71 +124,12 @@ export function SpendingPaceChart({ paceData, paceStatus, paceDiff }: Props) {
           </div>
         ) : null}
       </div>
-      <ChartGate className="h-[280px] w-full">
-        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-          <ComposedChart data={paceData}>
-            <defs>
-              <linearGradient id="spendingGrad" x1="0" y1="0" x2="0" y2="1">
-                {/* Use portfolio series token — green in dark, darker green in light */}
-                <stop offset="0%" stopColor={SERIES_PORTFOLIO} stopOpacity={0.20} />
-                <stop offset="100%" stopColor={SERIES_PORTFOLIO} stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid {...CHART_GRID} />
-            <XAxis
-              dataKey="date"
-              tickFormatter={(v) => fmtDateShort(v as string)}
-              axisLine={false}
-              tickLine={false}
-              tick={CHART_TICK}
-            />
-            <YAxis
-              tickFormatter={(v) => '$' + Math.round(v as number).toLocaleString('en-US')}
-              axisLine={false}
-              tickLine={false}
-              tick={CHART_TICK}
-            />
-            <Tooltip
-              cursor={CHART_CURSOR}
-              content={
-                <ChartTooltip
-                  labelFormatter={(l) => fmtDateShort(l)}
-                  formatter={(v) => fmtCcy(v)}
-                />
-              }
-            />
-            {budgetTarget != null ? (
-              <ReferenceLine
-                y={budgetTarget}
-                stroke="var(--color-text-muted)"
-                strokeDasharray="6 4"
-                strokeOpacity={0.5}
-              />
-            ) : null}
-            <Area
-              dataKey="actual"
-              name="Actual"
-              stroke={SERIES_PORTFOLIO}
-              strokeWidth={2}
-              fill="url(#spendingGrad)"
-              baseValue={0}
-              dot={false}
-              {...CHART_ANIM}
-              animationDuration={1200}
-            />
-            <Line
-              dataKey="budget"
-              name="Budget"
-              stroke={SERIES_BENCHMARK}
-              strokeDasharray="4 4"
-              strokeWidth={1.5}
-              dot={false}
-              {...CHART_ANIM}
-              animationDuration={1200}
-            />
-          </ComposedChart>
-        </ResponsiveContainer>
-      </ChartGate>
+      <Chart
+        kind="line"
+        data={chartConfig as ChartData<'line' | 'bar' | 'doughnut'>}
+        options={chartOptions as ChartOptions<'line' | 'bar' | 'doughnut'>}
+        height={280}
+      />
     </div>
   )
 }

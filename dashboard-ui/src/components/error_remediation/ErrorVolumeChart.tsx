@@ -1,13 +1,6 @@
-import { useEffect, useState } from 'react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { ChartGate } from '../shared/ChartGate'
-import { ChartTooltip } from '../shared/ChartTooltip'
-import {
-  CHART_GRID,
-  CHART_TICK,
-  CHART_ANIM,
-  CHART_CURSOR,
-} from '../../lib/chart-palette'
+import { useEffect, useMemo, useState } from 'react'
+import { Chart } from '../shared/Chart'
+import type { ChartData, ChartOptions } from 'chart.js'
 
 interface Bucket {
   hour: string
@@ -52,6 +45,56 @@ export function ErrorVolumeChart() {
     return () => { cancelled = true }
   }, [])
 
+  const chartConfig = useMemo<ChartData<'line'>>(() => ({
+    labels: data.map((d) => d.hour),
+    datasets: [
+      {
+        label: 'Errors',
+        data: data.map((d) => d.errors),
+        borderColor: 'var(--color-red)',
+        borderWidth: 2,
+        fill: false,
+        pointRadius: 0,
+        pointHoverRadius: 3,
+        tension: 0.25,
+      },
+    ],
+  }), [data])
+
+  const chartOptions = useMemo<ChartOptions<'line'>>(() => ({
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          title: (items) => (items[0]?.label ? fmtHourBucket(items[0].label) : ''),
+          label: (ctx) => String(ctx.parsed.y),
+        },
+      },
+    },
+    scales: {
+      x: {
+        ticks: {
+          color: 'var(--color-text-muted)',
+          font: { size: 10 },
+          maxRotation: 0,
+          autoSkipPadding: 16,
+          callback(value) {
+            return fmtHourBucket(this.getLabelForValue(Number(value)) as string)
+          },
+        },
+      },
+      y: {
+        beginAtZero: true,
+        ticks: {
+          color: 'var(--color-text-muted)',
+          font: { size: 10 },
+          precision: 0,
+        },
+      },
+    },
+    animation: { duration: 500, easing: 'easeOutQuart' },
+  }), [])
+
   return (
     <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5">
       <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-medium mb-4">
@@ -67,45 +110,12 @@ export function ErrorVolumeChart() {
           No errors in the last 24h
         </div>
       ) : (
-        <ChartGate className="h-[180px] w-full">
-          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-            <LineChart data={data}>
-              <CartesianGrid {...CHART_GRID} />
-              <XAxis
-                dataKey="hour"
-                tickFormatter={fmtHourBucket}
-                axisLine={false}
-                tickLine={false}
-                tick={CHART_TICK}
-                interval="preserveStartEnd"
-              />
-              <YAxis
-                allowDecimals={false}
-                axisLine={false}
-                tickLine={false}
-                tick={CHART_TICK}
-                width={28}
-              />
-              <Tooltip
-                cursor={CHART_CURSOR}
-                content={
-                  <ChartTooltip
-                    labelFormatter={(l) => fmtHourBucket(l as string)}
-                    formatter={(v) => String(v)}
-                  />
-                }
-              />
-              <Line
-                dataKey="errors"
-                name="Errors"
-                stroke="var(--color-red)"
-                strokeWidth={2}
-                dot={false}
-                {...CHART_ANIM}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </ChartGate>
+        <Chart
+          kind="line"
+          data={chartConfig as ChartData<'line' | 'bar' | 'doughnut'>}
+          options={chartOptions as ChartOptions<'line' | 'bar' | 'doughnut'>}
+          height={180}
+        />
       )}
     </div>
   )

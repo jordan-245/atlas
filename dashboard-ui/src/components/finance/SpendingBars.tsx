@@ -1,6 +1,6 @@
 import type { SpendCategory } from '../../api/types'
 import { fmtCcy } from '../../lib/format'
-import { paletteFor } from '../../lib/chart-palette'
+import { paletteFor } from '../../lib/chart-defaults'
 
 interface Props {
   categories: SpendCategory[]

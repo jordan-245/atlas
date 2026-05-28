@@ -1,20 +1,12 @@
 import { useState, useEffect, useMemo } from 'react'
-import { ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
-import { ChartGate } from '../shared/ChartGate'
+import { Chart } from '../shared/Chart'
 import { Badge } from '../shared/Badge'
 import { useEquityChartData } from '../../api/queries'
 import { Skeleton } from '../layout/Skeleton'
-import { ChartTooltip } from '../shared/ChartTooltip'
 import { fmtCcy, fmtDateShort, fmtSignedPct } from '../../lib/format'
 import { useCssVars } from '../../hooks/useCssVar'
-import {
-  CHART_GRID,
-  CHART_TICK,
-  CHART_ANIM,
-  CHART_CURSOR,
-  SERIES_PORTFOLIO,
-  SERIES_BENCHMARK,
-} from '../../lib/chart-palette'
+import { gradientFill } from '../../lib/chart-defaults'
+import type { ChartData, ChartOptions } from 'chart.js'
 
 // Period selector options
 const PERIODS = [
@@ -27,7 +19,7 @@ const PERIODS = [
 type PeriodKey = (typeof PERIODS)[number]['key']
 
 // ---------------------------------------------------------------------------
-// EquityReturnBadge — migrated to <Badge> primitive
+// EquityReturnBadge -- unchanged
 // ---------------------------------------------------------------------------
 interface EquityReturnBadgeProps {
   portfolioReturnPct: number
@@ -44,7 +36,7 @@ function EquityReturnBadge({ portfolioReturnPct, alphaVsSpy }: EquityReturnBadge
 }
 
 // ---------------------------------------------------------------------------
-// PeriodSelector — compact ghost-style pill buttons
+// PeriodSelector -- unchanged
 // ---------------------------------------------------------------------------
 function PeriodSelector({ active, onChange }: { active: PeriodKey; onChange: (k: PeriodKey) => void }) {
   return (
@@ -67,19 +59,18 @@ function PeriodSelector({ active, onChange }: { active: PeriodKey; onChange: (k:
 }
 
 // ---------------------------------------------------------------------------
-// EquityChart
+// EquityChart -- Chart.js port
 // ---------------------------------------------------------------------------
 export function EquityChart() {
   const colors = useCssVars([
     '--color-series-portfolio',
     '--color-series-benchmark',
-    '--color-text-muted',
+    '--color-border',
   ] as const)
 
-  // Resolved CSS-var values for SVG attributes (can't use var() inside SVG attrs)
-  const portfolioColor = colors['--color-series-portfolio'] || SERIES_PORTFOLIO
-  const benchmarkColor = colors['--color-series-benchmark'] || SERIES_BENCHMARK
-  const textMuted = colors['--color-text-muted'] || 'var(--color-text-muted)'
+  const portfolioColor = colors['--color-series-portfolio'] || '#22c55e'
+  const benchmarkColor = colors['--color-series-benchmark'] || '#a1a1aa'
+  const borderColor = colors['--color-border'] || '#2a2f37'
 
   const [isMobile, setIsMobile] = useState(false)
   useEffect(() => {
@@ -101,20 +92,101 @@ export function EquityChart() {
     return all.slice(-p.days)
   }, [query.data?.chartData, period])
 
-  // Derive start equity from the first visible data point for the baseline reference line
   const startEquity = useMemo(() => {
     const first = filteredData[0]
     return first?.portfolio ?? null
   }, [filteredData])
 
+  const chartData = useMemo<ChartData<'line'>>(() => {
+    return {
+      labels: filteredData.map((d) => d.date),
+      datasets: [
+        {
+          label: 'Portfolio',
+          data: filteredData.map((d) => d.portfolio ?? null) as number[],
+          borderColor: portfolioColor,
+          borderWidth: 2,
+          fill: true,
+          backgroundColor: gradientFill(portfolioColor, 0.30) as unknown as string,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          tension: 0.25,
+          spanGaps: true,
+        },
+        {
+          label: 'SPY',
+          data: filteredData.map((d) => d.spy ?? null) as number[],
+          borderColor: benchmarkColor,
+          borderWidth: 1.5,
+          borderDash: [4, 4],
+          fill: false,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          tension: 0.25,
+          spanGaps: true,
+        },
+        // Reference line at start-equity drawn as a flat dataset
+        ...(startEquity != null ? [{
+          label: '_baseline',
+          data: filteredData.map(() => startEquity) as number[],
+          borderColor: borderColor,
+          borderWidth: 1,
+          borderDash: [2, 2],
+          fill: false,
+          pointRadius: 0,
+          pointHoverRadius: 0,
+          tension: 0,
+          // Hide from tooltip + legend
+        }] : []),
+      ],
+    }
+  }, [filteredData, portfolioColor, benchmarkColor, borderColor, startEquity])
+
+  const options = useMemo<ChartOptions<'line'>>(() => ({
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        filter: (item) => (item.dataset.label ?? '').charAt(0) !== '_',
+        callbacks: {
+          title: (items) => (items[0]?.label ? fmtDateShort(items[0].label) : ''),
+          label: (ctx) => {
+            const name = ctx.dataset.label ?? ''
+            const v = typeof ctx.parsed.y === 'number' ? ctx.parsed.y : 0
+            return `${name}: ${fmtCcy(v)}`
+          },
+        },
+      },
+    },
+    scales: {
+      x: {
+        ticks: {
+          color: 'var(--color-text-muted)',
+          font: { size: isMobile ? 9 : 10 },
+          maxRotation: 0,
+          autoSkipPadding: 24,
+          callback(value) {
+            const label = this.getLabelForValue(Number(value))
+            return fmtDateShort(label as string)
+          },
+        },
+      },
+      y: {
+        ticks: {
+          color: 'var(--color-text-muted)',
+          font: { size: isMobile ? 9 : 10 },
+          callback(v) {
+            return '$' + Math.round(Number(v)).toLocaleString('en-US')
+          },
+        },
+      },
+    },
+    elements: {
+      point: { radius: 0, hoverRadius: 4 },
+    },
+    animation: { duration: 600, easing: 'easeOutQuart' },
+  }), [isMobile])
+
   if (!query.data) return <Skeleton className="h-96" />
-
-  const tickStyle = { ...CHART_TICK, fontSize: isMobile ? 9 : 10, fill: textMuted }
-
-  const tooltipFormatter = (value: number, name: string) => {
-    if (name === 'Portfolio' || name === 'SPY') return fmtCcy(value)
-    return value.toLocaleString()
-  }
 
   return (
     <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-4 dash-card">
@@ -128,81 +200,12 @@ export function EquityChart() {
           alphaVsSpy={query.data.alphaVsSpy}
         />
       </div>
-      <ChartGate className="h-[280px] md:h-[360px]">
-        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-          <ComposedChart data={filteredData}>
-            <defs>
-              <linearGradient id="portfolioGrad" x1="0" y1="0" x2="0" y2="1">
-                {/* opacity 0.30 for slightly stronger fill vs old 0.25 */}
-                <stop offset="0%" stopColor={portfolioColor} stopOpacity={0.30} />
-                <stop offset="100%" stopColor={portfolioColor} stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid {...CHART_GRID} />
-            <XAxis
-              dataKey="date"
-              tickFormatter={(v) => fmtDateShort(v as string)}
-              axisLine={false}
-              tickLine={false}
-              interval="preserveStartEnd"
-              minTickGap={40}
-              tick={tickStyle}
-            />
-            <YAxis
-              domain={[
-                (dataMin: number) => Math.floor(dataMin * 0.99),
-                (dataMax: number) => Math.ceil(dataMax * 1.01),
-              ]}
-              tickFormatter={(v) => '$' + Math.round(v as number).toLocaleString('en-US')}
-              axisLine={false}
-              tickLine={false}
-              tick={tickStyle}
-              width={70}
-              allowDataOverflow={false}
-            />
-            <Tooltip
-              cursor={CHART_CURSOR}
-              content={
-                <ChartTooltip
-                  labelFormatter={(l) => fmtDateShort(l)}
-                  formatter={tooltipFormatter}
-                />
-              }
-            />
-            {/* Baseline reference line at period-start equity — graceful (only when derivable) */}
-            {startEquity != null && (
-              <ReferenceLine
-                y={startEquity}
-                stroke="var(--color-border)"
-                strokeDasharray="2 2"
-                strokeOpacity={0.7}
-              />
-            )}
-            <Area
-              dataKey="portfolio"
-              name="Portfolio"
-              stroke={portfolioColor}
-              strokeWidth={2}
-              fill="url(#portfolioGrad)"
-              baseValue="dataMin"
-              connectNulls={true}
-              {...CHART_ANIM}
-              animationDuration={1200}
-            />
-            <Line
-              dataKey="spy"
-              name="SPY"
-              stroke={benchmarkColor}
-              strokeWidth={1.5}
-              strokeDasharray="4 4"
-              dot={false}
-              connectNulls={true}
-              {...CHART_ANIM}
-              animationDuration={1200}
-            />
-          </ComposedChart>
-        </ResponsiveContainer>
-      </ChartGate>
+      <Chart
+        kind="line"
+        data={chartData as ChartData<'line' | 'bar' | 'doughnut'>}
+        options={options as ChartOptions<'line' | 'bar' | 'doughnut'>}
+        height={isMobile ? 280 : 360}
+      />
     </div>
   )
 }

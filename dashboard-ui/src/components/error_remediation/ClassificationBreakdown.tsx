@@ -1,4 +1,4 @@
-import { CATEGORICAL_5 } from '../../lib/chart-palette'
+import { CATEGORICAL_5 } from '../../lib/chart-defaults'
 
 interface Summary {
   by_classification: Record<string, number>

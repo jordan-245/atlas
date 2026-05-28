@@ -131,6 +131,41 @@ export function defaultChartOptions(): ChartOptions<'line' | 'bar' | 'doughnut'>
   } as ChartOptions<'line' | 'bar' | 'doughnut'>
 }
 
+// ── Gradient fill helper ──────────────────────────────────────────────────
+// Chart.js fills are computed at draw time via the dataset's `backgroundColor`
+// being a function that receives a chart context.  Helper builds a top->bottom
+// linear gradient from `color` (opaque at top, transparent at bottom).
+//
+// Usage:
+//     dataset.backgroundColor = gradientFill('#22c55e', 0.30)
+//
+// The 2nd arg is the top-of-gradient opacity (0-1); bottom is always 0.
+type GradientCtx = { chart: { ctx: CanvasRenderingContext2D; chartArea?: { top: number; bottom: number } } }
+
+export function gradientFill(color: string, topOpacity = 0.25) {
+  return (ctx: GradientCtx): CanvasGradient | string => {
+    const chartArea = ctx.chart.chartArea
+    if (!chartArea) return color
+    const c = ctx.chart.ctx
+    const g = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom)
+    // Convert hex to rgba; assumes a 6-char hex with an optional '#' prefix.
+    const hex = color.startsWith('#') ? color.slice(1) : color
+    if (hex.length === 6) {
+      const r = parseInt(hex.slice(0, 2), 16)
+      const gr = parseInt(hex.slice(2, 4), 16)
+      const b = parseInt(hex.slice(4, 6), 16)
+      g.addColorStop(0, `rgba(${r}, ${gr}, ${b}, ${topOpacity})`)
+      g.addColorStop(1, `rgba(${r}, ${gr}, ${b}, 0)`)
+    } else {
+      // Fallback for non-hex colours -- use full opacity then transparent.
+      g.addColorStop(0, color)
+      g.addColorStop(1, 'rgba(0,0,0,0)')
+    }
+    return g
+  }
+}
+
+
 // ── Deep-merge helper ─────────────────────────────────────────────────────
 // Chart.js options nest 2-3 levels deep; spread-merge would clobber.
 // Small, focused merge for ChartOptions only.
