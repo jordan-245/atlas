@@ -423,7 +423,10 @@ def process_rollbacks(
                     new_state=_PromotionState.RESEARCH,
                     reason=reason,
                     auto_promotion_id=rollback_id,
-                    operator="system",
+                    # Phase 3: tag as 'rollback' for audit distinction.
+                    # PAPER->RESEARCH is in the allowed graph so the
+                    # operator-bypass warning won't fire.
+                    operator="rollback",
                 )
                 logger.info(
                     "Auto-rolled back %s/%s PAPER → RESEARCH "

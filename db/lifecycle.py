@@ -5,9 +5,10 @@ All public functions are re-exported through db.atlas_db for backward compat.
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import db.atlas_db as _adb
 
@@ -44,10 +45,18 @@ def set_lifecycle_state(
     reason: str = "",
     auto_promotion_id: Optional[str] = None,
     operator: str = "system",
+    gate_results: Optional[Dict[str, Any]] = None,
+    experiment_id: Optional[str] = None,
 ) -> None:
     """Transition (strategy, universe) to new_state.
 
     Atomically upserts strategy_lifecycle row and appends a history row.
+
+    Phase 3: gate_results (dict serialised to JSON) records the pass/fail
+    status of each promotion gate when the caller has that detail (the
+    auto-promoter does; manual transitions and rollbacks usually don't).
+    experiment_id links the transition to a specific experiment envelope.
+    Both fields default to None and are stored as NULL in that case.
     """
     if new_state not in _VALID_LIFECYCLE_STATES:
         raise ValueError(
@@ -94,14 +103,19 @@ def set_lifecycle_state(
                  reason or None, paper_start, paper_end, auto_promotion_id),
             )
 
+            gate_json = (
+                json.dumps(gate_results) if gate_results is not None else None
+            )
             db.execute(
                 """INSERT INTO strategy_lifecycle_history
                        (strategy, universe, from_state, to_state, transitioned_at,
-                        reason, auto_promotion_id, operator)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        reason, auto_promotion_id, operator,
+                        gate_results, experiment_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (strategy, universe, prev_state, new_state, now_iso,
-                 reason or None, auto_promotion_id, operator),
+                 reason or None, auto_promotion_id, operator,
+                 gate_json, experiment_id),
             )
 
     except Exception as exc:

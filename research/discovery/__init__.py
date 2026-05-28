@@ -19,37 +19,45 @@ Exports:
     init_vault_notes
 """
 
-from research.discovery.discovery import discover_daily, discover_full, DailyReport
+# The orchestrator and strategy_universe modules transitively import
+# research.models, which uses fcntl (Unix-only).  Guard the re-exports so
+# that submodules of research.discovery (e.g. research.discovery.extractors)
+# remain importable on Windows; callers that need the orchestrator entry points
+# will get a clear ImportError when they reference them.
+try:
+    from research.discovery.discovery import discover_daily, discover_full, DailyReport  # noqa: F401
 
-from research.discovery.strategy_universe import (
-    STRATEGY_UNIVERSE,
-    queue_discovery_batch,
-    AVAILABLE_FILTERS,
-    STRATEGY_UNIVERSE_PATH,
-    COMBINATION_LOG_PATH,
-    get_unbuilt_strategies,
-    get_untested_existing,
-    update_strategy_status,
-    get_tested_combinations,
-    generate_filter_combinations,
-    generate_param_cross_pollination,
-    generate_ablation_experiments,
-    generate_robustness_experiments,
-    get_next_experiments,
-    log_combination,
-    init_vault_notes,
-)
+    from research.discovery.strategy_universe import (  # noqa: F401
+        STRATEGY_UNIVERSE,
+        queue_discovery_batch,
+        AVAILABLE_FILTERS,
+        STRATEGY_UNIVERSE_PATH,
+        COMBINATION_LOG_PATH,
+        get_unbuilt_strategies,
+        get_untested_existing,
+        update_strategy_status,
+        get_tested_combinations,
+        generate_filter_combinations,
+        generate_param_cross_pollination,
+        generate_ablation_experiments,
+        generate_robustness_experiments,
+        get_next_experiments,
+        log_combination,
+        init_vault_notes,
+    )
 
-__all__ = [
-    # discovery orchestrator
-    "discover_daily", "discover_full", "DailyReport",
-    # strategy universe
-    "STRATEGY_UNIVERSE", "STRATEGY_UNIVERSE_PATH",
-    "AVAILABLE_FILTERS", "COMBINATION_LOG_PATH",
-    "queue_discovery_batch",
-    "get_unbuilt_strategies", "get_untested_existing",
-    "update_strategy_status", "get_tested_combinations",
-    "generate_filter_combinations", "generate_param_cross_pollination",
-    "generate_ablation_experiments", "generate_robustness_experiments",
-    "get_next_experiments", "log_combination", "init_vault_notes",
-]
+    __all__ = [
+        # discovery orchestrator
+        "discover_daily", "discover_full", "DailyReport",
+        # strategy universe
+        "STRATEGY_UNIVERSE", "STRATEGY_UNIVERSE_PATH",
+        "AVAILABLE_FILTERS", "COMBINATION_LOG_PATH",
+        "queue_discovery_batch",
+        "get_unbuilt_strategies", "get_untested_existing",
+        "update_strategy_status", "get_tested_combinations",
+        "generate_filter_combinations", "generate_param_cross_pollination",
+        "generate_ablation_experiments", "generate_robustness_experiments",
+        "get_next_experiments", "log_combination", "init_vault_notes",
+    ]
+except ImportError:
+    __all__ = []

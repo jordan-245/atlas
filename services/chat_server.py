@@ -33,16 +33,32 @@ from pathlib import Path
 
 # ── Housekeeping (mirror dashboard_server.py top-level setup) ────────────────
 
-signal.signal(signal.SIGHUP, signal.SIG_IGN)
+# SIGHUP is Unix-only; Windows dev/test environments don't have it.  Guard so
+# the module imports cleanly under pytest on Windows.
+if hasattr(signal, "SIGHUP"):
+    signal.signal(signal.SIGHUP, signal.SIG_IGN)
 
-PROJECT_ROOT = Path("/root/atlas")
+# Default prod root is /root/atlas (Linux deploy); honour ATLAS_PROJECT_ROOT
+# env var so Windows dev/test environments can override.  Falls back to the
+# repo this file lives in when the env override is absent and /root/atlas
+# does not exist (typical pytest-on-Windows path).
+_DEFAULT_PROJECT_ROOT = Path("/root/atlas")
+_PROJECT_ROOT_OVERRIDE = os.environ.get("ATLAS_PROJECT_ROOT")
+if _PROJECT_ROOT_OVERRIDE:
+    PROJECT_ROOT = Path(_PROJECT_ROOT_OVERRIDE)
+elif _DEFAULT_PROJECT_ROOT.exists():
+    PROJECT_ROOT = _DEFAULT_PROJECT_ROOT
+else:
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
 SECRETS_PATH = Path(os.environ.get("ATLAS_SECRETS_PATH", str(Path.home() / ".atlas-secrets.json")))
 BIND = "127.0.0.1"
 PORT = 8899
 
 # Must be set before importing Atlas modules (same as dashboard_server.py)
 sys.path.insert(0, str(PROJECT_ROOT))
-os.chdir(PROJECT_ROOT)
+if PROJECT_ROOT.exists():
+    os.chdir(PROJECT_ROOT)
 
 # ── FastAPI imports (after path setup) ───────────────────────────────────────
 
@@ -163,6 +179,7 @@ from services.api.portfolio import router as _portfolio_router  # noqa: E402
 from services.api.health import router as _health_router       # noqa: E402
 from services.api.risk import router as _risk_router           # noqa: E402
 from services.api.research import router as _research_router   # noqa: E402
+from services.api.knowledge import router as _knowledge_router  # noqa: E402
 from services.api.promotions import router as _promotions_router  # noqa: E402
 from services.api.dashboard import router as _dashboard_router  # noqa: E402
 from services.api.approvals import router as _approvals_router  # noqa: E402
@@ -196,6 +213,7 @@ app.include_router(_portfolio_router)
 app.include_router(_health_router)
 app.include_router(_risk_router)
 app.include_router(_research_router)
+app.include_router(_knowledge_router)
 app.include_router(_promotions_router)
 app.include_router(_dashboard_router)
 app.include_router(_approvals_router)

@@ -57,6 +57,10 @@ class DailyReport:
     strategies_passed_quickcheck: list = field(default_factory=list)  # list of str
     errors: list = field(default_factory=list)  # list of str
     runtime_s: float = 0.0
+    # Phase 4: knowledge-layer signals folded into the daily digest.
+    new_contradictions: int = 0                # count opened since last digest
+    new_lifecycle_transitions: int = 0         # count since last digest
+    top_contradictions: list = field(default_factory=list)  # [{strategy, metric, claimed, measured, severity}]
 
 
 
@@ -588,6 +592,80 @@ def _log_daily_run(report: DailyReport) -> None:
 
 # ─── Telegram digest ─────────────────────────────────────────────────────────
 
+# Phase 4: knowledge-layer counts folded into the daily digest.  Defensive --
+# any DB error here is logged and ignored; the digest still sends its primary
+# discovery content even when the knowledge layer is unreachable.
+def _enrich_report_with_knowledge_counts(report: DailyReport) -> None:
+    """Populate report.new_contradictions / new_lifecycle_transitions /
+    top_contradictions from the DB.  In-place mutation."""
+    try:
+        from db.atlas_db import get_db
+        from db.knowledge import get_last_digest, get_open_contradictions
+
+        last = get_last_digest(kind="daily")
+        since_iso = last["sent_at"] if last else None
+
+        with get_db() as conn:
+            # New contradictions since the last digest (or all-time on first run).
+            sql_c = "SELECT COUNT(*) AS n FROM contradictions WHERE resolution IS NULL"
+            params: list = []
+            if since_iso:
+                sql_c += " AND first_seen_at > ?"
+                params.append(since_iso)
+            report.new_contradictions = int(
+                conn.execute(sql_c, params).fetchone()["n"]
+            )
+
+            # New lifecycle transitions since the last digest.
+            sql_l = "SELECT COUNT(*) AS n FROM strategy_lifecycle_history WHERE 1=1"
+            lparams: list = []
+            if since_iso:
+                sql_l += " AND transitioned_at > ?"
+                lparams.append(since_iso)
+            report.new_lifecycle_transitions = int(
+                conn.execute(sql_l, lparams).fetchone()["n"]
+            )
+
+        # Top 3 open contradictions (severity-ordered) for the digest body.
+        top = get_open_contradictions(limit=3)
+        report.top_contradictions = [
+            {
+                "strategy": r.get("strategy"),
+                "metric": r.get("metric"),
+                "claimed": r.get("claimed_value"),
+                "measured": r.get("measured_value"),
+                "severity": r.get("severity"),
+            }
+            for r in top
+        ]
+    except Exception as exc:
+        logger.warning("_enrich_report_with_knowledge_counts failed: %s", exc)
+
+
+def _format_top_contradictions(top: list) -> str:
+    """Render a short Telegram-friendly block.  Empty string when nothing to show."""
+    if not top:
+        return ""
+    lines = ["\n\n⚠️ <b>Top open contradictions</b>:"]
+    for c in top:
+        s = c.get("strategy") or "?"
+        metric = c.get("metric") or "?"
+        claimed = c.get("claimed")
+        measured = c.get("measured")
+        sev = c.get("severity") or "?"
+        try:
+            claimed_s = f"{float(claimed):.2f}" if claimed is not None else "?"
+            measured_s = f"{float(measured):.2f}" if measured is not None else "?"
+        except (TypeError, ValueError):
+            claimed_s = str(claimed)
+            measured_s = str(measured)
+        lines.append(
+            f"  • <code>{s}</code> {metric}: paper {claimed_s} vs measured "
+            f"{measured_s} ({sev})"
+        )
+    return "\n".join(lines)
+
+
 # PERF-TG-CONSOLIDATE: KEPT — ~40 LOC body (>30 LOC threshold). Inlining would produce
 # a 40-line block at the call site inside discover_daily(); abstraction value retained.
 def _send_telegram_digest(report: DailyReport) -> None:
@@ -620,6 +698,16 @@ def _send_telegram_digest(report: DailyReport) -> None:
             for s in report.strategies_generated
         )
 
+    # Phase 4: knowledge-layer one-liner + top contradictions block.
+    knowledge_line = ""
+    if report.new_contradictions or report.new_lifecycle_transitions:
+        knowledge_line = (
+            f"\n🧠 Knowledge: "
+            f"<b>{report.new_contradictions}</b> new contradictions"
+            f" | <b>{report.new_lifecycle_transitions}</b> lifecycle transitions"
+        )
+    top_block = _format_top_contradictions(report.top_contradictions)
+
     message = (
         f"🔬 <b>Atlas Discovery — {report.date}</b>\n"
         f"📚 Source: <b>{report.source}</b> ({report.method})\n\n"
@@ -631,6 +719,8 @@ def _send_telegram_digest(report: DailyReport) -> None:
         + f"\n{passed_emoji} Passed quick-check: <b>{len(report.strategies_passed_quickcheck)}</b>"
         + error_note
         + f"\n⏱️ Runtime: {report.runtime_s:.0f}s"
+        + knowledge_line
+        + top_block
         + monthly_stats
     )
 
@@ -858,10 +948,43 @@ def discover_daily() -> DailyReport:
     except Exception as exc:
         logger.warning("log_discovery failed (non-fatal): %s", exc)
 
+    # Phase 4: enrich the report with knowledge-layer counts before the
+    # digest renders.  Both calls are defensive -- a knowledge-layer outage
+    # must not block the digest from sending.
+    try:
+        _enrich_report_with_knowledge_counts(report)
+    except Exception as exc:  # noqa: BLE001 -- defensive
+        logger.warning("knowledge enrichment failed: %s", exc)
+
+    delivery_status: str = "ok"
     try:
         _send_telegram_digest(report)
     except Exception as e:
+        delivery_status = f"failed:{type(e).__name__}"
         logger.warning("_send_telegram_digest failed: %s", e)
+
+    # Phase 4: record one row per send so the next digest's "since last sent"
+    # window has a reference point and so we can dedup re-sends.  Defensive --
+    # the digest is the load-bearing operation; logging it is best-effort.
+    try:
+        from db.knowledge import log_digest
+        log_digest(
+            kind="daily",
+            new_papers=report.papers_found,
+            new_experiments=len(report.strategies_generated),
+            new_contradictions=report.new_contradictions,
+            lifecycle_transitions=report.new_lifecycle_transitions,
+            summary=f"discover_daily {report.date}",
+            delivery_status=delivery_status,
+            payload={
+                "date": report.date,
+                "source": report.source,
+                "papers_filtered": report.papers_filtered,
+                "top_contradictions": report.top_contradictions,
+            },
+        )
+    except Exception as exc:  # noqa: BLE001 -- defensive
+        logger.warning("log_digest failed: %s", exc)
 
     logger.info(
         "discover_daily complete: found=%d filtered=%d specs=%d generated=%d passed=%d runtime=%.0fs",

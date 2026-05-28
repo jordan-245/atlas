@@ -646,7 +646,9 @@ CREATE TABLE IF NOT EXISTS strategy_lifecycle_history (
     transitioned_at      TEXT NOT NULL,        -- ISO datetime
     reason               TEXT,
     auto_promotion_id    TEXT,
-    operator             TEXT                  -- 'system' or operator name / 'manual'
+    operator             TEXT,                 -- 'system' | 'manual' | 'rollback' | operator name
+    gate_results         TEXT,                 -- JSON: {A:'pass',B:'pass',...,J:'fail'}  (Phase 3)
+    experiment_id        TEXT                  -- link to research/experiments/*.json that drove the transition (Phase 3)
 );
 
 CREATE INDEX IF NOT EXISTS idx_lifecycle_history_strategy
@@ -754,3 +756,279 @@ CREATE TABLE IF NOT EXISTS telegram_messages (
 CREATE INDEX IF NOT EXISTS idx_tgm_chat_time ON telegram_messages(chat_id, sent_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tgm_direction_time ON telegram_messages(direction, sent_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tgm_command ON telegram_messages(command_name) WHERE command_name IS NOT NULL;
+
+
+-- ═══════════════════════════════════════════════════════════
+-- RESEARCH KNOWLEDGE LAYER
+-- Source-of-truth for external claims about strategies (papers,
+-- blogs, internal docs) and divergences between those claims and
+-- Atlas's own measured results in research_best.  Phase 0 of the
+-- research-system consolidation; see docs/specs/research-db-consolidation.md.
+-- ═══════════════════════════════════════════════════════════
+
+-- Ingested source (paper, blog, internal doc).  One row per source;
+-- dedup by sha256 of canonical payload.
+CREATE TABLE IF NOT EXISTS sources (
+    id            TEXT    PRIMARY KEY,           -- 'src-arxiv-<id>' or 'src-<sha8>'
+    kind          TEXT    NOT NULL,              -- 'paper' | 'blog' | 'doc' | 'internal'
+    url           TEXT,
+    title         TEXT    NOT NULL,
+    authors       TEXT,                          -- JSON array of strings
+    venue         TEXT,                          -- 'arxiv' | 'ssrn' | 'quantpedia' | ...
+    published_at  TEXT,                          -- ISO date, NULL if unknown
+    sha256        TEXT    UNIQUE,                -- canonical PDF/HTML hash; dedup key
+    local_path    TEXT,                          -- relative to atlas root; NULL if remote-only
+    ingested_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+    extracted_by  TEXT,                          -- 'pdf_vision' | 'text_summary' | 'manual' | ...
+    notes         TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sources_kind ON sources(kind);
+CREATE INDEX IF NOT EXISTS idx_sources_published ON sources(published_at DESC);
+
+-- Structured claim made by a source about a strategy.  External
+-- assertion only -- research_best holds Atlas's own measurements.
+-- A single paper can yield N claims (different strategies / windows).
+CREATE TABLE IF NOT EXISTS claims (
+    id                     TEXT    PRIMARY KEY,  -- 'clm-<src_id>-<strategy>-<n>'
+    source_id              TEXT    NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    strategy               TEXT    NOT NULL,     -- normalised to STRATEGY_UNIVERSE keys
+    universe               TEXT,                 -- normalised; NULL = paper unspecified
+    regime_state           TEXT,                 -- NULL = cross-regime claim
+    period_start           TEXT,                 -- ISO date; claim's backtest window start
+    period_end             TEXT,                 -- ISO date; claim's backtest window end
+    claimed_sharpe         REAL,
+    claimed_solo_sharpe    REAL,
+    claimed_max_dd_pct     REAL,
+    claimed_trades         INTEGER,
+    claimed_cagr_pct       REAL,
+    claimed_profit_factor  REAL,
+    claimed_avg_hold_days  REAL,
+    extraction_confidence  TEXT    DEFAULT 'medium',  -- 'low' | 'medium' | 'high'
+    status                 TEXT    NOT NULL DEFAULT 'active',
+                                                 -- 'active' | 'dismissed' | 'superseded'
+    dismissed_reason       TEXT,
+    notes                  TEXT,
+    created_at             TEXT    NOT NULL DEFAULT (datetime('now')),
+    updated_at             TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_claims_strategy ON claims(strategy);
+CREATE INDEX IF NOT EXISTS idx_claims_source ON claims(source_id);
+CREATE INDEX IF NOT EXISTS idx_claims_active
+    ON claims(strategy, universe) WHERE status = 'active';
+
+-- Materialised contradictions: divergence between a claim and the
+-- measured row in research_best.  Populated by sync_contradictions().
+-- Materialised (not just a view) so resolutions have an explicit lifecycle.
+CREATE TABLE IF NOT EXISTS contradictions (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    claim_id            TEXT    NOT NULL REFERENCES claims(id) ON DELETE CASCADE,
+    strategy            TEXT    NOT NULL,
+    universe            TEXT    NOT NULL,
+    metric              TEXT    NOT NULL,        -- 'sharpe' | 'max_dd_pct' | 'cagr_pct' | 'trades'
+    claimed_value       REAL,
+    measured_value      REAL,
+    delta               REAL,                    -- measured - claimed
+    delta_abs           REAL,                    -- |delta|, for ranking
+    severity            TEXT    NOT NULL,        -- 'minor' | 'major' | 'critical'
+    first_seen_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+    last_checked_at     TEXT    NOT NULL DEFAULT (datetime('now')),
+    resolution          TEXT,                    -- NULL | 'retested' | 'claim_rejected' | 'measurement_corrected' | 'deferred'
+    resolution_note     TEXT,
+    resolved_at         TEXT,
+    UNIQUE(claim_id, metric)                     -- one row per (claim, metric) pair
+);
+CREATE INDEX IF NOT EXISTS idx_contradictions_unresolved
+    ON contradictions(strategy, severity) WHERE resolution IS NULL;
+CREATE INDEX IF NOT EXISTS idx_contradictions_recent
+    ON contradictions(first_seen_at DESC);
+
+-- Strategy lifecycle state transitions live in the existing
+-- strategy_lifecycle_history table (defined earlier in this file).
+-- Phase 3 extends that table with the Phase 0 fields below; Phase 3
+-- backfills historical promotion_log.json entries into the same table.
+-- No separate lifecycle_events table -- one source of truth.
+
+-- One row per Telegram digest send.  Powers dedup ("did we already
+-- notify about contradiction X?") and rate limiting.
+CREATE TABLE IF NOT EXISTS digest_history (
+    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+    sent_at                  TEXT    NOT NULL DEFAULT (datetime('now')),
+    kind                     TEXT    NOT NULL,   -- 'daily' | 'weekly' | 'alert'
+    new_papers               INTEGER NOT NULL DEFAULT 0,
+    new_experiments          INTEGER NOT NULL DEFAULT 0,
+    new_contradictions       INTEGER NOT NULL DEFAULT 0,
+    lifecycle_transitions    INTEGER NOT NULL DEFAULT 0,
+    summary                  TEXT,
+    delivery_status          TEXT,               -- 'ok' | 'failed:<reason>'
+    payload                  TEXT                -- JSON blob of full content sent
+);
+CREATE INDEX IF NOT EXISTS idx_digest_sent ON digest_history(sent_at DESC);
+
+
+-- ═══════════════════════════════════════════════════════════
+-- PHASE 6: SQL mirrors of the queue.json / journal.json stores.
+-- Dual-write is opt-in via ATLAS_KNOWLEDGE_DB_QUEUE / ATLAS_KNOWLEDGE_DB_JOURNAL
+-- env vars (research/models.py).  Until those flip, the JSON files remain the
+-- canonical source of truth -- these tables just shadow them so operators can
+-- compare row counts and rehearse the cutover.  Once stable, the JSON paths
+-- are retired and these tables become canonical.
+-- ═══════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS queue_mirror (
+    id                    TEXT    PRIMARY KEY,             -- QueueEntry.id
+    title                 TEXT    NOT NULL,
+    category              TEXT    NOT NULL,
+    market                TEXT    NOT NULL,
+    hypothesis            TEXT,
+    method                TEXT    NOT NULL,                -- ExperimentType value
+    acceptance_criteria   TEXT,                            -- JSON
+    estimated_runtime_min INTEGER NOT NULL DEFAULT 0,
+    priority              TEXT    NOT NULL,                -- P1-P5
+    status                TEXT    NOT NULL,                -- ExperimentStatus value
+    strategy_name         TEXT,
+    params_override       TEXT,                            -- JSON
+    config_snapshot       TEXT,                            -- JSON
+    claimed_by            TEXT,
+    claimed_at            TEXT,
+    tags                  TEXT,                            -- JSON array
+    depends_on            TEXT,                            -- JSON array
+    notes                 TEXT,
+    payload               TEXT    NOT NULL,                -- full QueueEntry as JSON (canonical)
+    created_at            TEXT    NOT NULL,
+    updated_at            TEXT    NOT NULL,
+    mirrored_at           TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_queue_mirror_status ON queue_mirror(status);
+CREATE INDEX IF NOT EXISTS idx_queue_mirror_strategy ON queue_mirror(strategy_name);
+CREATE INDEX IF NOT EXISTS idx_queue_mirror_category ON queue_mirror(category);
+CREATE INDEX IF NOT EXISTS idx_queue_mirror_priority ON queue_mirror(priority, status);
+
+CREATE TABLE IF NOT EXISTS journal_mirror (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    experiment_id     TEXT    NOT NULL,
+    timestamp         TEXT    NOT NULL,
+    market            TEXT    NOT NULL,
+    category          TEXT    NOT NULL,
+    strategy          TEXT,
+    hypothesis        TEXT,
+    verdict           TEXT,                                -- pass | fail | partial | deferred
+    key_metrics       TEXT,                                -- JSON
+    delta_vs_baseline TEXT,                                -- JSON
+    learnings         TEXT,                                -- JSON array
+    promoted          INTEGER NOT NULL DEFAULT 0 CHECK (promoted IN (0, 1)),
+    runtime_s         REAL,
+    agent_id          TEXT,
+    payload           TEXT    NOT NULL,                    -- full JournalEntry as JSON
+    mirrored_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(experiment_id, timestamp)
+);
+CREATE INDEX IF NOT EXISTS idx_journal_mirror_experiment ON journal_mirror(experiment_id);
+CREATE INDEX IF NOT EXISTS idx_journal_mirror_ts ON journal_mirror(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_journal_mirror_strategy ON journal_mirror(strategy, timestamp DESC);
+
+-- Candidate contradictions view.  Computes (claim x research_best)
+-- deltas with severity classification.  Read by sync_contradictions()
+-- which INSERTs the WHERE severity IS NOT NULL rows into contradictions.
+-- COALESCE(solo_sharpe, sharpe) mirrors db/research.py::get_research_best
+-- behaviour (solo_sharpe is the post-M2 canonical column).
+DROP VIEW IF EXISTS v_candidate_contradictions;
+CREATE VIEW v_candidate_contradictions AS
+SELECT
+    c.id                                                                AS claim_id,
+    c.strategy                                                          AS strategy,
+    COALESCE(c.universe, rb.universe)                                   AS universe,
+    'sharpe'                                                            AS metric,
+    c.claimed_sharpe                                                    AS claimed_value,
+    COALESCE(rb.solo_sharpe, rb.sharpe)                                 AS measured_value,
+    COALESCE(rb.solo_sharpe, rb.sharpe) - c.claimed_sharpe              AS delta,
+    ABS(COALESCE(rb.solo_sharpe, rb.sharpe) - c.claimed_sharpe)         AS delta_abs,
+    CASE
+        WHEN ABS(COALESCE(rb.solo_sharpe, rb.sharpe) - c.claimed_sharpe) >= 1.0 THEN 'critical'
+        WHEN ABS(COALESCE(rb.solo_sharpe, rb.sharpe) - c.claimed_sharpe) >= 0.5 THEN 'major'
+        WHEN ABS(COALESCE(rb.solo_sharpe, rb.sharpe) - c.claimed_sharpe) >= 0.3 THEN 'minor'
+        ELSE NULL
+    END                                                                 AS severity
+FROM claims c
+JOIN research_best rb
+    ON rb.strategy = c.strategy
+   AND (c.universe IS NULL OR rb.universe = c.universe)
+   AND (c.regime_state IS rb.regime_state)
+WHERE c.status = 'active'
+  AND c.claimed_sharpe IS NOT NULL
+  AND COALESCE(rb.solo_sharpe, rb.sharpe) IS NOT NULL
+
+UNION ALL
+
+SELECT
+    c.id, c.strategy,
+    COALESCE(c.universe, rb.universe),
+    'max_dd_pct',
+    c.claimed_max_dd_pct,
+    rb.max_dd_pct,
+    rb.max_dd_pct - c.claimed_max_dd_pct,
+    ABS(rb.max_dd_pct - c.claimed_max_dd_pct),
+    CASE
+        WHEN ABS(rb.max_dd_pct - c.claimed_max_dd_pct) >= 15 THEN 'critical'
+        WHEN ABS(rb.max_dd_pct - c.claimed_max_dd_pct) >= 8  THEN 'major'
+        WHEN ABS(rb.max_dd_pct - c.claimed_max_dd_pct) >= 5  THEN 'minor'
+        ELSE NULL
+    END
+FROM claims c
+JOIN research_best rb
+    ON rb.strategy = c.strategy
+   AND (c.universe IS NULL OR rb.universe = c.universe)
+   AND (c.regime_state IS rb.regime_state)
+WHERE c.status = 'active'
+  AND c.claimed_max_dd_pct IS NOT NULL
+  AND rb.max_dd_pct IS NOT NULL;
+
+-- Operator-facing view: unresolved contradictions joined to source info.
+DROP VIEW IF EXISTS v_open_contradictions;
+CREATE VIEW v_open_contradictions AS
+SELECT
+    co.id              AS contradiction_id,
+    co.claim_id,
+    co.strategy,
+    co.universe,
+    co.metric,
+    co.claimed_value,
+    co.measured_value,
+    co.delta,
+    co.delta_abs,
+    co.severity,
+    co.first_seen_at,
+    co.last_checked_at,
+    cl.source_id,
+    s.title            AS source_title,
+    s.url              AS source_url,
+    s.published_at     AS source_published_at
+FROM contradictions co
+JOIN claims cl  ON cl.id = co.claim_id
+JOIN sources s  ON s.id  = cl.source_id
+WHERE co.resolution IS NULL
+ORDER BY
+    CASE co.severity WHEN 'critical' THEN 0 WHEN 'major' THEN 1 ELSE 2 END,
+    co.delta_abs DESC;
+
+-- Per-strategy roll-up.  Powers the wiki materializer (Phase 7) and
+-- operator dashboard.  One row per (strategy, universe) cross-regime.
+DROP VIEW IF EXISTS v_strategy_summary;
+CREATE VIEW v_strategy_summary AS
+SELECT
+    rb.strategy,
+    rb.universe,
+    rb.solo_sharpe,
+    rb.portfolio_sharpe,
+    rb.max_dd_pct,
+    rb.trades,
+    rb.updated_at                                                       AS last_measured_at,
+    (SELECT COUNT(*) FROM claims c
+        WHERE c.strategy = rb.strategy AND c.status = 'active')         AS active_claims,
+    (SELECT COUNT(*) FROM contradictions co
+        JOIN claims c ON c.id = co.claim_id
+        WHERE c.strategy = rb.strategy AND co.resolution IS NULL)       AS open_contradictions,
+    (SELECT to_state FROM strategy_lifecycle_history le
+        WHERE le.strategy = rb.strategy AND le.universe = rb.universe
+        ORDER BY le.transitioned_at DESC, le.id DESC LIMIT 1)           AS lifecycle_state
+FROM research_best rb
+WHERE rb.regime_state IS NULL;

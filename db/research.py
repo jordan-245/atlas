@@ -201,6 +201,18 @@ def upsert_research_best(
                  oos_sharpe, oos_trades, oos_cagr, oos_max_dd),
             )
 
+    # Knowledge-layer hook: refresh contradictions for this strategy after the
+    # measured row changed.  Scoped to one strategy = cheap.  Defensive: any
+    # error here MUST NOT break the upsert path -- 13+ callers rely on this.
+    try:
+        from db.knowledge import sync_contradictions  # noqa: PLC0415 -- avoid import cycle at module load
+        sync_contradictions(strategy=strategy)
+    except Exception as exc:  # noqa: BLE001 -- intentionally swallow
+        _log.warning(
+            "sync_contradictions hook failed for strategy=%s universe=%s: %s",
+            strategy, universe, exc,
+        )
+
 
 def get_research_best(
     strategy: Optional[str] = None,

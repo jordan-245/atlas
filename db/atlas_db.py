@@ -31,6 +31,7 @@ Sub-modules:
 - db.risk_cache -- regime transitions + ruin probability + portfolio risk cache
 - db.broker_orders -- broker_orders + fill-price oracle + protective records
 - db.lifecycle -- strategy_lifecycle CRUD
+- db.knowledge -- sources, claims, contradictions, lifecycle_events, digest_history
 """
 
 import sqlite3
@@ -127,6 +128,7 @@ from db.macro import *        # noqa: F401,F403,E402
 from db.risk_cache import *   # noqa: F401,F403,E402
 from db.broker_orders import *  # noqa: F401,F403,E402
 from db.lifecycle import *    # noqa: F401,F403,E402
+from db.knowledge import *    # noqa: F401,F403,E402
 
 # Explicit re-exports of private helpers that tests import directly from db.atlas_db
 from db.trades import _group_performance, _assert_state_file_parity, _STRATEGY_SKIP  # noqa: F401,E402

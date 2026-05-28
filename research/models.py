@@ -14,7 +14,24 @@ File Ownership Boundaries:
 """
 
 import json
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    # Windows (and other non-Unix platforms): no fcntl.  Single-process
+    # callers don't need real cross-process locks; provide a no-op shim so
+    # the module imports cleanly.  Multi-process callers on Windows would
+    # need a different locking primitive -- not a concern for the tests
+    # or for the SQL-backed Phase 6 migration that retires this entirely.
+    class _FcntlShim:  # type: ignore[no-redef]
+        LOCK_SH = 1
+        LOCK_EX = 2
+        LOCK_UN = 8
+
+        @staticmethod
+        def flock(fd, op):  # noqa: ARG004 -- no-op on platforms without fcntl
+            return None
+
+    fcntl = _FcntlShim()  # type: ignore[assignment]
 import logging
 import os
 import time
@@ -34,6 +51,45 @@ JOURNAL_PATH = RESEARCH_DIR / "journal.json"
 EXPERIMENTS_DIR = RESEARCH_DIR / "experiments"
 STRATEGIES_DIR = RESEARCH_DIR / "strategies"
 CANDIDATES_DIR = PROJECT_ROOT / "config" / "candidates"
+
+
+# ---------------------------------------------------------------------------
+# Phase 6: SQL mirror dual-write hooks
+#
+# When ATLAS_KNOWLEDGE_DB_QUEUE / ATLAS_KNOWLEDGE_DB_JOURNAL are set to "1",
+# the JSON-file writes below are shadowed into queue_mirror / journal_mirror.
+# Default is off -- the JSON file is canonical until the operator's cutover.
+# Mirror failures are logged but NEVER propagated (the JSON is source of truth).
+# ---------------------------------------------------------------------------
+
+def _mirror_queue_enabled() -> bool:
+    return os.environ.get("ATLAS_KNOWLEDGE_DB_QUEUE", "0") == "1"
+
+
+def _mirror_journal_enabled() -> bool:
+    return os.environ.get("ATLAS_KNOWLEDGE_DB_JOURNAL", "0") == "1"
+
+
+def _mirror_queue_entry(entry_dict: dict) -> None:
+    if not _mirror_queue_enabled():
+        return
+    try:
+        from db.knowledge import upsert_queue_mirror_row  # local import: avoid cycle
+        upsert_queue_mirror_row(entry_dict)
+    except Exception as exc:  # noqa: BLE001 -- never break the canonical JSON write
+        logger.warning("queue_mirror write failed for id=%s: %s",
+                       entry_dict.get("id"), exc)
+
+
+def _mirror_journal_entry(entry_dict: dict) -> None:
+    if not _mirror_journal_enabled():
+        return
+    try:
+        from db.knowledge import insert_journal_mirror_row  # local import: avoid cycle
+        insert_journal_mirror_row(entry_dict)
+    except Exception as exc:  # noqa: BLE001 -- never break the canonical JSON write
+        logger.warning("journal_mirror write failed for experiment_id=%s: %s",
+                       entry_dict.get("experiment_id"), exc)
 
 
 class ExperimentStatus(str, Enum):
@@ -384,18 +440,23 @@ def append_to_queue(entry: QueueEntry, skip_validation: bool = False) -> str:
                 "or pass skip_validation=True to override."
             )
     _locked_append(QUEUE_PATH, entry.to_dict())
+    _mirror_queue_entry(entry.to_dict())
     return entry.id
 
 
 def update_queue_entry(entry_id: str, updates: Dict[str, Any]):
     """Update fields on a queue entry (with file lock)."""
     queue = _locked_read(QUEUE_PATH)
+    updated_entry: Optional[dict] = None
     for item in queue:
         if item["id"] == entry_id:
             item.update(updates)
             item["updated_at"] = datetime.now(timezone.utc).isoformat()
+            updated_entry = item
             break
     _locked_write(QUEUE_PATH, queue)
+    if updated_entry is not None:
+        _mirror_queue_entry(updated_entry)
 
 
 def cleanup_stale_claims(timeout_h: float = 2.0) -> int:
@@ -471,6 +532,7 @@ def claim_experiment(entry_id: str, agent_id: str = "atlas-research") -> Optiona
             break
     if claimed:
         _locked_write(QUEUE_PATH, queue)
+        _mirror_queue_entry(claimed)
     return claimed
 
 
@@ -552,6 +614,7 @@ def read_journal() -> List[dict]:
 def append_to_journal(entry: JournalEntry):
     """Append an entry to the journal (never edits existing entries)."""
     _locked_append(JOURNAL_PATH, entry.to_dict())
+    _mirror_journal_entry(entry.to_dict())
 
 
 def get_journal_for_strategy(strategy_name: str) -> List[dict]:

@@ -36,6 +36,7 @@ import argparse
 import json
 import logging
 import math
+import re
 import sys
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -379,6 +380,23 @@ def _evaluate_gates(
 
 # ── Promotion ──────────────────────────────────────────────────────────────────
 
+# Phase 3: pulls structured pass/fail/bypass per gate from the existing reasons
+# list so transition() can store it as JSON in strategy_lifecycle_history.gate_results.
+# Avoids changing _evaluate_gates' return shape (used by tests + lifecycle API).
+_GATE_RE = re.compile(r"^Gate\s+([A-Z])\s+\((PASS|FAIL|BYPASS)\)", re.IGNORECASE)
+
+
+def _parse_gate_outcomes(reasons: List[str]) -> Dict[str, str]:
+    """Turn `["Gate A (PASS): ...", "Gate B (FAIL): ..."]` into {"A": "pass", "B": "fail"}."""
+    out: Dict[str, str] = {}
+    for line in reasons:
+        m = _GATE_RE.match(line.strip())
+        if m:
+            gate, verdict = m.group(1).upper(), m.group(2).lower()
+            out[gate] = verdict
+    return out
+
+
 def _append_promotion_log(entry: Dict) -> None:
     """Append a promotion record to data/promotion_log.json (create if missing)."""
     existing: List[Dict] = []
@@ -569,7 +587,10 @@ def evaluate_and_promote(
         result["reason"] = f"Failed to write promotion audit log: {exc}"
         return result
 
-    # Transition to LIVE
+    # Transition to LIVE.  Phase 3: pass structured gate_results so the
+    # promotion's per-gate verdict is queryable from strategy_lifecycle_history
+    # (and visible in the operator dashboard / wiki materializer).
+    gate_results = _parse_gate_outcomes(reasons)
     try:
         transition(
             strategy=strategy,
@@ -578,6 +599,7 @@ def evaluate_and_promote(
             reason="auto_promote_paper_to_live: 30-day gate pass",
             auto_promotion_id=promo_id,
             operator="system",
+            gate_results=gate_results,
         )
         logger.info("PROMOTED %s/%s → LIVE (promo_id=%s)", strategy, universe, promo_id)
     except Exception as exc:

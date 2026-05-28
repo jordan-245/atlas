@@ -84,6 +84,8 @@ def transition(
     reason: str = "",
     auto_promotion_id: Optional[str] = None,
     operator: str = "system",
+    gate_results: Optional[Dict[str, str]] = None,
+    experiment_id: Optional[str] = None,
 ) -> None:
     """Transition (strategy, universe) to new_state.
 
@@ -101,8 +103,15 @@ def transition(
         reason:            Human/system-readable justification. Stored in DB.
         auto_promotion_id: Optional reference ID for the promotion run
                            (links to auto_promote audit trail — deferred).
-        operator:          'system' (graph-enforced) or anything else (manual
-                           override, graph bypassed with warning).
+        operator:          'system' (graph-enforced), 'manual', 'rollback',
+                           or a username (graph bypassed with warning when
+                           the value is not 'system').
+        gate_results:      Phase 3: dict of {gate_name: 'pass'|'fail'} when
+                           the caller knows the gate breakdown (auto-promoter).
+                           Stored as JSON in strategy_lifecycle_history.gate_results.
+        experiment_id:     Phase 3: link to a specific experiment envelope
+                           that drove this transition (typically used by the
+                           contradiction-driven retest channel in Phase 5).
 
     Raises:
         ValueError: if operator='system' and the transition is not in
@@ -133,6 +142,8 @@ def transition(
         reason=reason,
         auto_promotion_id=auto_promotion_id,
         operator=operator,
+        gate_results=gate_results,
+        experiment_id=experiment_id,
     )
 
     logger.info(
