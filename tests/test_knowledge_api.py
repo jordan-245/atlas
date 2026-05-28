@@ -199,3 +199,108 @@ class TestGetSource:
         ).json()
         assert body2["claim_count"] == 1
         assert body2["claims"][0]["status"] == "dismissed"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Track 3a -- Variant D dashboard endpoints
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestListSources:
+    def test_empty(self, client):
+        r = client.get("/api/knowledge/sources?limit=10", auth=_AUTH)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["total"] == 0
+        assert body["rows"] == []
+
+    def test_seeded_includes_counts(self, client):
+        _seed_contradiction(strategy="strat_a")
+        _seed_contradiction(strategy="strat_b")
+        body = client.get("/api/knowledge/sources?limit=10", auth=_AUTH).json()
+        assert body["total"] == 2
+        # Each seeded source has 1 active claim that produced a contradiction.
+        assert all(row["claim_count"] >= 1 for row in body["rows"])
+        assert all(row["open_contradictions"] >= 1 for row in body["rows"])
+
+    def test_search_filter(self, client):
+        _seed_contradiction(strategy="momentum_breakout")
+        _seed_contradiction(strategy="mean_reversion")
+        body = client.get(
+            "/api/knowledge/sources?q=momentum", auth=_AUTH,
+        ).json()
+        # Title contains the strategy name; only the momentum row should match.
+        assert all("momentum" in row["title"].lower() for row in body["rows"])
+
+    def test_auth(self, client):
+        r = client.get("/api/knowledge/sources")
+        assert r.status_code == 401
+
+
+class TestContradictionsTimeline:
+    def test_empty(self, client):
+        body = client.get("/api/knowledge/contradictions-timeline?days=7",
+                          auth=_AUTH).json()
+        assert body["days"] == 7
+        assert body["timeline"] == []
+
+    def test_seeded_produces_rows(self, client):
+        _seed_contradiction(strategy="strat_x")
+        body = client.get("/api/knowledge/contradictions-timeline?days=30",
+                          auth=_AUTH).json()
+        assert len(body["timeline"]) >= 1
+        first = body["timeline"][0]
+        assert {"date", "critical", "major", "minor", "resolved"} <= set(first.keys())
+        assert first["critical"] + first["major"] + first["minor"] >= 1
+
+
+class TestDigestHistory:
+    def test_empty(self, client):
+        body = client.get("/api/knowledge/digest-history?limit=10",
+                          auth=_AUTH).json()
+        assert body["rows"] == []
+
+    def test_seeded(self, client):
+        from db.knowledge import log_digest
+        log_digest(kind="daily", new_papers=3, new_contradictions=1, delivery_status="ok")
+        log_digest(kind="daily", new_papers=5, new_contradictions=2, delivery_status="ok")
+        body = client.get("/api/knowledge/digest-history?limit=10",
+                          auth=_AUTH).json()
+        assert len(body["rows"]) == 2
+        # Chronological order (oldest first) for charting.
+        ts = [r["sent_at"] for r in body["rows"]]
+        assert ts == sorted(ts)
+
+
+class TestExtractionConfidence:
+    def test_empty(self, client):
+        body = client.get("/api/knowledge/extraction-confidence", auth=_AUTH).json()
+        assert body["total"] == 0
+        assert body["histogram"] == {"high": 0, "medium": 0, "low": 0, "unknown": 0}
+
+    def test_seeded(self, client):
+        from db import knowledge as kn
+        kn.insert_source(id="src-1", kind="paper", title="x")
+        # Two high-confidence claims with metrics
+        kn.insert_claim(id="clm-h1", source_id="src-1", strategy="s_h1")
+        kn.update_claim_metrics(id="clm-h1", claimed_sharpe=1.0, extraction_confidence="high")
+        kn.insert_claim(id="clm-h2", source_id="src-1", strategy="s_h2")
+        kn.update_claim_metrics(id="clm-h2", claimed_sharpe=1.0, extraction_confidence="high")
+        # One low-confidence claim with metrics
+        kn.insert_claim(id="clm-l1", source_id="src-1", strategy="s_l1")
+        kn.update_claim_metrics(id="clm-l1", claimed_sharpe=1.0, extraction_confidence="low")
+        # Shell claim (no metrics) should be excluded
+        kn.insert_claim(id="clm-shell", source_id="src-1", strategy="s_shell")
+
+        body = client.get("/api/knowledge/extraction-confidence", auth=_AUTH).json()
+        assert body["total"] == 3
+        assert body["histogram"]["high"] == 2
+        assert body["histogram"]["low"] == 1
+
+
+class TestStrategySummaries:
+    def test_returns_summaries(self, client):
+        _seed_contradiction(strategy="strat_summary_a", claimed_sharpe=1.6, measured_sharpe=0.4)
+        body = client.get("/api/knowledge/strategy-summaries", auth=_AUTH).json()
+        assert body["count"] >= 1
+        names = {r["strategy"] for r in body["rows"]}
+        assert "strat_summary_a" in names

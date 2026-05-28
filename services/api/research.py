@@ -572,3 +572,114 @@ def research_coverage(_auth: HTTPBasicCredentials = Depends(check_auth)):
     except Exception as e:  # noqa: BLE001 — HTTP handler catch-all
         logger.exception("research_coverage failed")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Track 3a: Variant-D dashboard support endpoints ──────────────────────────
+
+@router.get("/discovery-funnel")
+def discovery_funnel(
+    days: int = 30,
+    _auth: HTTPBasicCredentials = Depends(check_auth),
+):
+    """Per-day discovery funnel for the last N days.
+
+    Reads research_discoveries rows.  Returns one row per day:
+        {date, papers_found, papers_filtered, specs_extracted, strategies_generated}
+
+    The 5th stage (strategies_passed_qc) is not currently persisted by
+    research.db.log_discovery; clients should treat its absence as zero.
+    """
+    import sqlite3
+    try:
+        from db.atlas_db import get_db
+        with get_db() as db:
+            rows = db.execute(
+                """
+                SELECT run_date,
+                       MAX(papers_found)        AS papers_found,
+                       MAX(papers_filtered)     AS papers_filtered,
+                       MAX(specs_extracted)     AS specs_extracted,
+                       MAX(strategies_generated) AS strategies_generated
+                FROM research_discoveries
+                WHERE run_date >= date('now', ? || ' days')
+                GROUP BY run_date
+                ORDER BY run_date
+                """,
+                (f"-{int(days)}",),
+            ).fetchall()
+            funnel = [
+                {
+                    "date": r["run_date"],
+                    "papers_found": int(r["papers_found"] or 0),
+                    "papers_filtered": int(r["papers_filtered"] or 0),
+                    "specs_extracted": int(r["specs_extracted"] or 0),
+                    "strategies_generated": int(r["strategies_generated"] or 0),
+                }
+                for r in rows
+            ]
+    except sqlite3.OperationalError as e:
+        # research_discoveries lives in research/migrate_research.py, not in
+        # db/schema.sql.  If the table is missing (test DBs, or a freshly-
+        # cloned dev box that never ran the research migration), degrade to
+        # an empty funnel rather than 500.
+        if "no such table" in str(e).lower():
+            logger.info("discovery_funnel: research_discoveries table missing, returning empty")
+            return {"days": days, "funnel": []}
+        logger.exception("discovery_funnel failed")
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:  # noqa: BLE001
+        logger.exception("discovery_funnel failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"days": days, "funnel": funnel}
+
+
+@router.get("/queue-health")
+def queue_health(
+    _auth: HTTPBasicCredentials = Depends(check_auth),
+):
+    """Counts of queue entries by status + category, with category breakdown.
+
+    Reads queue_mirror when the Phase 6 dual-write is enabled; falls back
+    to research/queue.json otherwise.  Returns a single shape regardless.
+    """
+    try:
+        from db.atlas_db import get_db
+        # Prefer the SQL mirror if it has rows.
+        with get_db() as db:
+            mirror_count = db.execute("SELECT COUNT(*) AS n FROM queue_mirror").fetchone()
+            if mirror_count and int(mirror_count["n"]) > 0:
+                status_rows = db.execute(
+                    "SELECT status, COUNT(*) AS n FROM queue_mirror GROUP BY status"
+                ).fetchall()
+                category_rows = db.execute(
+                    "SELECT category, COUNT(*) AS n FROM queue_mirror "
+                    "WHERE status IN ('queued','claimed','running','evaluating') "
+                    "GROUP BY category"
+                ).fetchall()
+                by_status = {r["status"]: int(r["n"]) for r in status_rows}
+                by_category = {r["category"]: int(r["n"]) for r in category_rows}
+                source = "queue_mirror"
+            else:
+                from research.models import read_queue
+                queue = read_queue()
+                by_status = {}
+                by_category = {}
+                for entry in queue:
+                    s = entry.get("status", "queued")
+                    by_status[s] = by_status.get(s, 0) + 1
+                    if s in ("queued", "claimed", "running", "evaluating"):
+                        c = entry.get("category", "uncategorized")
+                        by_category[c] = by_category.get(c, 0) + 1
+                source = "queue.json"
+    except Exception as e:  # noqa: BLE001
+        logger.exception("queue_health failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {
+        "source": source,
+        "by_status": by_status,
+        "by_category": by_category,
+        "active": sum(by_status.get(s, 0)
+                      for s in ("queued", "claimed", "running", "evaluating")),
+    }
