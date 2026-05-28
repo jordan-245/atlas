@@ -1,5 +1,17 @@
-import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts'
-import { ChartGate } from './ChartGate'
+/**
+ * Sparkline -- compact inline trend line.
+ *
+ * External API preserved across the Recharts -> Chart.js migration:
+ * callers continue to pass `data: number[]` with optional colour/height/
+ * strokeWidth.  Internally renders via the shared <Chart> wrapper.
+ *
+ * Auto-colour rule kept identical: green when the trend ends >= start,
+ * red otherwise.  Callers override with an explicit `color` prop.
+ */
+
+import { useMemo } from 'react'
+import { Chart } from './Chart'
+import type { ChartOptions } from 'chart.js'
 
 interface SparklineProps {
   data: number[]
@@ -8,65 +20,63 @@ interface SparklineProps {
   strokeWidth?: number
 }
 
-function SparklineTooltip({ active, payload }: { active?: boolean; payload?: Array<{ value?: number }> }) {
-  if (!active || !payload?.length) return null
-  return (
-    <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-2 py-1 text-[10px] font-mono shadow-md">
-      {payload[0]?.value?.toLocaleString()}
-    </div>
-  )
-}
-
 export function Sparkline({ data, color, height = 32, strokeWidth = 1.5 }: SparklineProps) {
-  if (!data || data.length === 0) {
+  const safeData = data ?? []
+  const isEmpty = safeData.length === 0
+
+  const resolvedColor =
+    color ??
+    (!isEmpty && safeData[safeData.length - 1] >= safeData[0] ? '#22c55e' : '#ef4444')
+
+  const chartData = useMemo(
+    () => ({
+      labels: safeData.map((_, i) => String(i)),
+      datasets: [
+        {
+          label: 'value',
+          data: [...safeData],
+          borderColor: resolvedColor,
+          borderWidth: strokeWidth,
+          pointRadius: 0,
+          pointHoverRadius: 3,
+          fill: false,
+          tension: 0.3,
+        },
+      ],
+    }),
+    // NB: safeData identity changes whenever the prop changes, which is what we want.
+    [safeData, resolvedColor, strokeWidth],
+  )
+
+  const options: ChartOptions<'line'> = useMemo(
+    () => ({
+      animation: { duration: 600, easing: 'easeOutQuart' },
+      plugins: {
+        tooltip: {
+          callbacks: {
+            title: () => '',
+            label: (ctx) =>
+              typeof ctx.parsed.y === 'number'
+                ? ctx.parsed.y.toLocaleString()
+                : String(ctx.parsed.y),
+          },
+        },
+      },
+      layout: { padding: 0 },
+    }),
+    [],
+  )
+
+  if (isEmpty) {
     return <div style={{ height }} />
   }
 
-  const resolvedColor =
-    color ?? (data[data.length - 1] >= data[0] ? '#22c55e' : '#ef4444')
-
-  const chartData = data.map((value, index) => ({ index, value }))
-
   return (
-    <ChartGate style={{ height, width: '100%' }}>
-      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-        <LineChart data={chartData}>
-          <defs>
-            <filter id="glow">
-              <feGaussianBlur stdDeviation="2" result="blur" />
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-          </defs>
-          <Tooltip
-            content={<SparklineTooltip />}
-            cursor={false}
-          />
-          <Line
-            type="monotone"
-            dataKey="value"
-            stroke={resolvedColor}
-            strokeWidth={strokeWidth + 2}
-            strokeOpacity={0.15}
-            dot={false}
-            isAnimationActive={false}
-            activeDot={false}
-          />
-          <Line
-            type="monotone"
-            dataKey="value"
-            stroke={resolvedColor}
-            strokeWidth={strokeWidth}
-            dot={false}
-            isAnimationActive={true}
-            animationDuration={800}
-            animationEasing="ease-out"
-            activeDot={{ r: 2, fill: resolvedColor }}
-          />
-        </LineChart>
-      </ResponsiveContainer>
-    </ChartGate>
+    <Chart
+      kind="sparkline"
+      data={chartData}
+      options={options as ChartOptions<'line' | 'bar' | 'doughnut'>}
+      height={height}
+    />
   )
 }
