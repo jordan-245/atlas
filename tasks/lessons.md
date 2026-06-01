@@ -62,7 +62,7 @@ All dormant strategies had silent bugs: `generate_signals()` signature mismatch,
 Multiple processes (EOD, research, CLI) write to the same parquet cache concurrently. Use atomic write (write-to-temp-then-rename) for all file writes that can race. This applies to: parquet cache, paper state JSON, plan files.
 
 ### 17. Parallel builders creating the same new file → merge conflict
-When a swarm task creates a new shared module, assign creation to ONE builder. Other builders depend on it or work on non-overlapping files. Never assign the same new file to multiple builders.
+When a parallel-agent tool task creates a new shared module, assign creation to ONE builder. Other builders depend on it or work on non-overlapping files. Never assign the same new file to multiple builders.
 
 ### 18. Research runner exit code matters
 Code errors (TypeError, AttributeError) in experiment execution must exit with code 2, not 0. When exit 0, auto-recovery never fires. Distinguish: code bug (exit 2) vs research failure (exit 0).
@@ -80,11 +80,11 @@ IBeam REST API has a known bug: browser auth session not inherited by REST endpo
 ### 21. US Friday session = Saturday AEST
 US market hours (9:30-16:00 EST) map to Saturday AEST for Friday's session. Overnight/postclose crons must use day-of-week `2-6` (Tue-Sat), not `1-5`. Premarket (evening AEST) stays `1-5`.
 
-### 22. Swarm coordinator must not pre-scout
-Reading files before launching a swarm defeats the purpose of the scout phase. Scouts find unexpected things. Coordinator writes objectives + acceptance criteria, dispatches, tracks. Does NOT read code or run experiments.
+### 22. Parallel-work coordinator must not pre-scout
+Reading files before launching a parallel-agent tool defeats the purpose of the scout phase. Scouts find unexpected things. Coordinator writes objectives + acceptance criteria, dispatches, tracks. Does NOT read code or run experiments.
 
 ### 23. Builder scope = file ownership
-Split swarm tasks by FILE, not by concern. Each file belongs to exactly one builder. When you find yourself thinking "both builders need to touch this file" — that's a merge conflict waiting to happen. Assign the file to one builder.
+Split parallel-agent tool tasks by FILE, not by concern. Each file belongs to exactly one builder. When you find yourself thinking "both builders need to touch this file" — that's a merge conflict waiting to happen. Assign the file to one builder.
 
 ### 24. Config version naming convention
 Use `{market}_{version_label}_{YYYYMMDD}.json` for snapshots. Semantic labels (v9.3, v2.2) for promoted configs. Pre-promotion backups: `{market}_pre_{action}_{YYYYMMDD_HHMMSS}.json`.
@@ -211,3 +211,12 @@ introduces the replacement. For Pi footer clutter specifically, search global
 extensions too: `[EQUITY] [PNL] [OK] [TASKS]` came from
 `/root/.pi/agent/extensions/projects/footer.ts` (`registerFooter()` leftParts),
 not from Atlas package `atlas-status-dashboard`.
+
+### Finance UI: Up saver accounts are mixed-purpose
+User correction (2026-05-29): not every Up `SAVER` account is a savings goal. Some are true goal accounts (Travel, Emergency, Savings/Invest, etc.); many others are fortnight budget buckets (Rent, Food, Phone, Fuel, Registration, Fun, AI, bills). Goal UI must filter to true goal accounts and keep goal/target semantics there; do not reinterpret all savers as budget allocations or show budget buckets in the goal panel.
+
+### Agent instructions: AGENTS.md is canonical for GPT/Pi agents
+User correction (2026-05-29): now that the operator is GPT/Pi rather than Claude-only, Atlas agent instructions must live in `AGENTS.md`. Keep `CLAUDE.md` only for legacy compatibility; add or update active agent rules in `AGENTS.md` first.
+
+### Research 0-promoted runs need gate + planner diagnosis
+#386/#390 (2026-05-29): `32 screened → 0 promoted` was a correct fast-screen rejection, not a reason to soften gates. But the 1h window screened only 32/38 candidates and never reached the recent high-impact `profit_target_atr_mult` dimension, and research-best differed from live-active config. Rule: for any 0-promotion run, check (1) artifact/DB rows, (2) rejection reasons, (3) budget-truncated params, and (4) research-best vs live-active drift before changing thresholds. Autoresearch now prioritizes current-best/recently-kept params and records solo-discard rationale.

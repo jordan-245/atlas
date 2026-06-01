@@ -37,8 +37,8 @@ def _find_atlas_root() -> Path:
     Walk up the directory tree from this file to find the Atlas project root.
 
     The root is the first directory that contains ``data/cache``.  This
-    handles both the main worktree and swarm builder worktrees (which don't
-    have a local data/ copy).
+    handles the main worktree and alternate checkout layouts that do not
+    have a local data/ copy.
     """
     candidate = Path(__file__).resolve()
     for _ in range(10):

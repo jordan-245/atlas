@@ -216,7 +216,7 @@
 
 ## 2026-03-02 — Full Codebase Audit + Critical Bug Fixes
 
-**Decision:** Run comprehensive audit and fix all CRITICAL issues via swarm.
+**Decision:** Run comprehensive audit and fix all CRITICAL issues via parallel-agent tool.
 
 **Fixes applied:**
 - C1: Look-ahead bias (trailing stop/max_loss_cap now use T-1 close)

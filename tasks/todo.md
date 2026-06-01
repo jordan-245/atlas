@@ -6,6 +6,44 @@ tracks real work against real commits.
 
 ---
 
+## 🔜 TODO — #385 Atlas return/performance roadmap (Board decision 2026-05-29)
+
+Board memo: `ceo-board/memos/2026-05-29-atlas-return-performance-plan-2026-05/memo.md`.
+
+- [x] #386 Diagnose the 0/32 SP500 research promotion signal before more sweeps or threshold changes. Report: `docs/project-notes/research-promotion-diagnostic-2026-05-29.md`.
+- [x] #389 Reconcile research-best vs live-active SP500 momentum config drift. Report: `docs/project-notes/research-best-active-drift-reconciliation-2026-05-29.md`.
+  - [x] Added read-only drift comparison between `research/best/<strategy>.json` params and `config/active/<market>.json` active strategy params.
+  - [x] Surfaced drift in autoresearch output/summary without changing live config.
+  - [x] Decision: keep live active unchanged; do not stage research-best until #219/#354/OOS gates pass.
+- [x] #390 Improve autoresearch sweep ordering and solo-discard telemetry.
+  - [x] Made sweep ordering budget-aware so current-best/recently-kept/high-impact parameters are tried before stale high-history params.
+  - [x] Persisted solo-screen rejection rationale/deltas for `discard_solo` rows.
+  - [x] Added focused tests proving ordering and telemetry behavior.
+- [x] #219 Finish research sweep regression harness; no new live strategy promotion before it is green. Harness live mode 7/7 green on 2026-06-01; report `docs/project-notes/research-sweep-regression-harness-2026-06-01.md`.
+- [x] #215 Complete overlay log-only go/no-go review; overlay may only activate tighten-only with caps/kill switch if net-positive. Review complete but gate remains BLOCKED/INSUFFICIENT_DATA; report `docs/project-notes/overlay-log-only-review-2026-06-01.md`.
+- [x] #354 Fix stale SP500 phase2 tests before momentum parameter changes. `tests/test_sp500_config_phase2.py` updated for v3.2.4 invariants.
+- [x] #397 Review source-derived knowledge extraction quality after first cron/extraction batch. 25-claim batch produced 0 metrics/25 not_found; report `docs/project-notes/knowledge-extraction-review-2026-06-01.md`; follow-up #400.
+- [x] Run post-repair SP500 research baseline(s) and record promotion counts before any sizing/strategy decision. `research.sweep_regression_harness --live --json`: 7/7 green, latest completed SP500 window screened 38/38, DB rows 39, 0 promoted/kept, no threshold softening.
+- [x] #387 Analyze volatility-aware/fractional-Kelly sizing; require risk-adjusted improvement without drawdown degradation. No sizing variant passes; report `docs/project-notes/fractional-kelly-sizing-analysis-2026-06-01.md`; follow-up #399.
+- [x] #388 Validate one additive SP500 strategy candidate with OOS + correlation gates. Mean-reversion candidate is uncorrelated but NO-PROMOTE: combined MB+MR worsens Sharpe/PnL because portfolio construction crowds MR to 14 trades; report `docs/project-notes/additive-sp500-strategy-validation-2026-06-01.md`.
+- [x] #398 Removed/cancelled per user request; no prediction-market/NRL new-project spike.
+- [x] #395 Fix knowledge-layer claim/spec ingestion gap. (complete 2026-06-01)
+  - [x] Diagnosed root cause: claim ingestion depended on transient `research/discovery/specs/specs_*.json`; specs dir is empty while 103 PDF `sources` exist.
+  - [x] Added source-derived shell-claim fallback for claim-less PDF sources; deterministic/idempotent claim IDs.
+  - [x] Added LLM strategy-resolution path for source-derived placeholders so metric extraction can persist real strategy/universe when found.
+  - [x] Added failed-extraction filter: `phase1.5:` low-confidence attempts are excluded by default and retryable with `--include-low-confidence`.
+  - [x] Applied production backfill: 103 shell claims created; rerun creates 0 duplicates. One LLM smoke returned `not_found` for an irrelevant paper; pending default shell claims now 102.
+  - [x] Verified contradiction sync + wiki materializer remain intact: 48 strategy pages, 0 contradictions until metrics/resolved strategy disagree.
+  - [x] Added focused regression tests for empty-spec fallback, idempotency, source-derived strategy resolution, and low-confidence retry filtering.
+- [x] #392 Fix research workflow audit follow-ups from 2026-06-01. (complete 2026-06-01; no config promotion)
+  - [x] Confirm/reconcile queue workflow: director-created `research/queue.json` items vs disabled `atlas-research-runner.service`. `scripts/director_cron.py::get_queue_stats` now reports `consumer_enabled/consumer_active/backlog_stranded` (read-only `systemctl` probe, no systemd mutation) and the director skips experiment generation while the consumer is disabled + a backlog exists (unless `--force-discovery`). Verified live: 50 queued + consumer disabled → stranded warning fires.
+  - [x] Fix research accounting: baseline rows must not be counted as real keeps. `research/db.py::db_status_for` tags baselines `status='baseline'` (not `'kept'`); `services/api/research.py` summary excludes `description='baseline'` (handles historical rows without rewriting them); `_parse_session_results` tracks a dedicated `baseline` bucket; discard_solo SQLite rows now pass `market=` for correct universe attribution.
+  - [x] Fix LLM loop prompt errors: `research/loop.py::leaderboard`/`strategy_status` coerce null metrics (fixes `unsupported format string passed to NoneType.__format__`); `research/llm_loop_runner.py` prompt now documents the real `experiment()` schema (`r['metrics']['sharpe']`, `r['recommendation']`) and warns against the top-level `r['sharpe']` KeyError.
+  - [x] Calibrate nightly degraded threshold for active allow-list runs. `_resolve_min_rows` scales per enabled strategy (`ROWS_PER_STRATEGY_BY_UNIVERSE`, sp500=25/strategy → 1-strategy floor 25 not 50); the DEGRADED warning now keys off TSV↔SQLite consistency (`TSV_DB_CONSISTENCY_FRACTION`) so a healthy ~38-row 1-strategy run is not flagged, while genuine silent failures (TSV=0 AND DB=0) still alert.
+  - [x] Add exhaustion/rotation guard: `assess_exhaustion`/`assess_exhaustion_for_strategies` flag strategies with enough recent attempts and 0 real keeps, emitting a `RESEARCH_EXHAUSTION` recommendation to redirect to #387 sizing / #388 additive+OOS. Reporting only — never enables strategies or promotes configs.
+  - [x] Verify with focused research tests and a dry-run/nightly status path; no config promotion. New `tests/test_research_workflow_audit_392.py` (16 tests) + updated threshold/api tests green; nightly `--dry-run` and director status smoke verified.
+- [ ] Defer live universe expansion until SQLite cutover/shadow validation and cross-universe isolation gates pass.
+
 ## ✅ DONE — #364/#365 returns/performance audit fix (2026-05-27)
 
 - [x] Fix #364 accounting source-of-truth failures:
@@ -1278,7 +1316,7 @@ Consolidated all TUI elements into one dashboard + clean footer:
 - Removed `[AGENTS]` left-side counter and dead code from `projects/footer.ts`
 - Removed `setStatus` footer entry from `atlas-tui-widget/index.ts`
 - Redesigned `atlas-tui-widget` header: `◆ phase │ agents N │ tools T │ errors E │ elapsed`
-- Added `isDelegationTool()` + `rowIcon()` — delegation tools (subagent/swarm) show `→` while running
+- Added `isDelegationTool()` + `rowIcon()` — delegation tools (subagent/delegate) show `→` while running
 - Footer: context% · tokens · model · thinking only
 
 **Verification:** `npm run verify-tui` passes (52/52).
@@ -1320,6 +1358,178 @@ Delivered end-to-end governed elastic-agent orchestrator as a Pi extension. All 
 **Verification:** `cd /root/atlas/pi-package/atlas-ops && npm run verify-elastic-agents` → 114/114 ✓ | `npm run verify-tui` → 57/57 ✓
 
 **Limitations / Phase 3+ follow-up:**
-- Write builder orchestration: recommends swarm plan but doesn't auto-dispatch (Phase 3)
+- Write builder orchestration: recommends write plan but doesn't auto-dispatch (Phase 3)
 - TUI live agent dashboard: audit log readable via /elastic-status; full dashboard Phase 5
 - Read-only burst: returns pi CLI commands for review; actual parallel subprocess management is coordinator's responsibility (Phase 2 full completion)
+
+---
+
+## Task #367: dashboard-ui build fix — 2026-05-28
+
+**Status:** IN PROGRESS.
+
+Plan:
+- [ ] Keep current pull at `0a69e04f`; preserve required `package-lock.json` sync for `chart.js` / `react-chartjs-2`.
+- [ ] Fix TypeScript build failures with the smallest safe changes, especially around shared `Chart` typing (GitNexus: CRITICAL blast radius, type-only/narrow changes only).
+- [ ] Re-run `cd dashboard-ui && npm run build` and `npm run lint` where practical.
+- [ ] Record review notes and update task #367.
+
+Review:
+- [x] Pulled `origin/main` fast-forward to `0a69e04f`.
+- [x] Synced `dashboard-ui/package-lock.json` via `npm install` for `chart.js` / `react-chartjs-2`.
+- [x] Fixed build with narrow/type-only `Chart` option typing and `ResearchTab` prop/import cleanup.
+- [x] Verified `cd dashboard-ui && npm run build` passes.
+- [x] Ran `cd dashboard-ui && npm run lint`; still fails with unrelated baseline issues (tracked as task #368).
+- [x] Ran `npx gitnexus detect-changes`; high scope due shared Chart wrapper and ResearchTab flows, expected for this change.
+
+**Status:** COMPLETED.
+
+---
+
+## Task #369: research dashboard queue-health test isolation — 2026-05-28
+
+**Status:** COMPLETED.
+
+Plan:
+- [x] Reproduce/confirm `TestQueueHealth.test_empty` reads real `research/queue.json` when SQL mirror is empty.
+- [x] Keep production `queue_health` behavior unchanged.
+- [x] Patch the test to redirect `research.models.QUEUE_PATH` to `tmp_path` before the request.
+- [x] Verify `python3 -m pytest tests/test_knowledge_api.py tests/test_research_dashboard.py -q` passes.
+
+Review:
+- Result: `31 passed, 2 warnings`.
+- Follow-up task #370 added for global conftest isolation of `research.models.QUEUE_PATH`.
+
+---
+
+## Tasks #368/#370: dashboard lint + research queue test isolation — 2026-05-28
+
+**Status:** COMPLETED.
+
+Plan:
+- [x] Keep prior dashboard build fixes intact; working tree is dirty from completed #367/#369, so use a focused worker rather than parallel-agent tool unless/until tree is clean.
+- [x] Run GitNexus impact checks for lint/test symbols before edits and keep any high-risk changes narrow.
+- [x] Complete #368 by resolving current `dashboard-ui` lint baseline without redesigning UI behavior.
+- [x] Complete #370 by moving research queue JSON isolation into `tests/conftest.py` and simplifying per-test patches.
+- [x] Verify `cd dashboard-ui && npm run build`, `cd dashboard-ui && npm run lint`, and relevant pytest.
+
+Review:
+- **#368 lint baseline** — fixed all 12 errors + 1 warning with behaviour-preserving changes:
+  - `App.tsx`: removed unused `preload*` re-export (TabBar already imports them directly from `lib/preloaders`), fixing 5 `react-refresh/only-export-components` errors.
+  - `components/layout/Skeleton.tsx`: added file-level `eslint-disable react-refresh/only-export-components` with explanation — the `Skeleton.X` namespace API uses `Object.assign` rather than per-variant exports, which the rule does not understand. Fast Refresh edge-case only.
+  - `components/controls/ChangeStateModal.tsx`: bracketed the open-rising-edge reset `useEffect` with `/* eslint-disable react-hooks/set-state-in-effect */ ... /* eslint-enable */`. Restructuring to conditional mounting would touch every caller and is out of scope.
+  - `components/controls/StrategyRow.tsx` and `UniverseRow.tsx`: replaced `Date.now()` during render with `const [nowMs] = useState<number>(() => Date.now())` (per-mount snapshot — accurate enough for the “expires within 7 days” badge).
+  - `components/shared/Sparkline.tsx`: wrapped `safeData = data ?? []` in `useMemo([data])` so the chart-data `useMemo` dependency identity is stable.
+- **#370 global test isolation** — added a `_make_path_isolation_fixtures` invocation in `tests/conftest.py` for `research.models.QUEUE_PATH` (label `research_queue`). Generates session + function autouse fixtures plus a `_zz_verify_no_research_queue_pollution` session-end fixture asserting `/root/atlas/research/queue.json` mtime/size are unchanged. `tests/test_research_dashboard.py::TestQueueHealth` simplified to drop the redundant per-test `monkeypatch.setattr(rm, "QUEUE_PATH", ...)` calls (the conftest fixture now covers it). Other tests (`test_phase6_dual_write`, `test_contradiction_channel`) still carry their own per-test patches as harmless safety nets — left untouched to avoid scope creep.
+- **Verification:**
+  - `cd dashboard-ui && npm run lint` — 0 errors, 0 warnings.
+  - `cd dashboard-ui && npm run build` — `✓ built in 286ms`.
+  - `python3 -m pytest tests/test_knowledge_api.py tests/test_research_dashboard.py -q` — `31 passed, 2 warnings`.
+  - Spot-checked sibling tests with their own QUEUE_PATH patches (`test_phase6_dual_write`, `test_contradiction_channel`, `test_atomic_write`) — all pass alongside the new global fixture.
+- **Pre-existing failure noted (out of scope):** `tests/test_bare_except_wave2.py::TestTelegramNoBareExcept::test_no_unbound_broad_except` still fails (`utils/telegram.py` has 1 unbound broad-except). Confirmed pre-existing on main via `git stash` before changes — not introduced here. Track separately if a follow-up task is desired.
+- **Not committed** per coordinator instruction; working tree still carries #367/#369 + #368/#370 changes for the coordinator to commit as a single bundle.
+
+---
+
+## Tasks #359/#372/#373: fix latest Atlas errors — 2026-05-29
+
+**Status:** IMPLEMENTED (not yet committed).
+
+Plan:
+- [x] Keep existing dashboard/test changes intact; working tree is dirty, so do not use parallel-agent tool until clean.
+- [x] Diagnose the three errors with focused agents: invalid non-active research timers, research LLM timeout/runaway behavior, and paper-order strategy ambiguity.
+- [x] Run GitNexus impact analysis before modifying any symbols/scripts.
+- [x] Implement minimal guardrails: skip universes with no active config before workers/LLM, constrain LLM loop to active universe/strategies/time budget, and resolve paper-order strategy lookup ambiguity without weakening live-trading safeguards.
+- [x] Verify with targeted unit tests/CLI dry runs, `npm run`/dashboard build status as relevant, and a latest-error scan.
+- [x] Record outcomes in tasks/project notes.
+
+Review:
+- **#372 invalid research windows** (research/autoresearch_nightly.py + scripts/research_window_universe.sh):
+  - `scripts/research_window_universe.sh` now checks `config/active/${UNIVERSE}.json` upfront; missing file → log `SKIPPED -- no active config` and exit 0 before any sweep/LLM/tiny-log sentinel runs.
+  - `_filter_enabled_strategies` is now fail-CLOSED for `FileNotFoundError` (returns `[]` with a clear warning), while non-file-missing exceptions retain the prior fail-open behaviour so transient config glitches don't silence a real sweep. `run_nightly` already short-circuits on empty strategy list (`status="no_strategies"`), so no workers and no LLM loop run.
+  - New tests in `research/tests/test_universe_isolation.py::TestFilterEnabledStrategiesRespectsUniverse`: `test_missing_active_config_returns_empty_fail_closed` and `test_transient_config_error_remains_fail_open`.
+- **#373 LLM timeout / context bleed** (research/llm_loop_runner.py):
+  - Explicit subprocess timeout buffer widened from `+5 min` to `+10 min`; for `--minutes 25` runs that means a 35-min subprocess cap rather than 30. `utils.pi_subprocess.DEFAULT_TIMEOUT` left untouched.
+  - Prompt now opens with a non-negotiable `Universe Binding` block (`ResearchSession(... universe='{universe}')`), restricts strategies to the explicit allow-list, and tightens the in-prompt stop instruction to `minutes - 3` so the in-flight experiment can complete inside the budget.
+  - New tests in `tests/test_audit_r05b_pi_timeout.py`: `test_timeout_buffer_minimum_ten_minutes` (asserts `(minutes + 10) * 60` floor for the opus call) and `test_prompt_binds_to_passed_universe` (asserts the prompt mentions `commodity_etfs` and `universe='commodity_etfs'`).
+- **#359 sync_paper_orders ambiguity** (scripts/sync_paper_orders.py + tests/test_sync_paper_orders.py):
+  - `_lookup_strategy` now returns `(strategy_or_None, reason)` and ALWAYS consults `_lookup_strategy_from_plans` when the PAPER row count is 0 or >1. Plans for XLE/UNG already attribute to `connors_rsi2`, so the previous `strategy_ambiguous:XLE:...` errors now resolve via plan fallback.
+  - `_record_newly_filled_paper_trades` records unresolved attributions in `stats["skipped_unresolved"]` (with reason `no_paper_no_plan` or `ambiguous_no_plan`) instead of `stats["errors"]`. Heartbeat detail now exposes `skipped_unresolved` alongside `errors`.
+  - `main()` returns exit code 0 when only `skipped_unresolved` entries are present — routine attribution noise no longer fails the cron and no longer blocks the success-stamp update. Real exceptions still surface as `errors` and exit 1.
+  - New tests: `test_zero_paper_strategies_plan_fallback_resolves`, `test_zero_paper_no_plan_skipped_unresolved`, `test_main_returns_zero_when_only_skipped_unresolved`, `test_main_returns_one_when_real_errors`. Existing tests 1–5 updated for the new `(strategy, reason)` return contract.
+- **Verification (2026-05-29):**
+  - `python3 -m pytest tests/test_sync_paper_orders.py -q` — `9 passed, 1 warning`.
+  - `python3 -m pytest research/tests/test_universe_isolation.py -q` — `11 passed, 1 skipped, 4 warnings`.
+  - `python3 -m pytest tests/test_audit_r05b_pi_timeout.py -q` — `9 passed, 1 warning`.
+  - `bash scripts/research_window_universe.sh commodity_etfs` — exits 0 in 16 ms, logs `SKIPPED -- no active config at /root/atlas/config/active/commodity_etfs.json`. No worker/LLM launch.
+  - `python3 scripts/sync_paper_orders.py --dry-run --days 7` — connects to Alpaca paper account, fetches 34 orders (9 filled), `errors=0 skipped_unresolved=0`, exit code 0. No `strategy_ambiguous:XLE/UNG` lines.
+  - `npx gitnexus detect-changes` — only research/script/test files added; only new execution-flow surface attributed to this work is `Sync_paper_orders → _active_config_path` (4 steps). The HIGH overall risk shown by the tool is driven by the pre-existing dashboard-ui modifications in the dirty tree, not this change set.
+- **Operational note already done by coordinator:** non-SP500 `atlas-research-window@*.timer` units are masked; only `atlas-research-window@sp500.timer` remains enabled. The bash-script guard now provides a code-level safety net for the same scenario.
+- **Not committed** per coordinator instruction; the working tree still carries the prior dashboard/test changes (#367–#370) plus these fixes for the coordinator to bundle as needed.
+
+Review:
+- [x] Disabled non-SP500 research-window timers (`commodity_etfs`, `sector_etfs`, `gold_etfs`, `treasury_etfs`, `defensive_etfs`, `crypto`); only `atlas-research-window@sp500.timer` remains enabled.
+- [x] Added `scripts/research_window_universe.sh` guard: known universes with no active config log `SKIPPED -- no active config` and exit 0 before sweep/LLM; unknown universe names still exit 2.
+- [x] Made `research/autoresearch_nightly.py::_filter_enabled_strategies` fail-closed on missing active config, while transient config errors remain fail-open.
+- [x] Hardened `research/llm_loop_runner.py`: derives default strategy allow-list from active config, binds prompt to requested universe, and increases Pi timeout buffer from 5 to 10 minutes.
+- [x] Fixed `scripts/sync_paper_orders.py`: plan fallback works for zero/multiple PAPER lifecycle rows, XLE/UNG attribution resolves via plan files, unresolved attribution is non-fatal `skipped_unresolved`, and heartbeat includes skipped detail.
+- [x] Verified `tests/test_sync_paper_orders.py`, `research/tests/test_universe_isolation.py`, `tests/test_audit_r05b_pi_timeout.py`, research-window skip smoke, `sync_paper_orders --dry-run`, systemd timer state, and dashboard `npm run lint/build`.
+- [x] Split residual SP500 cross-universe PAPER plan hygiene to #374; split test log/Telegram pollution discovered during verification to #375.
+
+**Status:** COMPLETED for #359/#372/#373 immediate errors.
+
+---
+
+## Task #376: updated dashboard finance tab integration — 2026-05-29
+
+**Status:** COMPLETED.
+
+Review:
+- [x] Confirmed repo already fast-forwarded to `2a4d612f`; `git pull` reports already up to date.
+- [x] Ran `cd dashboard-ui && npm install --no-audit --no-fund` successfully (`up to date`).
+- [x] Ran `npm run build` successfully; Vite emitted the updated `FinanceTab` chunk.
+- [x] Ran `npm run lint` successfully with 0 errors/warnings.
+
+---
+
+## Task #377: finance tab saver semantics — 2026-05-29
+
+**Status:** IN PROGRESS.
+
+Plan:
+- [ ] Treat saver accounts as fortnightly pay-allocation buckets, not long-term savings goals.
+- [ ] Keep existing localStorage data/backcompat where possible, but update user-facing copy, labels, and derived calculations away from goal/ETA language.
+- [ ] Make minimal frontend changes in finance components/hooks; no backend/schema work unless required.
+- [ ] Verify `cd dashboard-ui && npm run lint && npm run build`.
+
+Review:
+- [x] Reframed finance saver accounts as fortnightly pay-allocation buckets, not long-term goals.
+- [x] Updated `SaverPots` user-facing copy: pay split / fortnight budgets / per-pay allocation / funded / no allocation set.
+- [x] Updated `WhatIfPanel` to show monthly saving cuts as extra dollars per fortnight and allocation coverage, not goal ETA/months-sooner.
+- [x] Kept legacy localStorage key/field names for backward compatibility while adding allocation aliases and explanatory comments.
+- [x] Verified `cd dashboard-ui && npm run lint` and `npm run build` pass.
+- [x] Reviewed remaining goal/target/ETA grep matches; remaining occurrences are legacy API comments/DOM events or unrelated spending-budget chart internals, not user-facing saver copy.
+
+**Status:** COMPLETED.
+
+---
+
+## Task #378: finance goals vs budget saver accounts — 2026-05-29
+
+**Status:** IN PROGRESS.
+
+Plan:
+- [ ] Correct #377 misunderstanding: keep true goal accounts with goal/target UI, but filter out saver accounts that are fortnight budget buckets.
+- [ ] Use clear default classification for current account names (Travel/Emergency/Savings/Invest = goals; Rent/Food/Phone/Fuel/etc. = budget buckets) with safe fallback for future goal names.
+- [ ] Restore goal/ETA copy only for goal accounts; do not show budget buckets in the goals panel.
+- [ ] Verify dashboard lint/build.
+
+Review:
+- [x] Corrected #377 misunderstanding: goal UI restored for true goal saver accounts only.
+- [x] Added conservative goal classifier: Travel/Emergency/Savings/Invest and similar are included; Rent/Food/Phone/Fuel/Fun/AI/bills/etc. are excluded even though Up reports them as `SAVER`.
+- [x] `SaverPots` now displays `GOALS` with goal/target/ETA copy again, but only after filtering budget buckets out.
+- [x] `WhatIfPanel` uses the same filtered goal-account set for goal timing narrative.
+- [x] `useSaverTargets` docs restored to goal-target semantics; localStorage key remains backward compatible.
+- [x] Verified `cd dashboard-ui && npm run lint` and `npm run build` pass.
+
+**Status:** COMPLETED.

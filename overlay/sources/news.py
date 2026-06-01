@@ -29,8 +29,8 @@ def _find_atlas_root() -> Path:
     """
     Walk up the directory tree from this file to find the Atlas project root.
 
-    Supports both the main worktree and swarm builder worktrees (which share
-    data via the main repo at /root/atlas/).
+    Supports the main worktree and alternate checkout layouts that share
+    data via the main repo at /root/atlas/.
     """
     candidate = Path(__file__).resolve()
     for _ in range(10):

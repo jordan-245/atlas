@@ -243,7 +243,7 @@ class PiSessionManager:
             await websocket.send_json(event.to_dict())
     """
 
-    def __init__(self, session_id: str, model: str = "claude-opus-4-7", use_teams: bool = False) -> None:
+    def __init__(self, session_id: str, model: str = "claude-opus-4-8", use_teams: bool = False) -> None:
         self.session_id = session_id
         self.model = model
         self.use_teams = use_teams
@@ -555,7 +555,7 @@ class PiSessionManager:
             args = raw.get("input", {})
             tool_call_id = raw.get("toolCallId", "")
             # Rich handling for delegation/agent tools
-            if tool in ("delegate", "spawn_worker", "swarm", "subagent"):
+            if tool in ("delegate", "spawn_worker", "subagent"):
                 events.append(PiEvent("delegation_start", {
                     "tool": tool,
                     "target": args.get("target", args.get("name", "")),

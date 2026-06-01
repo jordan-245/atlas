@@ -1310,35 +1310,6 @@
       margin-left: 8px;
     }
 
-    /* ─────────────────────────────────────────────────────────────────────
-       SWARM PROGRESS PANEL
-    ───────────────────────────────────────────────────────────────────── */
-    .swarm-section {
-      border-bottom: 1px solid var(--border);
-      padding: 10px 14px;
-      animation: section-in 0.2s var(--ease);
-      flex-shrink: 0;
-    }
-    .swarm-header {
-      font-family: var(--mono); font-size: 10px; font-weight: 600;
-      color: var(--amber); letter-spacing: 0.8px; text-transform: uppercase;
-      margin-bottom: 6px;
-    }
-    .swarm-objective {
-      font-size: 11.5px; color: var(--text-2); margin-bottom: 8px;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-      font-family: var(--mono);
-    }
-    .swarm-agents { display: flex; flex-wrap: wrap; gap: 4px; }
-    .swarm-agent-badge {
-      font-family: var(--mono); font-size: 10px;
-      padding: 3px 8px; border-radius: 10px;
-      background: var(--surface-2); color: var(--text-3);
-      border: 1px solid var(--border);
-      transition: color 0.15s, border-color 0.15s;
-    }
-    .swarm-agent-badge.active { color: var(--amber); border-color: var(--amber); }
-    .swarm-agent-badge.done   { color: var(--green); border-color: var(--green); }
   </style>
 </head>
 <body>
@@ -1353,7 +1324,7 @@
     </select>
     <button id="agent-new-session" type="button">+ New</button>
     <select id="agent-model-select" title="Switch model">
-      <option value="claude-opus-4-7">opus 4-7</option>
+      <option value="claude-opus-4-8">opus 4-7</option>
       <option value="claude-opus-4-6">opus 4-6</option>
       <option value="claude-sonnet-4-6">sonnet</option>
       <option value="claude-haiku-4-5">haiku</option>
@@ -1418,12 +1389,6 @@
         <button class="teams-collapse-btn" id="teams-collapse-btn" type="button">&#9662;</button>
       </div>
       <div class="teams-tree" id="teams-tree"></div>
-    </div>
-    <!-- Swarm progress panel (shown when swarm is active) -->
-    <div class="swarm-section" id="swarm-section" style="display:none">
-      <div class="swarm-header">&#128260; Swarm</div>
-      <div class="swarm-objective" id="swarm-objective"></div>
-      <div class="swarm-agents" id="swarm-agents"></div>
     </div>
     <div id="activity-feed"></div>
     <div class="activity-cost-bar">
@@ -1507,7 +1472,7 @@
   var MAX_RECONNECT    = 20;
   var reconnectTimer   = null;
   var currentMsgEl     = null;   // .agent-msg div being built for assistant
-  var currentModel     = 'claude-opus-4-7';
+  var currentModel     = 'claude-opus-4-8';
   var useTeams         = false;  // off by default = fast direct Claude
   var thinkingCard      = null;   // activity card for current thinking block
   var elapsedTimer      = null;   // interval for generation elapsed time
@@ -1515,7 +1480,6 @@
   var lastUserMessage   = '';     // last sent message (for retry / Up-arrow recall)
   var thinkingTextBuffer = '';    // accumulates thinking text for collapsible block
   var teamState  = null;   // active agent team tree (delegation hierarchy)
-  var swarmState = null;   // active swarm run state
 
   // Map toolCallId -> activity card element so tool_end can mark it done
   var toolCards = {};
@@ -1871,13 +1835,11 @@
       case 'delegation_start':
         addDelegationActivity(msg);
         updateTeamTree(msg);
-        updateSwarmSection(msg);
         break;
 
       case 'delegation_end':
         finishDelegationActivity(msg);
         updateTeamTree(msg);
-        updateSwarmSection(msg);
         break;
 
       /* ── Turn complete ── */
@@ -2508,7 +2470,6 @@
       if      (tl.indexOf('planning')  !== -1 || tl.indexOf('research') !== -1) { icon = '\u25C6'; } // ◆
       else if (tl.indexOf('valid')     !== -1 || tl.indexOf('review')   !== -1) { icon = '\u25CF'; } // ●
       else if (tool === 'spawn_worker') { icon = '\u26A1'; }    // ⚡
-      else if (tool === 'swarm')        { icon = '\uD83D\uDD04'; } // 🔄
       teamState.active = true;
       teamState.children[id] = { name: target, icon: icon, active: true, cost: 0, children: {} };
     }
@@ -2570,38 +2531,6 @@
       html += '</div>';
     }
     return html;
-  }
-
-  /* ── Swarm progress panel ─────────────────────────────────────────────── */
-  function updateSwarmSection(msg) {
-    var section  = document.getElementById('swarm-section');
-    var objEl    = document.getElementById('swarm-objective');
-    var agentsEl = document.getElementById('swarm-agents');
-    if (!section || !objEl || !agentsEl) return;
-
-    if (msg.type === 'delegation_start' && msg.tool === 'swarm') {
-      section.style.display = '';
-      swarmState = { id: msg.tool_call_id, objective: msg.task_preview || '', agents: [] };
-      objEl.textContent = (msg.task_preview || '').slice(0, 80);
-      var phases = ['scout', 'build', 'review', 'merge'];
-      agentsEl.innerHTML = phases.map(function (p) {
-        return '<span class="swarm-agent-badge" data-phase="' + p + '">' + p + '</span>';
-      }).join('');
-    }
-
-    if (msg.type === 'delegation_end' && swarmState && msg.tool_call_id === swarmState.id) {
-      var agents = msg.agents || [];
-      if (agents.length > 0) {
-        agentsEl.innerHTML = agents.map(function (a) {
-          return '<span class="swarm-agent-badge done">' + escHtml(a.name || 'agent') + '</span>';
-        }).join('');
-      } else {
-        var badges = agentsEl.querySelectorAll('.swarm-agent-badge');
-        for (var i = 0; i < badges.length; i++) { badges[i].classList.add('done'); }
-      }
-      var capturedSec = section;
-      setTimeout(function () { capturedSec.style.display = 'none'; swarmState = null; }, 5000);
-    }
   }
 
   function addTurnEndActivity(cost, tokens) {
@@ -2674,9 +2603,6 @@
     if (t === 'spawn_worker') {
       return { icon: '\u26A1', label: 'Spawn: ' + (a.name || 'worker'), detail: '' };
     }
-    if (t === 'swarm') {
-      return { icon: '\uD83D\uDD04', label: 'Swarm', detail: (a.objective || '').slice(0, 60) };
-    }
     if (t === 'atlas_jobs_run') {
       return { icon: '\uD83D\uDE80', label: 'Job: ' + (a.job || ''), detail: '' };
     }
@@ -2691,9 +2617,6 @@
     }
     if (t === 'ceo_deliberate') {
       return { icon: '\uD83C\uDFDB\uFE0F', label: 'Board deliberation', detail: (a.title || '').slice(0, 60) };
-    }
-    if (t === 'swarm_plan') {
-      return { icon: '\uD83E\uDDE0', label: 'Swarm plan', detail: (a.objective || '').slice(0, 60) };
     }
     // Generic fallback
     var firstVal = '';
@@ -3183,9 +3106,7 @@
     toolCards = {};
     thinkingCard = null;
     teamState  = null;
-    swarmState = null;
     var tsEl = document.getElementById('teams-section'); if (tsEl) tsEl.style.display = 'none';
-    var ssEl = document.getElementById('swarm-section'); if (ssEl) ssEl.style.display = 'none';
   });
 
   // Scroll-to-bottom button

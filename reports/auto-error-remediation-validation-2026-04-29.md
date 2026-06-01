@@ -264,7 +264,7 @@ OAuth via `pi --system-prompt "You are Claude Code, Anthropic's official CLI for
 - A new dedicated team called `remediation` with a `Remediation Lead` (Opus) and one worker (`Fix Author`, Opus) — keeps the existing 3-tier hierarchy, file domain locks, expertise persistence, and TUI visibility.
 - The Validation Lead (this team) automatically becomes the reviewer — its prompt already includes adversarial review mode.
 - Domain config for `remediation` team: read all, write only `tests/**`, `dashboard-ui/**`, `docs/**`, `**/*.md`, `bare_except_baseline.txt`. **No write access to Tier 0 or Tier 1 paths at the OS layer**, even if the LLM tries. The multi-team domain enforcement is the second-to-last line of defense.
-- The Engineering Lead's existing wide write domain (`brokers/**`, `risk/**`, etc.) is correct for human-driven swarms but **must not be reused** for the remediation agent. We need a tighter domain.
+- The Engineering Lead's existing wide write domain (`brokers/**`, `risk/**`, etc.) is correct for human-driven parallel-agent tools but **must not be reused** for the remediation agent. We need a tighter domain.
 
 This is the **defense-in-depth** principle: even if the prompt is wrong, the OS-layer domain refuses the write.
 
@@ -290,7 +290,7 @@ This is the **defense-in-depth** principle: even if the prompt is wrong, the OS-
    GATE: agent claims "I don't have enough context"  → escalate
 
 4. FIX (Opus 4.7, in isolated git worktree)
-   - Use the existing swarm worktree pattern (`.pi-swarm/worktrees/auto-fix-<error-id>`)
+   - Use the existing parallel-agent tool worktree pattern (`.retired parallel-agent package/worktrees/auto-fix-<error-id>`)
    - New branch: `auto-fix/err-<error-id>`
    - Apply diff
    - Commit with message including error-id, fingerprint, model, reasoning summary
@@ -593,7 +593,7 @@ L3 is novel: **don't fix things while the trading kill switch is engaged**. If `
 
 | Phase | Branch / commit shape |
 |---|---|
-| Fix authoring | New worktree at `.pi-swarm/worktrees/auto-fix-<error_id>`. New branch `auto-fix/err-<error_id>` from origin/main. |
+| Fix authoring | New worktree at `.retired parallel-agent package/worktrees/auto-fix-<error_id>`. New branch `auto-fix/err-<error_id>` from origin/main. |
 | Pre-merge | All 15 gates pass in worktree |
 | Merge (AUTO_FIX) | `git checkout main && git merge --no-ff auto-fix/err-<id>` — preserves the fix branch for trivial revert |
 | Tag | `auto-fix/err-<id>` lightweight tag on the merge commit, for one-line revert |

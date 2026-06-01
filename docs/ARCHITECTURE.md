@@ -35,7 +35,7 @@ Atlas evolves from a long-only S&P 500 trading system into a macro-adaptive, mul
 | Computer use MCP server | `research/discovery/mcp_server/server.js` | Expand targets |
 | Strategy discovery | `research/discovery/` | Unchanged |
 | Pi agent + 12 skills | `pi-package/atlas-ops/skills/` | Add regime + portfolio skills |
-| Swarm + subagent | `extensions/` | Unchanged |
+| Subagent delegation | `extensions/` | Retain focused delegation only |
 | Job server | `services/job_server.py` | Unchanged |
 | Telegram bot | `services/telegram_bot.py` | Add regime alerts |
 | Macro data modules | `data/macro.py`, `data/fred.py` | Write to SQLite instead of cache files |

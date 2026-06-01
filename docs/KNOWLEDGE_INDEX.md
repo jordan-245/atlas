@@ -101,7 +101,7 @@ debb4a9a fix(trades): cleanup R-05a phantom rows + audit trail
 ea47d7a3 fix(monitoring): heartbeat director_cron schedule + silent-failure min-age guard
 636d3c8d fix(broker): add PDT pre-submit guard for BUY orders (FTNT incident)
 a94841dc chore: state sync post-batch-1
-8a36e978 chore(pi): remove vendored pi-swarm + subagent extensions (#320)
+8a36e978 chore(pi): remove vendored retired parallel-agent package + subagent extensions (#320)
 9233d6c5 fix(reconcile): restore #315 changes orphaned by #319 reset
 95055f92 fix(tests): repair sweep_universe test patches + mean_reversion Series scalar coercion (#322)
 ca5f79f5 chore(scripts): quarantine autoresearch.py — service never existed (#321)

@@ -101,7 +101,7 @@ healthcheck, telegram alert parser, manual entry, backfill scripts.
 ## Table: `fix_attempts`
 
 One row per fix attempt. An error may generate multiple attempts (retry on
-failure, tier demotion, new swarm). The row drives a **state machine**.
+failure, tier demotion, new parallel-agent tool). The row drives a **state machine**.
 
 **Written by**: Fix worker (creates row on job start), each pipeline phase
 (updates status/fields as it progresses).

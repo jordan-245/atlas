@@ -181,10 +181,6 @@ with sync_playwright() as p:
     check(teams_display == "none" or not el_exists(page2, "#teams-section") or teams_display is None,
           "Agent: teams section hidden initially")
 
-    # Swarm section (hidden until swarm)
-    swarm_display = get_style(page2, "#swarm-section", "display")
-    check(swarm_display == "none" or not el_exists(page2, "#swarm-section") or swarm_display is None,
-          "Agent: swarm section hidden initially")
 
     # Input area
     check(el_visible(page2, "#agent-input"), "Agent: input textarea visible")
