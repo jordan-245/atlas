@@ -448,3 +448,97 @@ class TestQuietMode:
 
         mock_notify.assert_not_called()
         assert rc in (0, 1, 2), f"Unexpected exit code: {rc}"
+
+
+# ── Test 6: Escalation de-duplication (anti-spam) ───────────────────────────
+
+class TestEscalationDedup:
+    """A known, unchanged same-bar condition must NOT re-alert every day.
+
+    Regression for 2026-06-03 Telegram spam: the alert re-fired daily for the
+    same set of same-bar stops because the only gate was a 24h cooldown that the
+    daily cron cleared each run. The fix only (re)alerts on a genuine escalation
+    (strictly more same-bar events than at the last alert).
+    """
+
+    def test_no_realert_when_count_unchanged(self, tmp_path):
+        """Cooldown expired BUT count == last alerted count → suppressed (no spam)."""
+        mod = _load_module()
+        state_file = tmp_path / "same_bar_state.json"
+
+        # Last alert was 25h ago (cooldown expired) and already reported 6 events.
+        old = (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat()
+        state_file.write_text(json.dumps({"last_alert_at": old, "last_count": 6}))
+
+        with _adb.get_db() as db:
+            for i in range(6):  # still exactly 6 same-bar events — nothing new
+                same_date = _date(i + 1)
+                _insert_trade(
+                    db,
+                    ticker=f"SAME{i:02d}",
+                    strategy="momentum_breakout",
+                    entry_date=same_date,
+                    exit_date=same_date,
+                )
+            for i in range(4):
+                _insert_trade(
+                    db,
+                    ticker=f"NORM{i:02d}",
+                    strategy="momentum_breakout",
+                    entry_date=_date(i + 10),
+                    exit_date=_date(i + 8),
+                )
+
+        with patch.object(mod, "_tg_notify") as mock_notify:
+            result = mod.run_monitor(
+                days=30,
+                threshold=0.20,
+                min_events=5,
+                quiet=False,
+                state_file=state_file,
+            )
+
+        mock_notify.assert_not_called()
+        assert result == 1, "Condition still alert-worthy, but duplicate suppressed"
+
+    def test_realert_when_count_escalates(self, tmp_path):
+        """Cooldown expired AND count > last alerted count → alert fires once."""
+        mod = _load_module()
+        state_file = tmp_path / "same_bar_state.json"
+
+        old = (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat()
+        state_file.write_text(json.dumps({"last_alert_at": old, "last_count": 6}))
+
+        with _adb.get_db() as db:
+            for i in range(8):  # escalated: 6 → 8 same-bar events
+                same_date = _date(i + 1)
+                _insert_trade(
+                    db,
+                    ticker=f"MORE{i:02d}",
+                    strategy="momentum_breakout",
+                    entry_date=same_date,
+                    exit_date=same_date,
+                )
+            for i in range(4):
+                _insert_trade(
+                    db,
+                    ticker=f"NORM{i:02d}",
+                    strategy="momentum_breakout",
+                    entry_date=_date(i + 10),
+                    exit_date=_date(i + 8),
+                )
+
+        with patch.object(mod, "_tg_notify") as mock_notify:
+            result = mod.run_monitor(
+                days=30,
+                threshold=0.20,
+                min_events=5,
+                quiet=False,
+                state_file=state_file,
+            )
+
+        mock_notify.assert_called_once()
+        assert result == 1
+        # New baseline persisted so the NEXT unchanged run stays quiet.
+        state = json.loads(state_file.read_text())
+        assert state["last_count"] == 8

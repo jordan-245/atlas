@@ -16,6 +16,14 @@ Output:
   - Telegram alert if rate > THRESHOLD_PCT (default 20%) AND count >= THRESHOLD_MIN_EVENTS (default 5)
   - Exit 0 on success, 1 on alert fired, 2 on error
 
+Alert de-duplication (anti-spam):
+  Because the same-bar fix is deferred (blocked on #316), the underlying
+  condition can persist for weeks. To avoid daily duplicate Telegram alerts for
+  the SAME set of events, an alert only (re)fires when the same-bar count is
+  strictly GREATER than the count at the last alert (a genuine escalation).
+  An unchanged condition is logged but not re-sent. The 24h cooldown remains a
+  secondary backstop. Reset by deleting data/monitor_same_bar_state.json.
+
 Why both threshold + min events:
   - Below 5 events the rate is statistically meaningless (current state: n=2)
   - Above 5 events with >20% rate justifies revisiting the entry_delay decision
@@ -364,8 +372,27 @@ def run_monitor(
         )
         return 0
 
-    # Check cooldown
+    # ── Suppression: de-duplicate known/unchanged conditions, then cooldown ──────
+    # The same-bar anti-pattern is a *known, deferred* issue (entry_delay_minutes
+    # fix blocked on #316 5-min backfill). Re-alerting every day for the SAME set
+    # of same-bar stops is pure noise — it was the source of daily Telegram spam.
+    # Only (re)alert when the situation has materially ESCALATED, i.e. there are
+    # strictly MORE same-bar events than at the last alert. The time-based cooldown
+    # remains as a secondary backstop against intra-day duplicate sends.
     state = _load_state(state_file=state_file)
+    last_count = int(state.get("last_count") or 0)
+    escalated = data["same_bar_total"] > last_count
+
+    if not escalated:
+        log.info(
+            "Alert suppressed — known same-bar condition unchanged "
+            "(count=%d ≤ last alerted=%d). No new same-bar stops since last alert.",
+            data["same_bar_total"],
+            last_count,
+        )
+        return 1  # Still exit 1 to signal the alert-worthy condition persists
+
+    # Check cooldown (backstop)
     if _is_within_cooldown(state, cooldown_hours=COOLDOWN_HOURS):
         log.info(
             "Alert suppressed — within %dh cooldown (last sent: %s).",
