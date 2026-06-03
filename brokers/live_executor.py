@@ -3136,17 +3136,31 @@ class LiveExecutor:
         except Exception as _exit_exc:
             logger.error("same_bar_round_trip: record_exit failed for %s: %s", ticker, _exit_exc)
 
-        try:
-            from utils.telegram import send_message as _tg_send
-            _elapsed_str = f"{round_trip_seconds:.0f}s" if round_trip_seconds is not None else "?"
-            _tg_send(
-                f"\U0001f504 Same-bar round-trip: <b>{ticker}</b>"
-                f" buy@${buy_price:.2f} sell@${sell_price:.2f}"
-                f" PnL <b>${realized_pnl:+.2f}</b> ({_elapsed_str}) reason={exit_reason}",
-                parse_mode="HTML",
+        # Per-trade Telegram is OPT-IN (default OFF). Same-bar round-trips are a
+        # known, deferred anti-pattern (#316) and are ALREADY captured three ways:
+        # the SAME_BAR_ROUND_TRIP log line above, the trade ledger/SQLite record,
+        # and the aggregate daily monitor (scripts/monitor_same_bar_stops.py,
+        # escalation-gated). A real-time push for every tiny stop-out is low-signal
+        # noise, so it is suppressed unless an operator explicitly opts in by
+        # setting `notify_same_bar_round_trip: true` in the active config.
+        if self.config.get("notify_same_bar_round_trip", False):
+            try:
+                from utils.telegram import send_message as _tg_send
+                _elapsed_str = f"{round_trip_seconds:.0f}s" if round_trip_seconds is not None else "?"
+                _tg_send(
+                    f"\U0001f504 Same-bar round-trip: <b>{ticker}</b>"
+                    f" buy@${buy_price:.2f} sell@${sell_price:.2f}"
+                    f" PnL <b>${realized_pnl:+.2f}</b> ({_elapsed_str}) reason={exit_reason}",
+                    parse_mode="HTML",
+                )
+            except Exception as _tg_exc:
+                logger.debug("same_bar_round_trip: Telegram notify failed: %s", _tg_exc)
+        else:
+            logger.debug(
+                "same_bar_round_trip: per-trade Telegram suppressed for %s "
+                "(known anti-pattern; set notify_same_bar_round_trip=true to enable)",
+                ticker,
             )
-        except Exception as _tg_exc:
-            logger.debug("same_bar_round_trip: Telegram notify failed: %s", _tg_exc)
 
     # ── Volatility gate ────────────────────────────────────────
 
@@ -3188,5 +3202,3 @@ class LiveExecutor:
             "entries": [],
             "exits": [],
         }
-
-# TEST_MARKER_WRITE_CHECK_9999

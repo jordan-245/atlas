@@ -68,6 +68,9 @@ def _make_executor() -> object:
     cfg = {
         "market_id": "sp500",
         "version": "test-v1",
+        # Opt-in per-trade Telegram enabled here so the idempotency/dedup tests
+        # exercise the notification path. Production default (key absent) is OFF.
+        "notify_same_bar_round_trip": True,
         "trading": {
             "mode": "live",
             "live_enabled": True,
@@ -270,11 +273,13 @@ class TestSameBarRoundTripIdempotency:
             "Telegram must fire — superseded rows must not block new alerts"
         )
 
-    def test_does_not_match_yesterday(self):
-        """Yesterday's closed row must NOT block today's recording.
+    def test_blocks_within_8_day_window(self):
+        """A matching closed row within the 8-day dedup window blocks re-recording.
 
-        The precheck uses `DATE(exit_date) = DATE('now', 'localtime')`, so a closed trade
-        from the prior session day must not suppress a fresh event today.
+        Updated for commit 1ef93bae (2026-05-11) which widened the same-bar zombie
+        dedup window from today-only to 8 days: reconcile_entry_fills re-detects the
+        same Alpaca buy/sell pair for days, so a row from yesterday with the same
+        ticker+pnl must suppress a duplicate record (and duplicate Telegram).
         """
         ticker = "MCHP_YEST"
         buy_price = 100.0
@@ -282,17 +287,69 @@ class TestSameBarRoundTripIdempotency:
         expected_pnl = round((sell_price - buy_price) * 3, 2)
         yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")  # local yesterday
 
-        # Pre-insert a row for YESTERDAY
         _insert_closed_trade(ticker, expected_pnl, exit_date=yesterday, superseded=0)
 
         ex = _make_executor()
         ledger = _call_sbrt(ex, ticker, buy_price, sell_price, qty=3)
 
+        assert not ledger.record_entry.called, (
+            "record_entry must be skipped — yesterday's row is within the 8-day dedup window"
+        )
+        assert not ledger.record_exit.called, (
+            "record_exit must be skipped — yesterday's row is within the 8-day dedup window"
+        )
+        assert not ledger._mock_tg.called, (
+            "Telegram must NOT fire — yesterday's row is within the 8-day dedup window"
+        )
+
+    def test_does_not_match_older_than_8_days(self):
+        """A matching row OLDER than the 8-day window must NOT block a fresh event.
+
+        Boundary check for the 1ef93bae 8-day window: a 9-day-old row falls outside
+        `DATE(exit_date) >= DATE('now','localtime','-8 days')`, so today's event is
+        recorded normally.
+        """
+        ticker = "MCHP_OLD"
+        buy_price = 100.0
+        sell_price = 99.11   # pnl = -2.67
+        expected_pnl = round((sell_price - buy_price) * 3, 2)
+        old = (datetime.now() - timedelta(days=9)).strftime("%Y-%m-%d")  # outside 8-day window
+
+        _insert_closed_trade(ticker, expected_pnl, exit_date=old, superseded=0)
+
+        ex = _make_executor()
+        ledger = _call_sbrt(ex, ticker, buy_price, sell_price, qty=3)
+
         assert ledger.record_entry.call_count == 1, (
-            "record_entry must be called — yesterday's rows must not block today's records"
+            "record_entry must fire — rows older than 8 days must not block new records"
         )
         assert ledger._mock_tg.call_count == 1, (
-            "Telegram must fire — yesterday's rows must not block today's alerts"
+            "Telegram must fire — rows older than 8 days must not block new alerts"
+        )
+
+    def test_per_trade_telegram_suppressed_by_default(self):
+        """Default config (flag absent) → record the round-trip but send NO Telegram.
+
+        Regression for 2026-06-03 complaint: the live executor pushed a per-trade
+        '🔄 Same-bar round-trip' Telegram for every tiny same-bar stop-out. These
+        are a known/deferred anti-pattern already captured in logs, the ledger, and
+        the daily monitor, so the per-trade push is now OPT-IN. PnL recording must
+        be unaffected — only the notification is suppressed.
+        """
+        ex = _make_executor()
+        # Remove the opt-in flag → production default behaviour.
+        ex.config = {k: v for k, v in ex.config.items() if k != "notify_same_bar_round_trip"}
+
+        ledger = _call_sbrt(ex, "NVDA", buy_price=500.0, sell_price=495.0, qty=3)
+
+        assert ledger.record_entry.call_count == 1, (
+            "record_entry must still fire — suppressing the push must not drop PnL"
+        )
+        assert ledger.record_exit.call_count == 1, (
+            "record_exit must still fire — suppressing the push must not drop PnL"
+        )
+        assert not ledger._mock_tg.called, (
+            "per-trade Telegram must be suppressed when notify_same_bar_round_trip is off"
         )
 
 
@@ -383,9 +440,10 @@ class TestSameBarRoundTripTZRegression:
 
         src = (PROJECT / "brokers" / "live_executor.py").read_text()
 
-        # Positive assertion: the fixed form must be present
-        assert "DATE('now', 'localtime')" in src, (
-            "live_executor.py must use DATE('now', 'localtime') in the SAME_BAR precheck"
+        # Positive assertion: the precheck must use localtime (the window arg may
+        # vary, e.g. DATE('now', 'localtime', '-8 days') per commit 1ef93bae).
+        assert "DATE('now', 'localtime'" in src, (
+            "live_executor.py must use DATE('now', 'localtime', ...) in the SAME_BAR precheck"
         )
         assert "date('now', 'localtime', '-1 day')" in src, (
             "live_executor.py must use date('now', 'localtime', '-1 day') in reconcile_entry_fills dedup"
