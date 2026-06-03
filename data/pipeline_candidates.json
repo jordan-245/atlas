@@ -24,12 +24,12 @@
         "w_qual": 0.5
       },
       "label": "csm@fast",
-      "stage": "queued",
-      "battery_tier": null,
-      "battery_artifact": null,
+      "stage": "failed",
+      "battery_tier": "FAIL",
+      "battery_artifact": "backtest/results/battery_csm_fast_20260604_094459.json",
       "forward_verdict": null,
-      "notes": "high-turnover preset (3-mo mom, 20d max-hold) to generate forward evidence in weeks",
-      "updated_at": "2026-06-03T23:37:47.084286+00:00"
+      "notes": "High-turnover preset (3-mo mom, 20d hold): 200+ trades but NO edge \u2014 CPCV -0.16, DSR 0.15, frac+ 0.40, loses in a regime (min_regime -1.17, per_regime_expectancy FAIL), forward -$38. Edge lives in the SLOWER 6-mo signal. Battery correctly rejected; does not reach paper.",
+      "updated_at": "2026-06-03T23:57:58.478289+00:00"
     }
   }
 }
