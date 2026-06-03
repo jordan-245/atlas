@@ -82,6 +82,37 @@ def _col_sharpe(mat: np.ndarray) -> np.ndarray:
     return sr
 
 
+def effective_num_trials(perf_matrix: np.ndarray) -> float:
+    """Effective number of INDEPENDENT trials via the eigenvalue participation ratio.
+
+    Given a (T observations x N trials) performance matrix (e.g. per-config return series),
+    compute N_eff = (sum lambda_i)^2 / sum(lambda_i^2) over the eigenvalues of the N x N
+    correlation matrix of the trials. N_eff -> N when trials are mutually orthogonal and -> 1
+    when they are perfectly correlated. This corrects the multiple-testing count used by the
+    Deflated Sharpe Ratio when the trials are correlated (e.g. coordinate-descent perturbations
+    of one strategy), which a raw config count badly over-states.
+
+    Pure; no I/O. Returns NaN if fewer than 1 usable (non-degenerate) trial column.
+    """
+    M = np.asarray(perf_matrix, dtype=float)
+    if M.ndim != 2 or M.shape[1] < 1:
+        return float("nan")
+    if M.shape[1] == 1:
+        return 1.0
+    sd = M.std(axis=0, ddof=1)
+    M = M[:, sd > 0]                     # drop zero-variance trials
+    if M.shape[1] < 2:
+        return float(M.shape[1])
+    C = np.corrcoef(M, rowvar=False)
+    C = np.nan_to_num(C, nan=0.0)
+    w = np.linalg.eigvalsh(C)
+    w = w[w > 1e-12]
+    if w.size == 0:
+        return float("nan")
+    pr = float((w.sum() ** 2) / np.square(w).sum())
+    return float(min(max(pr, 1.0), M.shape[1]))
+
+
 def pbo_cscv(perf_matrix: np.ndarray, n_splits: int = 16, metric: str = "sharpe") -> dict:
     """Probability of Backtest Overfitting via Combinatorially-Symmetric CV.
 
@@ -144,5 +175,5 @@ def pbo_cscv(perf_matrix: np.ndarray, n_splits: int = 16, metric: str = "sharpe"
 
 __all__ = [
     "EULER_MASCHERONI", "probabilistic_sharpe_ratio", "expected_max_sharpe",
-    "deflated_sharpe_ratio", "pbo_cscv",
+    "deflated_sharpe_ratio", "effective_num_trials", "pbo_cscv",
 ]

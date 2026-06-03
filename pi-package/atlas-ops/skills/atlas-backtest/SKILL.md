@@ -196,6 +196,37 @@ CLI: `python3 scripts/validate_oos.py --config-path <cfg> --output-path <out> --
 > Equities note: the crypto-specific 10 bps/side cost-stress gate is dropped — Atlas backtests
 > already run net of realistic commissions, so the whole battery runs on net returns.
 
+### DSR is deflated by the REAL search history (not the grid)
+
+`n_trials` / `sr_variance` for the Deflated Sharpe come from `research/results/<strategy>.tsv`
+(the distinct configs actually tried + their Sharpe dispersion), via
+`research.cross_oos.search_history.search_burden()`. The on-the-fly grid is only a fallback
+and is reported as `diagnostics.dsr_grid` for comparison. This matters a lot: e.g.
+momentum_breakout's DSR is ~0.62 against an 11-config grid but ~0.08 against its real
+471-config search history — the grid badly under-counts the multiple-testing burden and is
+gameable (shrink the grid → DSR rises).
+
+**Effective-N (not raw count).** Raw distinct configs over-count because correlated
+coordinate-descent steps aren't independent trials. The DSR `n_trials` is therefore the
+*effective* number of independent trials: the raw count haircut by the eigenvalue
+participation ratio of the config-grid return matrix
+(`overfitting.effective_num_trials`): `effective_n = clip(round(raw_n * participation_ratio /
+n_grid), [max(participation_ratio,5), raw_n])`. Example: momentum_breakout 473 raw -> grid
+participation 2.06/7 -> effective 139 -> DSR 0.08->0.25 (fairer, still FAIL << 0.70).
+Diagnostics expose `dsr_n_trials_raw`, `dsr_n_trials_effective`, `grid_participation_ratio`.
+
+### Two-tier verdict (SCREEN vs PROMOTE)
+
+Every gate is identical between tiers except the DSR bar:
+- **PROMOTE** (DSR ≥ 0.90): clears the multiple-testing bar — may authorize a live config
+  promotion. This is the ONLY tier that sets `summary.overall_verdict == "PASS"`.
+- **SCREEN** (DSR ≥ 0.70, all other gates pass): promising, keep researching / paper.
+  `overall_verdict == "SCREEN"` (treated as non-PASS by promotion gates).
+- **FAIL**: a non-DSR gate failed, or DSR below the screen bar. `overall_verdict == "FAIL"`.
+
+Thresholds live in `adapter.SCREEN_DSR` / `adapter.PROMOTE_DSR`. `cross_oos.tier` and both
+`gate_checks` (promote) + `gate_checks_screen` are written to the artifact.
+
 ### Interpreting results
 
 ```python

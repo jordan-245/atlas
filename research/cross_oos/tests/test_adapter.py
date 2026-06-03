@@ -140,8 +140,14 @@ def test_assemble_bundle_uses_search_burden_for_dsr():
               "sr_variance_ann": 0.39 ** 2, "n_experiments": 5449,
               "strategies_found": ["x"], "source": "test"}
     res = adapter.assemble_bundle(primary, trades=[], grid_returns=grid, search_burden=burden)
-    assert res["diagnostics"]["dsr_source"] == "search_history"
-    assert res["diagnostics"]["search_burden"]["n_trials"] == 471
+    diag = res["diagnostics"]
+    assert diag["dsr_source"] == "search_history_effective_n"
+    assert diag["search_burden"]["n_trials"] == 471
+    assert diag["dsr_n_trials_raw"] == 471
+    # effective-N must be <= raw (independence haircut) and >= 5 (floor)
+    assert 5 <= diag["dsr_n_trials_effective"] <= 471
+    # grid participation ratio is between 1 and the number of grid columns
+    assert 1.0 <= diag["grid_participation_ratio"] <= 10.0
     # search-history DSR (authoritative) should be <= the grid proxy DSR here
     assert res["bundle"]["dsr"] <= res["diagnostics"]["dsr_grid"] + 1e-9
 

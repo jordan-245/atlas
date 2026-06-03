@@ -226,6 +226,7 @@ def assemble_bundle(
     pbo_val = float("nan")
     dsr_val = float("nan")
     pbo_detail: dict = {"n_combos": 0, "n_configs": 0}
+    mat = None
     if grid_returns is not None:
         mat, labels = build_pbo_matrix(grid_returns)
         if mat.ndim == 2 and mat.shape[1] >= 2 and mat.shape[0] >= 8:
@@ -247,17 +248,35 @@ def assemble_bundle(
     # Authoritative DSR: deflate by the REAL research search burden when available
     # (n_trials = distinct configs tried; sr_variance from the experiment log). The grid
     # DSR above (dsr_grid) is a local proxy that under-counts the search and is gameable.
+    #
+    # EFFECTIVE-N (board memo #413): the raw distinct-config count treats correlated
+    # coordinate-descent configs as independent trials, over-stating the multiple-testing
+    # burden. When the config-grid return matrix is available, estimate the independent
+    # fraction via its eigenvalue participation ratio and haircut the raw count:
+    #   effective_n = clip(round(raw_n * participation_ratio / n_grid),
+    #                      [max(participation_ratio, 5), raw_n]).
     dsr_grid = dsr_val
     dsr_source = "grid"
+    dsr_n_raw = None
+    dsr_n_effective = None
+    grid_participation = None
     if search_burden and search_burden.get("n_trials", 0) >= 2 \
             and search_burden.get("sr_variance_pp", 0) > 0 and len(pr) >= 2:
+        raw_n = int(search_burden["n_trials"])
+        eff_n = raw_n
+        if mat is not None and mat.ndim == 2 and mat.shape[1] >= 2:
+            grid_participation = overfitting.effective_num_trials(mat)
+            if grid_participation == grid_participation:  # not NaN
+                frac = grid_participation / mat.shape[1]
+                lo = min(max(int(round(grid_participation)), 5), raw_n)
+                eff_n = int(np.clip(round(raw_n * frac), lo, raw_n))
+        dsr_n_raw, dsr_n_effective = raw_n, eff_n
         dsr_val = overfitting.deflated_sharpe_ratio(
             sr=cm.sharpe(pr.to_numpy(), 1), n_obs=len(pr),
-            n_trials=int(search_burden["n_trials"]),
-            sr_variance=float(search_burden["sr_variance_pp"]),
+            n_trials=eff_n, sr_variance=float(search_burden["sr_variance_pp"]),
             skew=cm.skewness(pr.to_numpy()), kurtosis=cm.kurtosis(pr.to_numpy()),
         )
-        dsr_source = "search_history"
+        dsr_source = "search_history_effective_n"
 
     # Ticker concentration + leave-one-ticker-group-out
     tkr_pnl = group_daily_pnl(trades, group_key="ticker")
@@ -295,6 +314,9 @@ def assemble_bundle(
         "dsr": dsr_val,
         "dsr_grid": dsr_grid,
         "dsr_source": dsr_source,
+        "dsr_n_trials_raw": dsr_n_raw,
+        "dsr_n_trials_effective": dsr_n_effective,
+        "grid_participation_ratio": grid_participation,
         "search_burden": search_burden,
         "ticker_concentration": {"top_group_frac": top_frac, "n_tickers": int(tkr_pnl.shape[1]) if not tkr_pnl.empty else 0},
         "leave_one_ticker_group_out": loo,

@@ -61,3 +61,19 @@ def test_pbo_validates_inputs():
         o.pbo_cscv(np.zeros((100, 1)))          # need >=2 configs
     with pytest.raises(ValueError):
         o.pbo_cscv(np.zeros((100, 5)), n_splits=7)  # n_splits must be even
+
+
+def test_effective_num_trials_participation_ratio():
+    import numpy as np
+    from research.cross_oos.overfitting import effective_num_trials
+    rng = np.random.default_rng(7)
+    T = 500
+    ortho = rng.normal(size=(T, 10))
+    assert 8.0 <= effective_num_trials(ortho) <= 10.0          # ~independent -> ~N
+    base = rng.normal(size=(T, 1))
+    ident = np.repeat(base, 10, axis=1) + 1e-9 * rng.normal(size=(T, 10))
+    assert effective_num_trials(ident) < 1.5                   # identical -> ~1
+    common = rng.normal(size=(T, 1))
+    corr = 0.8 * common + 0.2 * rng.normal(size=(T, 10))
+    eff = effective_num_trials(corr)
+    assert 1.0 <= eff < 4.0                                    # high common factor -> small
