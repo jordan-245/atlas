@@ -1,70 +1,37 @@
-# Atlas Cross-OOS Validation Battery — Port from Midas
+# Make the Finance tab LIVE via Up Bank webhook
 
-Replace the hand-rolled 3-test OOS suite (`scripts/validate_oos.py`) with the
-Midas-style strategy-agnostic cross-OOS battery (CPCV / PBO / DSR / multi-axis
-splitters / regime / declarative gates), reusing Atlas's existing BacktestEngine.
+User: finance tab data is stale/incorrect; "i want the data on there to be live"; "the webhook works".
 
-## Decision: REPLACE (not additive)
-The cross-OOS battery becomes the **authoritative** validation logic and verdict.
-The legacy JSON keys are retained as **derived projections** so the existing
-consumers keep working without a simultaneous TS recompile:
-- `research/promoter.py`  → reads test1/test2 + overall_verdict
-- `scripts/auto_reoptimize.py` → reads test1_time_period_split
-- `scripts/research_runner.py`, `scripts/research_promote.py`
-- TS `atlas_risk_check_reopt_promotion` → reads
-  test1_time_period_split.out_of_sample.{sharpe,profit_factor},
-  test1.degradation_pct.cagr_pct, test2_perturbation.robust,
-  test3_walkforward_consistency.window_analysis.win_rate_windows_pct,
-  summary.overall_verdict (== "PASS")
-- TS `atlas_artifacts_summarize` kind=validate_oos
+## State found
+- Up Bank data synced ONCE daily at 06:30 (/etc/cron.d/up-bank --full-resync). Stale intraday.
+- Old standalone webhook server (up_webhook_server.py) RETIRED: port :8000 collided with
+  supercoach API (still does), and it silently broke once. NO webhook registered with Up now.
+- cloudflared tunnel routes ONE hostname: atlas.getflowtide.com -> 127.0.0.1:8899 (dashboard).
+- up_sync.py supports fast INCREMENTAL sync (no flag). FX rate hardcoded 0.63.
+- Dashboard auth is per-route (Depends(check_auth)); global middleware only adds headers.
 
-## Phase 1 — Port the battery (DONE)
-- [x] Copy 5 modules + __init__ + 6 tests into research/cross_oos/
-- [x] Verify 32 tests green under Atlas stack (np 2.4.2 / pd 3.0.1 / scipy 1.17.1)
-- [x] Re-docstring __init__ to Atlas context
+## Design (live, robust)
+Mount a PUBLIC, HMAC-verified `POST /api/up/webhook` on the existing :8899 FastAPI app
+(reachable at https://atlas.getflowtide.com/api/up/webhook via the existing tunnel — no new
+port, no collision). On a transaction event it triggers a coalesced incremental up_sync
+(refreshes balances + transactions) and invalidates the /api/finance cache => dashboard live.
+Keep a periodic incremental sync as a SAFETY NET (old webhook died silently — don't repeat).
 
-## Phase 2 — Atlas adapter + replace validate_oos (DONE)
-- [x] research/cross_oos/adapter.py: daily_returns, group_daily_pnl (ticker/regime),
-      leave_one_ticker_group_out (5 seeded groups), top_group_frac, regime_attribution
-      (uses each trade's entry_regime), build_pbo_matrix, assemble_bundle, evaluate,
-      ATLAS_DEFAULT_GATES (equities-tuned, 252-day annualisation, cost-stress gate dropped)
-- [x] Rewrite scripts/validate_oos.py: cross-OOS battery is the authoritative verdict;
-      legacy keys (test1/test2.robust<-PBO+DSR/test3/summary.overall_verdict) retained as
-      derived projections (test1+test3 are REAL; test2.robust projected). --grid-size added.
-- [x] Adapter unit tests (7) + smoke test of validate_oos orchestration (back-compat
-      contract asserted) — 40/40 cross_oos tests green; promoter_oos_floors test green.
-- [x] Real-engine integration verified against config/active/sp500.json (momentum_breakout):
-      310 trades, regimes stratify, CPCV median 0.64 / 93% paths +ve / LOO ok.
-- [x] FIXED pre-existing bug: make_strategies() hardcoded 4 strategies (none enabled in the
-      live config) -> 0 trades / meaningless validation. Now driven by STRATEGY_REGISTRY so
-      ANY enabled strategy is validated ("backtest more strategies in a similar way").
-- [x] Update atlas-backtest skill doc to describe the new battery
+## Tasks
+- [ ] services/api/up_webhook.py: POST /api/up/webhook (HMAC verify, event dispatch,
+      coalesced background incremental sync), GET /api/up/webhook/health (auth)
+- [ ] finance.py: add invalidate_cache(); call on webhook
+- [ ] mount router in services/chat_server.py; restart; verify 401-on-bad-sig
+- [ ] /root/up-bank/manage_webhook.py: list / register <url> / ping <id> / delete <id>;
+      save returned secretKey -> ~/.atlas-secrets.json up_webhook_secret
+- [ ] register webhook -> ping -> confirm receipt + sync fired + cache invalidated
+- [ ] safety net: incremental sync every ~10 min in /etc/cron.d/up-bank (keep daily full)
+- [ ] data-correctness fixes folded in (from the audit):
+      - last_updated -> real sync time (sync_state) so freshness is truthful
+      - live FX rate (cached, fallback to constant) replacing hardcoded 0.63
+      - pace_status vs BUDGET line (not income) — matches historical pace + pace_diff
+      - month length via calendar.monthrange (not hardcoded 30)
+- [ ] end-to-end verify: make a tiny real txn OR ping; dashboard reflects within seconds
 
-## Phase 3+ (follow-up, not now)
-- [ ] Migrate Python consumers + TS extensions to native cross_oos schema; drop shim
-- [ ] Pre-registration template + comparative scorecard generator
-- [ ] Optional dedicated atlas_jobs_run job `validate_cross_oos`
-
-## Review (Phase 1 + 2)
-
-**Shipped.** Atlas now has the Midas-style strategy-agnostic cross-OOS battery as the
-authoritative OOS validator, reusing the existing BacktestEngine.
-
-- Phase 1: ported research/cross_oos (cpcv, overfitting, splitters, metrics, gates) +
-  32 tests verbatim. Pure functions; green under np2.4.2/pd3.0.1/scipy1.17.1. (commit 6e66b1e6)
-- Phase 2: adapter.py bridges BacktestResult -> battery; validate_oos.py rewritten around it.
-  Verdict = declarative gate table (missing==FAIL). Legacy JSON keys kept as derived
-  projections => zero consumer/TS-extension breakage (no recompile needed this phase).
-- Bonus fix: make_strategies() is now registry-driven, repairing OOS validation for the
-  live momentum_breakout config (previously 0 trades).
-
-**Tests:** 40 cross_oos tests + existing promoter_oos_floors pass. One unrelated pre-existing
-failure (test_canary_promote_top3: research-DB solo_sharpe state, needs a re-sweep/migration).
-
-**Divergences from Midas (documented):** 252-day annualisation; cross-VENUE axis replaced by
-leave-one-ticker-group-out; 10bps cost-stress gate dropped (Atlas runs net-of-fees).
-
-**Next (Phase 3, not started):** migrate Python consumers + TS extensions to the native
-cross_oos schema and drop the shim; PRE_REGISTRATION template + comparative scorecard;
-optional dedicated validate_cross_oos job. Tune ATLAS_DEFAULT_GATES thresholds after a few
-real runs (current values are reasonable defaults, not calibrated to a target hit-rate).
+## Review
+(fill after)

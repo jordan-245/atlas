@@ -31,6 +31,17 @@ _finance_cache: dict = {"data": None, "ts": 0.0}
 _FINANCE_CACHE_TTL = 60  # seconds
 
 
+def invalidate_cache() -> None:
+    """Drop the cached payload so the next /api/finance call re-reads the DB.
+
+    Called by the Up Bank webhook receiver after a live incremental sync so the
+    dashboard reflects new transactions/balances immediately rather than waiting
+    out the TTL.
+    """
+    _finance_cache["data"] = None
+    _finance_cache["ts"] = 0.0
+
+
 @router.get("")
 def finance_data(_auth: HTTPBasicCredentials = Depends(check_auth)):
     """GET /api/finance — personal finance data from Up Bank SQLite + Atlas DB.

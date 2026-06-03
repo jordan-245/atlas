@@ -173,6 +173,7 @@ async def add_security_headers(request: Request, call_next):
 
 # ── Sub-package routers (Phase 1 extraction — docs/phase-c-god-file-decomposition.md) ──
 from services.api.finance import router as _finance_router  # noqa: E402
+from services.api.up_webhook import router as _up_webhook_router  # noqa: E402
 from services.api.regime import router as _regime_router   # noqa: E402
 from services.api.error_remediation import router as _error_remediation_router  # noqa: E402
 from services.api.portfolio import router as _portfolio_router  # noqa: E402
@@ -190,6 +191,7 @@ from services.api.admin import router as _admin_router  # noqa: E402
 from services.api.lifecycle import router as _lifecycle_router  # noqa: E402
 from services.api.research_matrix import router as _research_matrix_router  # noqa: E402
 from services.api.paper_progress import router as _paper_progress_router  # noqa: E402
+from services.api.midas import router as _midas_router  # noqa: E402
 from services.api.static_serve import router as _static_serve_router  # noqa: E402
 
 # ── Re-export shims (backward-compat for tests importing from chat_server) ────
@@ -207,6 +209,7 @@ from services.api.approvals import (  # noqa: F401
 from services.auth import check_auth  # noqa: F401 — re-exported for backward compat (tests)
 
 app.include_router(_finance_router)
+app.include_router(_up_webhook_router)
 app.include_router(_regime_router)
 app.include_router(_error_remediation_router)
 app.include_router(_portfolio_router)
@@ -227,6 +230,7 @@ app.include_router(_admin_router)
 # services/api/ (or services/ws/ for WebSocket routers).
 app.include_router(_lifecycle_router)
 app.include_router(_research_matrix_router)
+app.include_router(_midas_router)
 app.include_router(_paper_progress_router)
 # IMPORTANT: static_serve router must be LAST — contains /{path:path} catch-all
 app.include_router(_static_serve_router)
