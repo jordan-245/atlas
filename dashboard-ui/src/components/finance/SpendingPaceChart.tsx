@@ -117,7 +117,7 @@ export function SpendingPaceChart({ paceData, paceStatus, paceDiff }: Props) {
   return (
     <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5 dash-card">
       <div className="flex items-center justify-between mb-4">
-        <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-medium">SPENDING PACE</div>
+        <div className="text-[11px] uppercase tracking-widest text-[var(--color-text-muted)] font-semibold">SPENDING PACE</div>
         {paceStatus != null ? (
           <div className={`rounded-full px-3 py-1 text-[10px] font-mono tabular-nums font-medium uppercase ${badgeClass(paceStatus)}`}>
             {paceStatus} {paceDiff != null ? fmtCcy(Math.abs(paceDiff)) : null}

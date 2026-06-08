@@ -192,7 +192,7 @@ export function EquityChart() {
     <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-4 dash-card">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div className="flex items-center gap-3">
-          <h3 className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-medium">Equity Curve</h3>
+          <h3 className="text-[11px] uppercase tracking-widest text-[var(--color-text-muted)] font-semibold">Equity Curve</h3>
           <PeriodSelector active={period} onChange={setPeriod} />
         </div>
         <EquityReturnBadge
