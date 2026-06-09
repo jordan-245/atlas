@@ -47,6 +47,14 @@ approvals.py` (50), `core/reconcile.py` (2), `monitor/health_writer.py` (1), `co
 - **Phase 4 — final prune.** scripts/ one-offs, config variants, dead tests, docs (AGENTS/CLAUDE/memory) to
   reflect the new system. Update systemd install (only the kept timers).
 
+- **Phase 4c/4d — tests + config + docs. ✅ DONE** (commits 1caf33b, 2384e6b). Removed 21 broken-collection
+  test files (suite now collects 4740 with 0 errors), research-only configs + .oos_cache, archived old research
+  docs to docs/_archive_pre_refactor/. NOTE: a grep over-match briefly staged 331 test deletions — caught,
+  restored from HEAD, redone precisely (only the 21 broken). Services + dashboard green throughout.
+
+## STATUS: Phases 0,1,4 complete. Source .py 493->286 (-42%); scripts 160->74; suite 0 collection errors.
+## Remaining = Tier-2 execution-layer REPLACEMENT (needs target_executor first) + Phase-2 new-system build.
+
 ## Risks / guards
 - Running services must not break — verify imports + `systemctl status` after each phase.
 - Sharadar data under `data/sharadar/` is consumed by the FORGE — must NOT be deleted.
