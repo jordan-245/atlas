@@ -1,7 +1,6 @@
-import { preloadPortfolioTab, preloadFinanceTab, preloadForgeTab, preloadControlsTab, preloadMidasTab } from '../../lib/preloaders'
-import { FEATURE_CONTROLS_TAB } from '../../lib/featureFlags'
+import { preloadPortfolioTab, preloadForgeTab, preloadLiveTab, preloadMidasTab } from '../../lib/preloaders'
 
-type TabId = 'portfolio' | 'finance' | 'forge' | 'controls' | 'midas'
+type TabId = 'forge' | 'portfolio' | 'live' | 'midas'
 
 interface TabBarProps {
   activeTab: TabId
@@ -9,20 +8,18 @@ interface TabBarProps {
 }
 
 const preloaders: Record<string, () => void> = {
-  portfolio: preloadPortfolioTab,
-  finance: preloadFinanceTab,
   forge: preloadForgeTab,
-  controls: preloadControlsTab,
+  portfolio: preloadPortfolioTab,
+  live: preloadLiveTab,
   midas: preloadMidasTab,
 }
 
 export function TabBar({ activeTab, onChange }: TabBarProps) {
   const tabs: Array<{ id: TabId; label: string }> = [
-    { id: 'portfolio', label: 'Portfolio' },
-    { id: 'finance', label: 'Finance' },
     { id: 'forge', label: '🔥 Forge' },
+    { id: 'portfolio', label: 'Portfolio' },
+    { id: 'live', label: 'Live' },
     { id: 'midas', label: 'Midas' },
-    ...(FEATURE_CONTROLS_TAB ? [{ id: 'controls' as const, label: 'Controls' }] : []),
   ]
 
   return (

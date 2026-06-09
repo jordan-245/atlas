@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useRegimeCurrent, usePositionRisk, useRuinProbability, useSystemHealth } from '../../api/queries'
+import { useSystemHealth } from '../../api/queries'
 
 interface SourceEntry {
   name: string
@@ -24,16 +24,9 @@ function ageHours(iso: string): number {
 
 export function DataFreshnessChip() {
   const [open, setOpen] = useState(false)
-  const { data: regime } = useRegimeCurrent()
-  const { data: risk } = usePositionRisk()
-  const { data: ruin } = useRuinProbability()
   const { data: health } = useSystemHealth()
 
   const sources: SourceEntry[] = []
-
-  if (regime?.as_of) sources.push({ name: 'Regime', asOf: regime.as_of })
-  if (risk?.as_of) sources.push({ name: 'Risk', asOf: risk.as_of })
-  if (ruin?.as_of) sources.push({ name: 'Ruin', asOf: ruin.as_of })
 
   // ---------------------------------------------------------------------------
   // OHLCV freshness — R-03 weekend-aware logic

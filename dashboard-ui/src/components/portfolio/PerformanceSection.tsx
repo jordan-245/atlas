@@ -1,6 +1,5 @@
 import type { DashboardData } from '../../api/types'
 import { StatCard } from '../shared/StatCard'
-import { StrategyBreakdown } from './StrategyBreakdown'
 import { AllocationBar } from './AllocationBar'
 import { fmtCcy, fmtSignedCcy, fmtSignedPct, fmtPct, pnlClass } from '../../lib/format'
 
@@ -77,7 +76,6 @@ export function PerformanceSection({ data }: Props) {
           />
         </div>
       </div>
-      <StrategyBreakdown performance={data.strategy_performance} />
       <AllocationBar allocation={data.strategy_allocation ?? []} equity={data.account?.equity} />
     </div>
   )

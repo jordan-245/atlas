@@ -4,34 +4,20 @@ import { Header } from './components/layout/Header'
 import { TabBar } from './components/layout/TabBar'
 import { ErrorBoundary } from './components/layout/ErrorBoundary'
 
-// Rule: bundle-dynamic-imports — lazy-load BOTH tabs so the initial bundle
-// only includes the shell (Header + TabBar + App). Each tab's chart.js and
-// heavy deps load on demand via its dedicated chunk.
+// Lazy-load each tab so the initial bundle is just the shell.
 const PortfolioTab = lazy(() =>
   import('./components/portfolio/PortfolioTab').then((m) => ({ default: m.PortfolioTab })),
 )
-const FinanceTab = lazy(() =>
-  import('./components/finance/FinanceTab').then((m) => ({ default: m.FinanceTab })),
-)
-
-// Preload helpers now live in their sole consumer's import path
-// (src/lib/preloaders.ts).  TabBar imports them directly from there.
-// Re-exporting them from App.tsx would mix non-component exports with the
-// default component export and break Fast Refresh
-// (react-refresh/only-export-components).
-
 const ForgeTab = lazy(() =>
   import('./components/forge/ForgeTab').then((m) => ({ default: m.ForgeTab })),
 )
-const ControlsTab = lazy(() =>
-  import('./components/controls/ControlsTab').then((m) => ({ default: m.ControlsTab })),
+const LiveTab = lazy(() =>
+  import('./components/live/LiveTab').then((m) => ({ default: m.LiveTab })),
 )
 const MidasTab = lazy(() =>
   import('./components/midas/MidasTab').then((m) => ({ default: m.MidasTab })),
 )
 
-// Skeleton matching the tab content shape — prevents layout shift during
-// code-split load (async-suspense-boundaries rule).
 function TabFallback() {
   return (
     <div className="space-y-4">
@@ -43,7 +29,7 @@ function TabFallback() {
 
 export default function App() {
   useTheme()
-  const [activeTab, setActiveTab] = useState<'portfolio' | 'finance' | 'forge' | 'controls' | 'midas'>('portfolio')
+  const [activeTab, setActiveTab] = useState<'forge' | 'portfolio' | 'live' | 'midas'>('forge')
 
   return (
     <div className="min-h-screen bg-[var(--color-bg)] text-[var(--color-text)] overflow-x-hidden">
@@ -54,11 +40,10 @@ export default function App() {
           <ErrorBoundary>
             <Suspense fallback={<TabFallback />}>
               <div key={activeTab} className="animate-in">
-                {activeTab === 'portfolio' ? <PortfolioTab />
-                 : activeTab === 'finance' ? <FinanceTab />
-                 : activeTab === 'forge' ? <ForgeTab />
-                 : activeTab === 'midas' ? <MidasTab />
-                 : <ControlsTab />}
+                {activeTab === 'forge' ? <ForgeTab />
+                 : activeTab === 'portfolio' ? <PortfolioTab />
+                 : activeTab === 'live' ? <LiveTab />
+                 : <MidasTab />}
               </div>
             </Suspense>
           </ErrorBoundary>
