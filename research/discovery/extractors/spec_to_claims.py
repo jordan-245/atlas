@@ -255,3 +255,124 @@ def extract_all(specs_dir: Path) -> List[dict]:
     for path in sorted(specs_dir.glob("specs_*.json")):
         out.extend(extract_specs_file(path))
     return out
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Source-derived shell claims (no spec file required)
+#
+# When the discovery spec extractor has not produced a specs_*.json (e.g. the
+# research runner is paused), ingested sources still sit in the DB with PDF
+# metadata but no claim.  This path bootstraps ONE shell claim per such source
+# directly from source metadata so the Phase 1.5 LLM metric extractor has work
+# to do.  The strategy is a deterministic placeholder ("paper__<source slug>")
+# -- intentionally distinct from real Atlas strategy keys so it can never
+# fabricate a contradiction (v_candidate_contradictions JOINs on an exact
+# strategy match against research_best).  The paper's real strategy and metrics
+# are filled in later by the LLM pass reading the PDF.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_SRC_ID_PREFIX_RE = re.compile(r"^src-")
+
+
+def _source_strategy_placeholder(source_id: str) -> str:
+    """Deterministic placeholder strategy for a source-derived shell claim.
+
+    'src-arxiv-2605.07835' -> 'paper__arxiv_2605_07835'.  The 'paper__' prefix
+    guarantees the value can never collide with a real Atlas strategy key, so
+    these shell claims never produce a spurious contradiction until the LLM
+    pass resolves the true strategy.
+    """
+    stem = _SRC_ID_PREFIX_RE.sub("", source_id or "").strip()
+    slug = re.sub(r"[^a-z0-9]+", "_", stem.lower()).strip("_")
+    return f"paper__{slug or 'unknown'}"
+
+
+def _source_claim_id(source_id: str) -> str:
+    """Deterministic claim id for the single source-derived shell claim.
+
+    Suffix '-src-shell' keeps it disjoint from spec-derived ids, which always
+    end in a numeric index ('clm-<src>-<strategy>-<n>').
+    """
+    return f"clm-{source_id}-src-shell"
+
+
+def extract_one_source(source: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+    """Create one shell claim from a ``sources`` row.
+
+    Returns (claim_id, source_id), or (None, None) if the source lacks an id.
+    Idempotent: deterministic claim id + INSERT OR IGNORE inside insert_claim.
+    """
+    source_id = source.get("id")
+    if not source_id:
+        return None, None
+
+    strategy = _source_strategy_placeholder(source_id)
+    claim_id = _source_claim_id(source_id)
+
+    # Mirror the spec-derived notes shape so paper_metrics._claim_notes_to_parameters
+    # finds a 'parameters' key, and downstream tooling can detect the origin.
+    notes_payload = {
+        "derived_from": "source_backfill",
+        "needs_strategy_resolution": True,
+        "source_title": source.get("title"),
+        "source_kind": source.get("kind"),
+        "parameters": {},
+    }
+
+    insert_claim(
+        id=claim_id,
+        source_id=source_id,
+        strategy=strategy,
+        universe=None,  # unknown until the LLM pass reads the paper
+        extraction_confidence="low",  # shell claim -- metrics not yet extracted
+        notes=json.dumps(notes_payload, ensure_ascii=False),
+    )
+    return claim_id, source_id
+
+
+def extract_claims_from_sources(
+    *,
+    require_local_pdf: bool = True,
+    kind: Optional[str] = "paper",
+    limit: int = 10_000,
+) -> List[dict]:
+    """Create shell claims for ingested sources that have no claim yet.
+
+    The fallback ingestion path used when no specs_*.json files exist.  Creates
+    one shell claim per eligible source (kind filter + optional local-PDF
+    filter).  Returns one result dict per source considered.
+
+    Idempotent: list_sources_without_claims excludes sources that already have a
+    claim, and deterministic claim ids make re-runs a no-op even under races.
+    Because already-claimed sources are filtered out, a second run typically
+    returns an empty list (sources_considered == 0).
+    """
+    from db.knowledge import list_sources_without_claims
+
+    sources = list_sources_without_claims(
+        kind=kind, require_local_pdf=require_local_pdf, limit=limit,
+    )
+    out: List[dict] = []
+    for s in sources:
+        sid = s.get("id")
+        try:
+            claim_id, source_id = extract_one_source(s)
+            out.append({
+                "source_id": sid,
+                "claim_id": claim_id,
+                "strategy": _source_strategy_placeholder(sid or ""),
+                "skipped": claim_id is None,
+                "reason": None if claim_id else "unusable_source",
+                "error": None,
+            })
+        except Exception as exc:  # noqa: BLE001 -- keep processing siblings
+            logger.warning("extract_one_source failed for %s: %s", sid, exc)
+            out.append({
+                "source_id": sid,
+                "claim_id": None,
+                "strategy": None,
+                "skipped": True,
+                "reason": "error",
+                "error": str(exc),
+            })
+    return out

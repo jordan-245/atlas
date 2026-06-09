@@ -306,6 +306,130 @@ class TestSpecsFileProcessing:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Source-derived shell claims (#395 — specs absent, sources present)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestSourceDerivedClaims:
+    """#395: when no specs_*.json exist but sources are ingested, derive shell
+    claims directly from source/PDF metadata."""
+
+    def _seed_paper_source(self, tmp_path, name="2605.07835v1.pdf"):
+        pdf = _fake_pdf(tmp_path / name)
+        source_id, _ = paper_metadata.extract_one(pdf, atlas_root=tmp_path)
+        return source_id
+
+    def test_placeholder_strategy_is_namespaced(self):
+        s = spec_to_claims._source_strategy_placeholder("src-arxiv-2605.07835")
+        assert s == "paper__arxiv_2605_07835"
+        # Prefix guarantees no collision with a real Atlas strategy key.
+        assert s.startswith("paper__")
+
+    def test_claim_id_disjoint_from_spec_ids(self):
+        # spec ids end in '-<n>'; source ids end in '-src-shell'.
+        cid = spec_to_claims._source_claim_id("src-arxiv-2605.07835")
+        assert cid == "clm-src-arxiv-2605.07835-src-shell"
+        assert not cid.endswith(tuple("0123456789"))
+
+    def test_creates_shell_claim_when_specs_absent(self, tmp_path):
+        source_id = self._seed_paper_source(tmp_path)
+        # No specs dir / files at all -- the gap condition.
+        assert kn.list_claims(status=None) == []
+
+        results = spec_to_claims.extract_claims_from_sources()
+        assert len(results) == 1
+        assert results[0]["source_id"] == source_id
+        assert results[0]["claim_id"] is not None
+        assert results[0]["skipped"] is False
+
+        claim_id = results[0]["claim_id"]
+        c = kn.get_claim(claim_id)
+        assert c is not None
+        assert c["source_id"] == source_id
+        assert c["status"] == "active"
+        # Shell: all claimed metrics NULL so extract_paper_metrics picks it up.
+        assert c["claimed_sharpe"] is None
+        assert c["claimed_max_dd_pct"] is None
+        assert c["claimed_cagr_pct"] is None
+        assert c["strategy"].startswith("paper__")
+        notes = json.loads(c["notes"])
+        assert notes["derived_from"] == "source_backfill"
+        assert notes["parameters"] == {}
+
+    def test_no_op_when_no_sources(self, tmp_path):
+        # Empty DB, no sources -> clear no-op (empty result list).
+        results = spec_to_claims.extract_claims_from_sources()
+        assert results == []
+
+    def test_idempotent_rerun_does_not_duplicate(self, tmp_path):
+        self._seed_paper_source(tmp_path)
+        first = spec_to_claims.extract_claims_from_sources()
+        second = spec_to_claims.extract_claims_from_sources()
+        # First run creates a claim; the source now has a claim, so the second
+        # run finds zero claim-less sources.
+        assert len(first) == 1
+        assert second == []
+        # Exactly one claim row total.
+        assert len(kn.list_claims(status=None)) == 1
+
+    def test_require_local_pdf_filter(self, tmp_path):
+        # Source WITH a local PDF.
+        self._seed_paper_source(tmp_path)
+        # Reference-only source (no local_path).
+        kn.insert_source(id="src-ref-deadbeef", kind="paper",
+                         title="Reference only", url="https://example.org/p")
+
+        with_pdf = spec_to_claims.extract_claims_from_sources(require_local_pdf=True)
+        assert len(with_pdf) == 1
+        assert all(r["source_id"] != "src-ref-deadbeef" for r in with_pdf)
+
+        # Re-run including no-PDF sources picks up the reference-only one
+        # (the PDF-backed source already has a claim now).
+        incl = spec_to_claims.extract_claims_from_sources(require_local_pdf=False)
+        assert {r["source_id"] for r in incl} == {"src-ref-deadbeef"}
+
+    def test_does_not_touch_sources_that_already_have_a_claim(self, tmp_path):
+        # Seed a paper source AND a spec-derived claim against the same URL.
+        pdf = _fake_pdf(tmp_path / "2401.12345.pdf")
+        seeded_id, _ = paper_metadata.extract_one(pdf, atlas_root=tmp_path)
+        spec_to_claims.extract_one_spec(
+            _spec(url="https://arxiv.org/abs/2401.12345"), n=0)
+        before = len(kn.list_claims(source_id=seeded_id, status=None))
+        assert before == 1
+
+        results = spec_to_claims.extract_claims_from_sources()
+        # That source already has a claim -> not considered.
+        assert all(r["source_id"] != seeded_id for r in results)
+        assert len(kn.list_claims(source_id=seeded_id, status=None)) == 1
+
+
+class TestListSourcesWithoutClaims:
+    def test_filters_to_claimless_sources(self, tmp_path):
+        pdf = _fake_pdf(tmp_path / "2605.07835v1.pdf")
+        sid, _ = paper_metadata.extract_one(pdf, atlas_root=tmp_path)
+        rows = kn.list_sources_without_claims()
+        assert [r["id"] for r in rows] == [sid]
+
+        # After a claim exists, the source drops out.
+        spec_to_claims.extract_one_source({"id": sid, "title": "t", "kind": "paper"})
+        assert kn.list_sources_without_claims() == []
+
+    def test_kind_and_pdf_filters(self, tmp_path):
+        kn.insert_source(id="src-blog-1", kind="blog", title="Blog",
+                         url="https://b.example", local_path=None)
+        pdf = _fake_pdf(tmp_path / "2605.08021v1.pdf")
+        paper_id, _ = paper_metadata.extract_one(pdf, atlas_root=tmp_path)
+
+        papers = kn.list_sources_without_claims(kind="paper")
+        assert [r["id"] for r in papers] == [paper_id]
+
+        all_kinds_no_pdf = {
+            r["id"] for r in kn.list_sources_without_claims(
+                kind=None, require_local_pdf=False)
+        }
+        assert all_kinds_no_pdf == {"src-blog-1", paper_id}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # End-to-end: paper + spec share a source
 # ═══════════════════════════════════════════════════════════════════════════════
 

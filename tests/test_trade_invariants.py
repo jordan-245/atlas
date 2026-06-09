@@ -6,7 +6,6 @@ Verifies:
   3. Valid long stop accepted                        (stop < entry)
   4. Valid short stop accepted                       (stop > entry)
   5. NULL stop accepted                              (no constraint violation)
-  6. Backfill refuses inverted stop, writes NULL, logs WARNING
 
 All tests use the conftest autouse _isolate_prod_db fixture so they never
 touch data/atlas.db. The fixture calls init_db() which now creates the
@@ -14,10 +13,8 @@ stop-direction CHECK via the updated db/schema.sql.
 """
 from __future__ import annotations
 
-import logging
 import sqlite3
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -207,122 +204,3 @@ class TestNullStopAccepted:
             conn.close()
 
 
-# ---------------------------------------------------------------------------
-# 6. Backfill logic refuses inverted stop → writes NULL + logs WARNING
-# ---------------------------------------------------------------------------
-
-@pytest.mark.skip(reason="scripts/backfill_orphan_trades.py moved to _attic/2026-05/ on 2026-05-12 per docs/cleanup-plan-2026-05.md")
-class TestBackfillRefusesInvertedStop:
-    """Test that backfill_orphan_trades._do_insert writes NULL for inverted stops."""
-
-    def _make_broker_pos(
-        self,
-        ticker: str = "AMD",
-        entry_price: float = 278.25,
-        stop_price: float | None = 294.80,
-        shares: int = 2,
-        entry_date: str = "2026-04-18",
-    ) -> dict:
-        return {
-            "ticker": ticker,
-            "entry_price": entry_price,
-            "stop_price": stop_price,
-            "shares": shares,
-            "entry_date": entry_date,
-            "market_id": "sp500",
-        }
-
-    def test_inverted_stop_writes_null(
-        self,
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        """_do_insert with inverted stop must INSERT with stop_price=NULL."""
-        pos = self._make_broker_pos(
-            ticker="AMD_TEST", entry_price=278.25, stop_price=294.80
-        )
-        from scripts.backfill_orphan_trades import _do_insert
-        with patch("utils.telegram.send_message", side_effect=Exception("no telegram")):
-            with caplog.at_level(logging.WARNING):
-                result = _do_insert(pos, "momentum_breakout", "sp500", dry_run=False)
-        assert result is True
-
-        # Verify stop_price is NULL in the isolated DB
-        db_path = _current_db_path()
-        conn = sqlite3.connect(db_path)
-        try:
-            row = conn.execute(
-                "SELECT stop_price FROM trades WHERE ticker='AMD_TEST'"
-            ).fetchone()
-            assert row is not None, "AMD_TEST row not inserted"
-            assert row[0] is None, f"Expected stop_price=NULL, got {row[0]}"
-        finally:
-            conn.execute("DELETE FROM trades WHERE ticker='AMD_TEST'")
-            conn.commit()
-            conn.close()
-
-    def test_inverted_stop_logs_warning(
-        self,
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        """_do_insert with inverted stop must emit a WARNING log."""
-        pos = self._make_broker_pos(
-            ticker="AMD_WARN", entry_price=278.25, stop_price=294.80
-        )
-        from scripts.backfill_orphan_trades import _do_insert
-        with patch("utils.telegram.send_message", side_effect=Exception("no telegram")):
-            with caplog.at_level(logging.WARNING):
-                _do_insert(pos, "momentum_breakout", "sp500", dry_run=False)
-
-        warning_found = any(
-            ("inverted stop" in r.message.lower() or "refusing" in r.message.lower())
-            for r in caplog.records
-            if r.levelno >= logging.WARNING
-        )
-        assert warning_found, (
-            f"Expected WARNING about inverted stop, got: {[r.message for r in caplog.records]}"
-        )
-
-        db_path = _current_db_path()
-        conn = sqlite3.connect(db_path)
-        conn.execute("DELETE FROM trades WHERE ticker='AMD_WARN'")
-        conn.commit()
-        conn.close()
-
-    def test_valid_stop_unchanged(self) -> None:
-        """_do_insert with valid stop (below entry) must write the stop value."""
-        pos = self._make_broker_pos(
-            ticker="AAPL_BF", entry_price=100.0, stop_price=90.0
-        )
-        from scripts.backfill_orphan_trades import _do_insert
-        result = _do_insert(pos, "test_strategy", "sp500", dry_run=False)
-        assert result is True
-
-        db_path = _current_db_path()
-        conn = sqlite3.connect(db_path)
-        try:
-            row = conn.execute(
-                "SELECT stop_price FROM trades WHERE ticker='AAPL_BF'"
-            ).fetchone()
-            assert row is not None
-            assert row[0] == 90.0, f"Expected 90.0, got {row[0]}"
-        finally:
-            conn.execute("DELETE FROM trades WHERE ticker='AAPL_BF'")
-            conn.commit()
-            conn.close()
-
-    def test_dry_run_skips_db_write(self) -> None:
-        """_do_insert in dry_run mode must return True without writing to DB."""
-        pos = self._make_broker_pos(
-            ticker="DRY_INV", entry_price=200.0, stop_price=295.0
-        )
-        from scripts.backfill_orphan_trades import _do_insert
-        result = _do_insert(pos, "test_strategy", "sp500", dry_run=True)
-        assert result is True
-
-        db_path = _current_db_path()
-        conn = sqlite3.connect(db_path)
-        row = conn.execute(
-            "SELECT stop_price FROM trades WHERE ticker='DRY_INV'"
-        ).fetchone()
-        conn.close()
-        assert row is None, "dry_run should not insert rows"

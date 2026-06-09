@@ -127,8 +127,54 @@ def _read_json(path: Path, default=None):
         return default
 
 
+# Systemd unit that CONSUMES research/queue.json (scripts/research_runner.py).
+# When this unit is disabled, director-generated queue items pile up unread —
+# an invisible backlog (#392).
+QUEUE_CONSUMER_UNIT = "atlas-research-runner.service"
+
+
+def _systemctl_state(unit: str, query: str) -> Optional[bool]:
+    """Read-only systemd state probe. Returns True/False, or None if unknown.
+
+    query is 'is-enabled' or 'is-active'. NEVER mutates systemd — this only
+    inspects state so the director can report a stranded-backlog condition.
+    Fails safe to None (unknown) on any error (systemctl missing, sandbox, etc.).
+    """
+    try:
+        proc = subprocess.run(
+            ["systemctl", query, unit],
+            capture_output=True, text=True, timeout=10,
+        )
+        out = (proc.stdout or "").strip()
+        if query == "is-enabled":
+            # 'enabled', 'enabled-runtime', 'static', 'alias', 'indirect',
+            # 'generated' are all forms of "will/can run"; 'disabled'/'masked'
+            # mean the consumer will not run.
+            if out in ("disabled", "masked", ""):
+                return False
+            if out in ("enabled", "enabled-runtime", "static", "alias",
+                       "indirect", "generated", "linked", "linked-runtime"):
+                return True
+            return None
+        if query == "is-active":
+            if out == "active":
+                return True
+            if out in ("inactive", "failed", "deactivating", ""):
+                return False
+            return None
+        return None
+    except Exception as exc:
+        logger.debug("systemctl %s %s failed: %s", query, unit, exc)
+        return None
+
+
 def get_queue_stats() -> dict:
-    """Analyse queue.json and return summary statistics."""
+    """Analyse queue.json and return summary statistics.
+
+    Also reports whether the queue CONSUMER service is enabled/active so a
+    stranded backlog (queued items piling up while the consumer is disabled)
+    is explicit in director status rather than silent (#392).
+    """
     queue = _read_json(QUEUE_PATH, [])
     if not isinstance(queue, list):
         queue = []
@@ -144,6 +190,22 @@ def get_queue_stats() -> dict:
             p = e.get("priority", "P5")
             by_priority[p] = by_priority.get(p, 0) + 1
 
+    # ── Consumer-state diagnostic (#392) ──────────────────────────────────
+    consumer_enabled = _systemctl_state(QUEUE_CONSUMER_UNIT, "is-enabled")
+    consumer_active = _systemctl_state(QUEUE_CONSUMER_UNIT, "is-active")
+    # Stranded only when we can POSITIVELY confirm the consumer is disabled
+    # (None = unknown probe → do not raise a false stranded alarm).
+    backlog_stranded = bool(queued > 0 and consumer_enabled is False)
+    backlog_warning = None
+    if backlog_stranded:
+        backlog_warning = (
+            f"{queued} queued experiment(s) but {QUEUE_CONSUMER_UNIT} is "
+            f"disabled — these will NOT be consumed (invisible backlog). "
+            f"Re-enable the consumer or suppress queue generation; director will "
+            f"skip generation while the consumer is disabled."
+        )
+        logger.warning("QUEUE_BACKLOG_STRANDED %s", backlog_warning)
+
     return {
         "total": total,
         "queued": queued,
@@ -151,6 +213,11 @@ def get_queue_stats() -> dict:
         "passed": passed,
         "failed": failed,
         "by_priority": by_priority,
+        "consumer_unit": QUEUE_CONSUMER_UNIT,
+        "consumer_enabled": consumer_enabled,
+        "consumer_active": consumer_active,
+        "backlog_stranded": backlog_stranded,
+        "backlog_warning": backlog_warning,
     }
 
 
@@ -506,8 +573,26 @@ def main() -> int:
     # Queue is retired — always generate experiments (runner is no longer
     # queue-gated). Prior queue-depth gate produced a 37-day silent block;
     # see investigation 2026-04-22-queue-disposition.md.
+    #
+    # #392 guard: if the queue CONSUMER service is positively disabled, do NOT
+    # generate more items — they would only deepen an invisible backlog. We do
+    # NOT enable services or touch systemd here; we just stop adding to a queue
+    # nobody is draining (unless --force-discovery is passed). consumer_enabled
+    # is None when the probe is inconclusive, in which case we proceed as before.
     experiments_generated = 0
-    should_generate = not getattr(args, 'skip_discovery', False)
+    skip_discovery = getattr(args, 'skip_discovery', False)
+    consumer_disabled = queue_stats.get("consumer_enabled") is False
+    suppress_for_backlog = (
+        consumer_disabled and not args.force_discovery and queue_stats["queued"] > 0
+    )
+    if suppress_for_backlog:
+        logger.warning(
+            "Skipping experiment generation: %s is disabled and %d item(s) are "
+            "already queued (avoiding invisible-backlog growth, #392). "
+            "Re-enable the consumer or pass --force-discovery to override.",
+            queue_stats.get("consumer_unit"), queue_stats["queued"],
+        )
+    should_generate = (not skip_discovery) and (not suppress_for_backlog)
     if should_generate:
         reason = "forced" if args.force_discovery else "queue retired — unconditional generation"
         logger.info("Generating experiments (%s)", reason)
@@ -528,6 +613,10 @@ def main() -> int:
         if experiments_generated > 0:
             queue_stats["queued"] += experiments_generated
             logger.info("Added %d experiments to queue", experiments_generated)
+    elif suppress_for_backlog:
+        logger.info(
+            "Experiment generation skipped (queue consumer disabled + backlog, #392)"
+        )
     else:
         logger.info("Experiment generation skipped (--skip-discovery)")
 

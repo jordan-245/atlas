@@ -36,6 +36,9 @@ from scripts.strategy_evaluator import STRATEGY_REGISTRY, load_sandbox_strategy 
 from utils.config import get_active_config             # noqa: E402
 from research.cross_oos import adapter                 # noqa: E402
 from research.cross_oos import metrics as cm           # noqa: E402
+from research.cross_oos.deployment import deployment_sanity  # noqa: E402
+from research.cross_oos.holdout import holdout_start_ts, evaluate_holdout, config_hash  # noqa: E402
+from research.cross_oos import registry  # noqa: E402
 import scripts.validate_oos as vo                      # noqa: E402
 
 
@@ -111,7 +114,22 @@ def main() -> int:
     ap.add_argument("--nice", type=int, default=10,
                     help="nice increment for workers (lower priority; default 10).")
     ap.add_argument("--output-path", required=True)
+    ap.add_argument("--no-holdout-quarantine", action="store_true",
+                    help="Search on FULL data (default: quarantine data >= config/holdout.json start). "
+                         "Use only for explicit manual full-history runs, never the automated loop.")
+    ap.add_argument("--holdout-eval", action="store_true",
+                    help="If the search tier is PROMOTE, evaluate the frozen primary on the write-once "
+                         "holdout ONCE (single-use ledger) and downgrade to FAIL if it does not clear.")
     a = ap.parse_args()
+    return 0 if run_battery(a) is not None else 1
+
+
+def run_battery(a):
+    """Rail-equipped cross-OOS battery as a CALLABLE (single source of truth for the CLI AND the
+    automated research loop). `a` is a namespace with battery args: strategy, market, grid_size,
+    max_positions, pin, pin_kv, select, workers, nice, output_path, no_holdout_quarantine,
+    holdout_eval. Returns the result dict (None if no configs completed). Rails 1/2/3 applied here so
+    every caller (manual CLI or research_runner) gets quarantine + deployment-sanity + FDR bar."""
     _cpu = os.cpu_count() or 4
     workers = a.workers or min(3, max(1, _cpu - 1))   # conservative default
     pinned = json.loads(a.pin) if a.pin.strip() else {}
@@ -133,7 +151,15 @@ def main() -> int:
     print(f"=== cross-OOS battery: {a.strategy} ({a.market}) ===", flush=True)
     data = vo.load_data(market=a.market)
     data = {k: v for k, v in data.items() if len(v) >= 260}
-    print(f"universe: {len(data)} tickers", flush=True)
+    # Rail 1: quarantine the write-once holdout from the search (default on).
+    hs = holdout_start_ts()
+    if hs is not None and not a.no_holdout_quarantine:
+        data = {k: v[v.index < hs] for k, v in data.items() if len(v[v.index < hs]) >= 260}
+        print(f"holdout quarantine ON: search on data < {hs.date()} ({len(data)} tickers)", flush=True)
+    elif hs is not None:
+        print(f"holdout quarantine OFF (--no-holdout-quarantine): searching FULL data incl. holdout", flush=True)
+    else:
+        print(f"universe: {len(data)} tickers (no holdout configured)", flush=True)
 
     base = get_active_config(a.market)
     base.setdefault("strategies", {})[a.strategy] = {"enabled": True, **pinned}
@@ -183,7 +209,7 @@ def main() -> int:
                   f"params={results[lbl]['params']}", flush=True)
     if not results:
         print("ERROR: no configs completed", flush=True)
-        return 1
+        return None
 
     # Select the validated primary. Default = the PRE-REGISTERED config (no selection bias):
     # picking the best-of-grid is itself overfitting, which the forward gate then rejects.
@@ -236,7 +262,59 @@ def main() -> int:
     bt = adapter.assemble_bundle(prim["returns"], prim["trades"], grid_returns=grid_returns,
                                  forward_net=m_oos.get("total_pnl", 0.0),
                                  oos_cagr_degradation_pct=deg, search_burden=burden)
-    tiers = adapter.evaluate_tiers(bt["bundle"])
+    # Rail 2: FDR-aware PROMOTE bar escalates with the cumulative count of distinct hypothesis
+    # families ever tested (cross-family multiple testing; within-family search already in DSR).
+    fam = registry.family_of(a.strategy)
+    n_families = registry.distinct_families(extra=fam)
+    promote_bar = adapter.promote_dsr(n_families)
+    tiers = adapter.evaluate_tiers(bt["bundle"], promote_dsr=promote_bar)
+    if n_families > 1 or promote_bar > adapter.PROMOTE_DSR:
+        print(f"FDR-aware PROMOTE bar: {promote_bar:.3f} (n_families={n_families}, base {adapter.PROMOTE_DSR})", flush=True)
+
+    # Rail 3 (research integrity): a tier is meaningless unless the strategy DEPLOYS as designed.
+    # Auto-FAIL artifacts (e.g. a sector-bug-capped 2-position book) regardless of DSR.
+    deploy = deployment_sanity(
+        prim["trades"], primary_config=prim["params"],
+        strategy_meta={"max_positions": a.max_positions,
+                       "max_sector_concentration": base.get("risk", {}).get("max_sector_concentration", 2)})
+    raw_tier = tiers["tier"]
+    final_tier = "FAIL" if not deploy["passed"] else raw_tier
+    if not deploy["passed"]:
+        print("\n" + "!" * 64, flush=True)
+        print(f"DEPLOYMENT-SANITY FAIL: tier {raw_tier} -> FAIL. peak_concurrent="
+              f"{deploy.get('peak_concurrent')} expected={deploy.get('expected_positions')} "
+              f"trades={deploy.get('n_trades')} single_name_share={deploy.get('single_name_share')}", flush=True)
+        for r in deploy["forced_fail_reasons"]:
+            print(f"  - {r}", flush=True)
+        print("!" * 64, flush=True)
+
+    # Rail 1: a PROMOTE candidate must clear the write-once holdout ONCE before it counts.
+    holdout_result = None
+    if a.holdout_eval and final_tier == "PROMOTE":
+        print("\nholdout-eval: PROMOTE candidate -> evaluating write-once holdout (single-use)...", flush=True)
+        holdout_result = evaluate_holdout(
+            a.strategy, prim["params"], market=a.market, max_positions=a.max_positions,
+            search_sharpe=float(prim["cpcv"]) if prim["cpcv"] == prim["cpcv"] else None)
+        if not holdout_result.get("ok"):
+            print(f"  holdout NOT evaluated: {holdout_result.get('reason')}", flush=True)
+            final_tier = "SCREEN"  # cannot confirm PROMOTE without a fresh holdout -> hold at SCREEN
+        elif holdout_result.get("passed"):
+            print(f"  holdout PASS: sharpe={holdout_result.get('holdout_sharpe')} "
+                  f"deg={holdout_result.get('degradation_vs_search_pct')}% "
+                  f"trades={holdout_result.get('holdout_trades')}", flush=True)
+        else:
+            print(f"  holdout FAIL -> PROMOTE downgraded to FAIL (candidate burned). "
+                  f"reasons: {holdout_result.get('gate_reasons')}", flush=True)
+            final_tier = "FAIL"
+
+    # Rail 2: log this run to the hypothesis registry (one record per battery run).
+    registry.append_run({
+        "ts": datetime.datetime.now().isoformat(), "strategy": a.strategy, "family": fam,
+        "market": a.market, "config_hash": config_hash(a.strategy, prim["params"], a.market),
+        "grid_size": len(results), "raw_tier": raw_tier, "final_tier": final_tier,
+        "dsr": bt["bundle"].get("dsr"), "promote_dsr_used": promote_bar, "n_families": n_families,
+        "holdout_touched": bool(holdout_result and holdout_result.get("ok")),
+    })
 
     out = {
         "strategy": a.strategy, "market": a.market,
@@ -247,14 +325,19 @@ def main() -> int:
                       "sharpe": v["metrics"]["sharpe"], "pnl": v["metrics"]["total_pnl"],
                       "trades": v["metrics"]["total_trades"]} for k, v in results.items()},
         "time_split": {"in_sample": m_is, "out_of_sample": m_oos, "degradation_cagr_pct": deg},
+        "deployment": deploy,
+        "holdout": holdout_result,
+        "multiple_testing": {"n_families": n_families, "promote_dsr_used": promote_bar,
+                             "promote_dsr_base": adapter.PROMOTE_DSR},
         "cross_oos": {
             "bundle": bt["bundle"], "diagnostics": bt["diagnostics"],
-            "tier": tiers["tier"], "screen_dsr": tiers["screen_dsr"], "promote_dsr": tiers["promote_dsr"],
+            "tier": final_tier, "tier_raw": raw_tier,
+            "screen_dsr": tiers["screen_dsr"], "promote_dsr": tiers["promote_dsr"],
             "gate_checks": {g.name: {"value": g.value, "status": g.status, "threshold": g.threshold,
                                      "comparator": g.comparator} for g in tiers["promote"]["gates"]},
             "gate_checks_screen": {g.name: g.status for g in tiers["screen"]["gates"]},
         },
-        "verdict": tiers["tier"], "runtime_s": round(time.time() - t0, 1),
+        "verdict": final_tier, "runtime_s": round(time.time() - t0, 1),
     }
     outp = Path(a.output_path)
     outp.parent.mkdir(parents=True, exist_ok=True)
@@ -262,7 +345,8 @@ def main() -> int:
 
     b = bt["bundle"]; d = bt["diagnostics"]
     print("\n" + "=" * 64)
-    print(f"CROSS-OOS BATTERY: {a.strategy}  ->  TIER: {tiers['tier']}")
+    print(f"CROSS-OOS BATTERY: {a.strategy}  ->  TIER: {final_tier}"
+          + (f"  (raw {raw_tier}, deployment-sanity FAIL)" if final_tier != raw_tier else ""))
     print("=" * 64)
     print("gates:", {g.name: g.status for g in tiers["promote"]["gates"]})
     print(f"CPCV median {b['median_cpcv_sharpe']:.3f} | frac+ {b['frac_paths_positive']:.2f} | "
@@ -274,7 +358,7 @@ def main() -> int:
           f"regime_conc_ratio {b.get('regime_concentration_ratio', float('nan')):.2f} | "
           f"per_regime_ok {b.get('per_regime_expectancy_ok')} | forward_net {b['forward_net']}")
     print(f"runtime {out['runtime_s']:.0f}s  saved {outp}")
-    return 0
+    return out
 
 
 if __name__ == "__main__":

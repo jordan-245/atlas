@@ -97,7 +97,9 @@ export function FinanceTab() {
 
       {accounts.length > 0 && (
         <div className="animate-in">
-          <SectionBoundary title="Savers">
+          {/* Goal accounts only — fortnight budget buckets are filtered out
+              inside SaverPots via the goal classifier. */}
+          <SectionBoundary title="Goals">
             <SaverPots accounts={accounts} avgMonthlyNet={monthlyNet} />
           </SectionBoundary>
         </div>

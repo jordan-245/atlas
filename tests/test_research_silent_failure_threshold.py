@@ -32,8 +32,10 @@ if str(ATLAS_ROOT) not in sys.path:
 import research.autoresearch_nightly as autoresearch_nightly
 from research.autoresearch_nightly import (
     DEFAULT_MIN_ROWS,
+    DEFAULT_ROWS_PER_STRATEGY,
     MIN_ROWS_PER_STRATEGY,
     MIN_ROWS_PER_UNIVERSE,
+    ROWS_PER_STRATEGY_BY_UNIVERSE,
     _resolve_min_rows,
 )
 
@@ -54,42 +56,65 @@ def _write_config(tmp_path: Path, universe: str, strategies: dict) -> Path:
 
 
 class TestResolveMinRowsLiveConfigs:
-    """Tests 1-3: use the real config/active/*.json files to assert live behaviour."""
+    """Allow-list-aware behaviour (#392): threshold scales with enabled count.
 
-    def test_resolve_min_rows_gold_etfs_1_strategy_returns_3(self):
-        """gold_etfs has 1 enabled strategy (connors_rsi2).
+    threshold = max(MIN_ROWS_PER_STRATEGY, enabled * ROWS_PER_STRATEGY_BY_UNIVERSE).
+    Missing/retired configs fall back to the static MIN_ROWS_PER_UNIVERSE floor.
+    """
 
-        Expected: max(operator_floor=3, dynamic=max(3, 1*3)=3) = 3
-        operator_floor was lowered 10→3 (2026-05-12) to match typical 1-8 row output.
-        """
+    def test_resolve_min_rows_gold_etfs_missing_config_returns_operator_floor(self):
+        """gold_etfs config is retired/missing → static operator floor (3)."""
         result = _resolve_min_rows("gold_etfs")
-        assert result == 3, (
-            f"gold_etfs with 1 enabled strategy should give threshold=3, got {result}"
+        assert result == MIN_ROWS_PER_UNIVERSE["gold_etfs"] == 3, (
+            f"gold_etfs (no active config) should fall back to operator floor 3, got {result}"
         )
 
-    def test_resolve_min_rows_commodity_etfs_3_strategies_returns_9(self):
-        """commodity_etfs has 3 enabled strategies.
+    def test_resolve_min_rows_commodity_etfs_3_strategies_returns_9(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """commodity_etfs with 3 enabled strategies (isolated config).
 
-        Expected: max(operator_floor=5, dynamic=max(3, 3*3)=9) = 9
-        Dynamic wins here (9 > 5). operator_floor was lowered 20→5 (2026-05-12)
-        to match actual recent production output (6-30 rows).
+        Expected: max(3, 3 * ROWS_PER_STRATEGY_BY_UNIVERSE['commodity_etfs']=3) = 9.
         """
+        monkeypatch.setattr(autoresearch_nightly, "ATLAS_ROOT", tmp_path)
+        _write_config(
+            tmp_path, "commodity_etfs",
+            {"a": {"enabled": True}, "b": {"enabled": True}, "c": {"enabled": True}},
+        )
         result = _resolve_min_rows("commodity_etfs")
         assert result == 9, (
-            f"commodity_etfs with 3 enabled strategies should give threshold=9, got {result}"
+            f"commodity_etfs with 3 enabled strategies should give 9, got {result}"
         )
 
-    def test_resolve_min_rows_sp500_2_strategies_returns_50(self):
-        """sp500 has 2 enabled strategies (momentum_breakout + connors_rsi2).
+    def test_resolve_min_rows_sp500_1_strategy_returns_25(self):
+        """sp500 active config currently has ONE enabled strategy (momentum_breakout).
 
-        Expected: max(operator_floor=50, dynamic=max(3, 2*3)=6) = 50
-        Operator floor dominates — preserves alert sensitivity for a universe
-        that typically produces 100-330 rows per sweep.
+        Expected: max(3, 1 * ROWS_PER_STRATEGY_BY_UNIVERSE['sp500']=25) = 25.
+        This is the #392 fix — the old flat operator floor of 50 produced a false
+        DEGRADED warning every night for a healthy ~38-row single-strategy sweep.
         """
         result = _resolve_min_rows("sp500")
+        assert result == 25, (
+            f"sp500 with 1 enabled strategy should give threshold=25 "
+            f"(allow-list-aware, #392), got {result}"
+        )
+
+    def test_resolve_min_rows_sp500_2_strategies_returns_50(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """sp500 with 2 enabled strategies (isolated config) → 50.
+
+        Expected: max(3, 2 * 25) = 50 — sensitivity to a real collapse is preserved
+        because the floor scales back up as strategies are re-enabled.
+        """
+        monkeypatch.setattr(autoresearch_nightly, "ATLAS_ROOT", tmp_path)
+        _write_config(
+            tmp_path, "sp500",
+            {"momentum_breakout": {"enabled": True}, "connors_rsi2": {"enabled": True}},
+        )
+        result = _resolve_min_rows("sp500")
         assert result == 50, (
-            f"sp500 with 2 enabled strategies should give threshold=50 "
-            f"(operator floor dominates), got {result}"
+            f"sp500 with 2 enabled strategies should scale back to 50, got {result}"
         )
 
 
@@ -159,38 +184,46 @@ class TestResolveMinRowsIsolated:
             for record in caplog.records
         ), f"Expected a WARNING with '_resolve_min_rows' and 'falling back', got: {caplog.records}"
 
-    def test_resolve_min_rows_max_semantics_high_enabled_count(
+    def test_resolve_min_rows_scales_with_high_enabled_count(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        """Dynamic floor wins when enabled count is very high.
+        """Floor scales linearly with the enabled-strategy count (#392).
 
-        Synthesize a universe with 100 enabled strategies and operator_floor=10.
-        max(10, 100*3) = max(10, 300) = 300 — dynamic wins, proving neither
-        floor can weaken the other.
+        Synthesize treasury_etfs with 100 enabled strategies. Expected:
+        max(MIN_ROWS_PER_STRATEGY, 100 * ROWS_PER_STRATEGY_BY_UNIVERSE['treasury_etfs']).
         """
         monkeypatch.setattr(autoresearch_nightly, "ATLAS_ROOT", tmp_path)
-        # Use treasury_etfs (operator_floor=10) but write 100 enabled strategies
         strategies = {f"strat_{i:03d}": {"enabled": True} for i in range(100)}
         _write_config(tmp_path, "treasury_etfs", strategies)
 
         result = _resolve_min_rows("treasury_etfs")
-        expected = 100 * MIN_ROWS_PER_STRATEGY  # 300
+        expected = 100 * ROWS_PER_STRATEGY_BY_UNIVERSE["treasury_etfs"]  # 100*5 = 500
         assert result == expected, (
-            f"100 enabled strategies with operator_floor=10 should return "
-            f"300 (dynamic wins), got {result}"
+            f"100 enabled strategies should scale to {expected}, got {result}"
         )
 
 
 # ─── Regression test: sp500 operator floor must not be weakened ──────────────
 
 
-def test_sp500_operator_floor_not_weakened_by_dynamic():
-    """Regression test: sp500's operator floor must not be silently weakened.
+def test_sp500_threshold_scales_with_allow_list(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Regression test (#392): the sp500 floor tracks the active allow-list.
 
-    Bug fixed 2026-05-12: min(50, 6) returned 6, masking 90% drops.
-    Now max(50, 6) returns 50, preserving sp500 alert sensitivity.
+    1 enabled strategy → 25 (a healthy ~38-row sweep is NOT flagged DEGRADED);
+    2 enabled strategies → 50 (sensitivity to a real collapse is preserved).
+    Pre-#392 this was a flat operator floor of 50, which false-flagged every
+    single-strategy nightly run.
     """
-    assert MIN_ROWS_PER_UNIVERSE["sp500"] == 50
+    monkeypatch.setattr(autoresearch_nightly, "ATLAS_ROOT", tmp_path)
+    _write_config(tmp_path, "sp500", {"momentum_breakout": {"enabled": True}})
+    assert _resolve_min_rows("sp500") == 25
+
+    _write_config(
+        tmp_path, "sp500",
+        {"momentum_breakout": {"enabled": True}, "connors_rsi2": {"enabled": True}},
+    )
     assert _resolve_min_rows("sp500") == 50
 
 
@@ -206,18 +239,17 @@ class TestConstants:
     def test_default_min_rows_is_10(self):
         assert DEFAULT_MIN_ROWS == 10
 
-    def test_sp500_operator_floor_dominates_over_dynamic(self):
-        """For sp500, operator_floor (50) > dynamic (2*3=6), so max returns 50.
+    def test_rows_per_strategy_constants(self):
+        """Allow-list-aware per-strategy expectations are defined (#392)."""
+        assert ROWS_PER_STRATEGY_BY_UNIVERSE["sp500"] == 25
+        assert DEFAULT_ROWS_PER_STRATEGY == 3
 
-        This is the core business invariant for well-calibrated wide universes:
-        the operator floor must dominate the dynamic floor so that a drop from
-        100+ rows to 30 still triggers an alert even with only 2 enabled strategies.
+    def test_sp500_per_strategy_scaling_invariant(self):
+        """Core #392 invariant: the floor scales with the enabled-strategy count.
+
+        A single-strategy sp500 sweep (~38 rows) must NOT trip the floor (25),
+        while two strategies scale it back to 50 to preserve collapse sensitivity.
         """
-        operator_floor = MIN_ROWS_PER_UNIVERSE["sp500"]  # 50
-        dynamic = max(3, 2 * MIN_ROWS_PER_STRATEGY)      # max(3, 6) = 6
-        assert max(operator_floor, dynamic) == operator_floor, (
-            "sp500 operator floor (50) must dominate dynamic floor (6)"
-        )
-        assert max(operator_floor, dynamic) > dynamic, (
-            "max() must return the operator floor, not the dynamic floor, for sp500"
-        )
+        per_strategy = ROWS_PER_STRATEGY_BY_UNIVERSE["sp500"]
+        assert max(MIN_ROWS_PER_STRATEGY, 1 * per_strategy) == 25
+        assert max(MIN_ROWS_PER_STRATEGY, 2 * per_strategy) == 50

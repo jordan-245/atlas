@@ -809,3 +809,22 @@ def _zz_verify_no_state_file_pollution() -> None:
     "/root/atlas/data/reconcile_shadow_alert_state.json",
     label="reconcile_shadow",
 )
+
+# research.models.QUEUE_PATH — prevents any test that calls research.models
+# read/write helpers (read_queue, append_to_queue, claim_experiment, etc.)
+# from touching the production research/queue.json.  Previously, tests had
+# to monkeypatch QUEUE_PATH per-test (see test_research_dashboard.py,
+# test_contradiction_channel.py, test_phase6_dual_write.py); those patches
+# remain harmless safety nets but are no longer required for correctness.
+# Verify fixture asserts /root/atlas/research/queue.json was untouched at
+# session end.
+(
+    _isolate_research_queue_session,
+    _isolate_research_queue,
+    _zz_verify_no_research_queue_pollution,
+) = _make_path_isolation_fixtures(
+    "research.models", "QUEUE_PATH",
+    "research_queue_session", "queue.json",
+    "/root/atlas/research/queue.json",
+    label="research_queue",
+)

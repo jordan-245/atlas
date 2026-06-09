@@ -3,9 +3,10 @@
  *
  * The /api/finance backend (Up Bank sync) doesn't model named saver goals
  * with targets/ETAs, so the dashboard owns these client-side until/if the
- * backend grows a `saver_goals` table. Each saver account (by display name)
- * gets an optional target dollar value; the UI derives % and ETA from
- * `balance / target` plus the user's average monthly net savings.
+ * backend grows a `saver_goals` table. Each saver-type account that the UI
+ * treats as a goal pot (see `_goal-classifier.ts`) can optionally get a
+ * target dollar value; the UI derives % and ETA from `balance / target`
+ * plus the user's average monthly net savings.
  *
  * Shape: `{ [accountName]: { target?: number } }`
  *

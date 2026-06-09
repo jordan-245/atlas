@@ -167,38 +167,105 @@ def upsert_research_best(
 
     params_json = json.dumps(params)
 
+    # Columns are written defensively against the *live* schema so this writer
+    # works against the current research_best layout (composite PK incl.
+    # regime_state + solo/portfolio/oos columns) as well as older schemas used
+    # by temp-DB test fixtures and pre-regime_state backups.  We never assume a
+    # column exists -- a missing column simply drops out of the statement.
+    #   * overwrite_cols  -- always replaced with the supplied value (incl.
+    #                        oos_* which callers explicitly clear by passing
+    #                        None when OOS is not recomputed)
+    #   * preserve_cols   -- COALESCE(new, existing): a re-sweep that does not
+    #                        recompute solo/portfolio Sharpe must not clobber a
+    #                        previously measured value with NULL
+    _overwrite_cols = (
+        "params", "sharpe", "trades", "max_dd_pct",
+        "oos_sharpe", "oos_trades", "oos_cagr", "oos_max_dd",
+    )
+    _preserve_cols = ("solo_sharpe", "portfolio_sharpe")
+    _values = {
+        "params": params_json,
+        "sharpe": sharpe,
+        "trades": trades,
+        "max_dd_pct": max_dd_pct,
+        "solo_sharpe": solo_sharpe,
+        "portfolio_sharpe": portfolio_sharpe,
+        "oos_sharpe": oos_sharpe,
+        "oos_trades": oos_trades,
+        "oos_cagr": oos_cagr,
+        "oos_max_dd": oos_max_dd,
+    }
+
     with _adb.get_db() as db:
-        if regime_state is None:
-            # Cross-regime (NULL) row -- SQLite NULL != NULL in a PK, so
-            # ON CONFLICT won't fire for NULL.  Use DELETE + INSERT instead.
-            db.execute(
-                "DELETE FROM research_best "
-                "WHERE strategy=? AND universe=? AND regime_state IS NULL",
-                (strategy, universe),
-            )
-            db.execute(
-                "INSERT INTO research_best "
-                "(strategy, universe, regime_state, params, sharpe, trades, max_dd_pct, "
-                " solo_sharpe, portfolio_sharpe, metric_type, "
-                " oos_sharpe, oos_trades, oos_cagr, oos_max_dd, updated_at) "
-                "VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, COALESCE(?, 'unknown'), "
-                "        ?, ?, ?, ?, datetime('now'))",
-                (strategy, universe, params_json, sharpe, trades, max_dd_pct,
-                 solo_sharpe, portfolio_sharpe, metric_type,
-                 oos_sharpe, oos_trades, oos_cagr, oos_max_dd),
-            )
+        existing_cols = {
+            row[1] for row in db.execute("PRAGMA table_info(research_best)").fetchall()
+        }
+        has_regime = "regime_state" in existing_cols
+        has_metric_type = "metric_type" in existing_cols
+        has_updated_at = "updated_at" in existing_cols
+
+        # Row-match predicate.  IS NULL handles the cross-regime row correctly
+        # (SQLite treats NULL != NULL, so ON CONFLICT/REPLACE can't target it).
+        if has_regime and regime_state is None:
+            match_clause = "strategy=? AND universe=? AND regime_state IS NULL"
+            match_params: List[Any] = [strategy, universe]
+        elif has_regime:
+            match_clause = "strategy=? AND universe=? AND regime_state=?"
+            match_params = [strategy, universe, regime_state]
         else:
-            # Per-regime row
+            match_clause = "strategy=? AND universe=?"
+            match_params = [strategy, universe]
+
+        # ---- UPDATE first so preserve_cols can COALESCE onto existing values ----
+        set_parts: List[str] = []
+        set_params: List[Any] = []
+        for col in _overwrite_cols:
+            if col in existing_cols:
+                set_parts.append(f"{col}=?")
+                set_params.append(_values[col])
+        for col in _preserve_cols:
+            if col in existing_cols:
+                set_parts.append(f"{col}=COALESCE(?, {col})")
+                set_params.append(_values[col])
+        if has_metric_type:
+            set_parts.append("metric_type=COALESCE(?, metric_type, 'unknown')")
+            set_params.append(metric_type)
+        if has_updated_at:
+            set_parts.append("updated_at=datetime('now')")
+
+        updated = 0
+        if set_parts:
+            cur = db.execute(
+                f"UPDATE research_best SET {', '.join(set_parts)} WHERE {match_clause}",
+                set_params + match_params,
+            )
+            updated = cur.rowcount or 0
+
+        # ---- INSERT a fresh row when nothing matched ----
+        if updated == 0:
+            insert_cols: List[str] = ["strategy", "universe"]
+            insert_ph: List[str] = ["?", "?"]
+            insert_vals: List[Any] = [strategy, universe]
+            if has_regime:
+                insert_cols.append("regime_state")
+                insert_ph.append("?")
+                insert_vals.append(regime_state)
+            for col in _overwrite_cols + _preserve_cols:
+                if col in existing_cols:
+                    insert_cols.append(col)
+                    insert_ph.append("?")
+                    insert_vals.append(_values[col])
+            if has_metric_type:
+                insert_cols.append("metric_type")
+                insert_ph.append("COALESCE(?, 'unknown')")
+                insert_vals.append(metric_type)
+            if has_updated_at:
+                insert_cols.append("updated_at")
+                insert_ph.append("datetime('now')")
             db.execute(
-                "INSERT OR REPLACE INTO research_best "
-                "(strategy, universe, regime_state, params, sharpe, trades, max_dd_pct, "
-                " solo_sharpe, portfolio_sharpe, metric_type, "
-                " oos_sharpe, oos_trades, oos_cagr, oos_max_dd, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 'unknown'), "
-                "        ?, ?, ?, ?, datetime('now'))",
-                (strategy, universe, regime_state, params_json, sharpe, trades, max_dd_pct,
-                 solo_sharpe, portfolio_sharpe, metric_type,
-                 oos_sharpe, oos_trades, oos_cagr, oos_max_dd),
+                f"INSERT INTO research_best ({', '.join(insert_cols)}) "
+                f"VALUES ({', '.join(insert_ph)})",
+                insert_vals,
             )
 
     # Knowledge-layer hook: refresh contradictions for this strategy after the

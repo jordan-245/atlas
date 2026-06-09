@@ -168,7 +168,7 @@ class JobManager:
         # correct.  Re-audit if this comment is stale.
         pi_cmd_parts = [
             "pi", "--print", "--no-session",
-            "--model", "claude-opus-4-7",
+            "--model", "claude-opus-4-8",
             "--system-prompt", "You are Claude Code, Anthropic's official CLI for Claude.",
             "--append-system-prompt",
         ]

@@ -182,7 +182,14 @@ export function ChangeStateModal(props: ChangeStateModalProps) {
   const reasonRef = useRef<HTMLTextAreaElement>(null)
 
   // ── Reset all state whenever the modal opens ───────────────────────────────
-
+  //
+  // The component is always mounted by its parents (UniverseRow, StrategyRow)
+  // and only hidden via `if (!open) return null` below — so we cannot rely on
+  // unmount/remount for state reset.  Setting state inside this effect on the
+  // `open` rising edge is the deliberate reset mechanism and intentionally
+  // triggers a follow-up render.  Restructuring to conditional mounting in
+  // every caller is out of scope.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!open) return
     setSelectedState(computeDefaultState(scope, currentState, initialTargetState))
@@ -197,6 +204,7 @@ export function ChangeStateModal(props: ChangeStateModalProps) {
     const t = setTimeout(() => reasonRef.current?.focus(), 50)
     return () => clearTimeout(t)
   }, [open, scope, currentState, initialTargetState, initialReason])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // ── ESC closes (unless busy) ────────────────────────────────────────────
 

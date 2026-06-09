@@ -222,13 +222,24 @@ def _lookup_strategy(
     universe: str,
     filled_at_date: str,
     db_conn: Any,
-) -> str | None:
+) -> tuple[str | None, str]:
     """Resolve the strategy for a filled paper order.
 
-    Priority order:
+    Returns (strategy, reason) so callers can distinguish:
+      - ``("momentum_breakout", "single_paper")`` — single PAPER row, used directly.
+      - ``("connors_rsi2", "plan_fallback")``    — plan-file fallback succeeded.
+      - ``(None,            "no_paper_no_plan")`` — zero PAPER rows AND no plan entry.
+      - ``(None,            "ambiguous_no_plan")`` — multiple PAPER rows AND no plan entry.
+
+    Priority order (#359 fix):
     1. If exactly one PAPER-state strategy for universe → use it.
-    2. If multiple → fall back to plan file lookup.
-    3. If zero or still unresolvable → return None (caller logs WARNING + skips).
+    2. If multiple PAPER strategies → plan file lookup decides.
+    3. If ZERO PAPER strategies → STILL try plan file lookup before giving up,
+       so universes whose lifecycle rows have not been seeded (e.g.
+       commodity_etfs paper orders attributed by historical plans) can still
+       resolve.  Existing plan files attribute XLE/UNG → connors_rsi2.
+    4. If still unresolvable → return (None, <reason>) so the caller can
+       record a `skipped_unresolved` warning instead of a hard error.
     """
     rows = db_conn.execute(
         "SELECT strategy FROM strategy_lifecycle WHERE state='PAPER' AND universe=?",
@@ -238,29 +249,32 @@ def _lookup_strategy(
     strategies = [r[0] for r in rows]
 
     if len(strategies) == 1:
-        return strategies[0]
+        return strategies[0], "single_paper"
 
-    if len(strategies) == 0:
-        log.warning(
-            "_lookup_strategy: no PAPER strategies found for universe=%s (ticker=%s) — skip",
-            universe, ticker,
-        )
-        return None
-
-    # Multiple PAPER strategies: fall back to plan file
+    # Plan-file fallback for BOTH zero-PAPER and multi-PAPER cases (#359).
     log.debug(
         "_lookup_strategy: %d PAPER strategies for universe=%s ticker=%s, "
-        "falling back to plan file",
+        "consulting plan file fallback",
         len(strategies), universe, ticker,
     )
     strat = _lookup_strategy_from_plans(ticker, universe, filled_at_date)
-    if strat is None:
+    if strat is not None:
+        return strat, "plan_fallback"
+
+    if len(strategies) == 0:
         log.warning(
-            "_lookup_strategy: multiple PAPER strategies %s for %s/%s "
-            "and no plan entry found — cannot attribute, skipping",
-            strategies, ticker, universe,
+            "_lookup_strategy: no PAPER strategies and no plan entry for "
+            "%s/%s (date=%s) — skipping unresolved",
+            ticker, universe, filled_at_date,
         )
-    return strat
+        return None, "no_paper_no_plan"
+
+    log.warning(
+        "_lookup_strategy: multiple PAPER strategies %s for %s/%s "
+        "and no plan entry found — skipping unresolved",
+        strategies, ticker, universe,
+    )
+    return None, "ambiguous_no_plan"
 
 
 # ── Bracket leg parsing ───────────────────────────────────────────────────────
@@ -323,6 +337,7 @@ def _record_newly_filled_paper_trades(
         "paper_trades_inserted": 0,
         "paper_exits_recorded": 0,
         "errors": [],
+        "skipped_unresolved": [],  # #359: non-fatal attribution misses
     }
 
     for order in raw_orders:
@@ -373,10 +388,20 @@ def _record_newly_filled_paper_trades(
                     )
                     continue
 
-                strategy = _lookup_strategy(symbol, universe, filled_at_date, db_conn)
+                strategy, reason = _lookup_strategy(
+                    symbol, universe, filled_at_date, db_conn
+                )
                 if strategy is None:
-                    stats["errors"].append(
-                        f"strategy_ambiguous:{symbol}:{filled_at_date}"
+                    # #359: treat as a non-fatal skip so cron stays green.
+                    # A real attribution miss is operational noise, not an
+                    # incident — we still record it for the dashboard.
+                    stats["skipped_unresolved"].append(
+                        f"{reason}:{symbol}:{filled_at_date}"
+                    )
+                    log.info(
+                        "paper_trade attribution skipped (non-fatal): "
+                        "reason=%s ticker=%s/%s date=%s",
+                        reason, symbol, universe, filled_at_date,
                     )
                     continue
 
@@ -492,6 +517,9 @@ def _write_heartbeat(dry_run: bool, stats: dict) -> None:
         return
     try:
         from db import atlas_db
+        # Heartbeat status only flips to 'warn' on REAL errors. Skipped/
+        # unresolved attributions (#359) are recorded but never escalate to
+        # warn-status — they are routine operational noise.
         atlas_db.record_heartbeat(
             service=_SERVICE_NAME,
             status="ok" if not stats.get("errors") else "warn",
@@ -502,6 +530,7 @@ def _write_heartbeat(dry_run: bool, stats: dict) -> None:
                 "paper_trades_inserted": stats.get("paper_trades_inserted", 0),
                 "paper_exits_recorded":  stats.get("paper_exits_recorded", 0),
                 "errors":                stats.get("errors", []),
+                "skipped_unresolved":    stats.get("skipped_unresolved", []),
             },
         )
     except Exception as exc:
@@ -565,6 +594,7 @@ def sync_paper_orders(
         "paper_trades_inserted": 0,
         "paper_exits_recorded": 0,
         "errors": [],
+        "skipped_unresolved": [],  # #359: non-fatal attribution misses
     }
 
     # ── Construct paper broker via routing policy ────────────────────────────
@@ -698,6 +728,9 @@ def sync_paper_orders(
                 stats["paper_trades_inserted"] += fill_stats["paper_trades_inserted"]
                 stats["paper_exits_recorded"]  += fill_stats["paper_exits_recorded"]
                 stats["errors"].extend(fill_stats["errors"])
+                stats["skipped_unresolved"].extend(
+                    fill_stats.get("skipped_unresolved", [])
+                )
 
     except Exception as exc:
         log.error("sync_paper_orders failed: %s", exc, exc_info=True)
@@ -711,10 +744,10 @@ def sync_paper_orders(
     _write_heartbeat(dry_run, stats)
     log.info(
         "sync_paper_orders complete: fetched=%d upserted=%d filled=%d "
-        "paper_trades_inserted=%d paper_exits=%d errors=%d",
+        "paper_trades_inserted=%d paper_exits=%d errors=%d skipped_unresolved=%d",
         stats["fetched"], stats["upserted"], stats["filled_count"],
         stats["paper_trades_inserted"], stats["paper_exits_recorded"],
-        len(stats["errors"]),
+        len(stats["errors"]), len(stats.get("skipped_unresolved", [])),
     )
     return stats
 
@@ -751,6 +784,13 @@ def main(argv: list[str] | None = None) -> int:
         dry_run=args.dry_run,
         backfill_ids=backfill_ids,
     )
+
+    # #359: skipped_unresolved is routine and must NOT exit 1.
+    if stats.get("skipped_unresolved"):
+        log.info(
+            "Completed with %d skipped_unresolved entries (non-fatal): %s",
+            len(stats["skipped_unresolved"]), stats["skipped_unresolved"],
+        )
 
     if stats.get("errors"):
         log.warning(

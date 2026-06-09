@@ -3,6 +3,8 @@
 *Authored by user directive on 2026-05-12. See git tag `pre-cleanup-2026-05-12`.*
 *Tier 1a executed: c40b2095e9b11b1e8226c7342ba36332358defbb. Subsequent tiers gated on dwell + verification.*
 
+**2026-05-29 status:** the 14-day dwell period elapsed with no restore incidents. GitNexus/text-reference audit found no active runtime importers, so `_attic/2026-05/` was permanently removed except for its marker README. Recovery is now via git history/tag, not `git mv` from the working tree.
+
 ## Principles
 
 - **Delete by safety class, not by line count.**

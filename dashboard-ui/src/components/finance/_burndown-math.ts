@@ -236,7 +236,8 @@ export function buildHistoricalRows(
 
 /**
  * Average monthly net savings from monthly_comparison (last N months).
- * Returns 0 if no data. Used by WhatIfPanel to project saver fill ETAs.
+ * Returns 0 if no data. Used by SaverPots (for goal ETAs) and WhatIfPanel
+ * (as the baseline savings pace in the cut-and-save projection).
  */
 export function avgMonthlyNet(comparison: MonthlyComparison[] | undefined, lookback = 6): number {
   if (!comparison || comparison.length === 0) return 0

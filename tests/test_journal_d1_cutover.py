@@ -7,12 +7,9 @@ from __future__ import annotations
 
 import importlib.util
 import os
-import subprocess
 import sys
 import types
 from pathlib import Path
-
-import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -312,22 +309,3 @@ def test_idempotent_replay_no_double_write(tmp_path, monkeypatch):
     )
 
 
-# ---------------------------------------------------------------------------
-# Test 7 — Rollback script passes bash -n syntax check
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.skip(reason="scripts/dual_write_d1_rollback.sh moved to _attic/2026-05/ on 2026-05-12 per docs/cleanup-plan-2026-05.md")
-def test_rollback_script_bash_syntax_valid():
-    """scripts/dual_write_d1_rollback.sh must pass bash -n (syntax only, no exec)."""
-    rollback = ATLAS_ROOT / "scripts" / "dual_write_d1_rollback.sh"
-    assert rollback.exists(), f"Rollback script not found at {rollback}"
-
-    result = subprocess.run(
-        ["bash", "-n", str(rollback)],
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, (
-        f"bash -n failed on rollback script:\nstdout: {result.stdout}\nstderr: {result.stderr}"
-    )

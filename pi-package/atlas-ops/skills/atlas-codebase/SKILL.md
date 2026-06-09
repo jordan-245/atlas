@@ -10,6 +10,31 @@ Complete architecture map for the Atlas multi-market swing-trading system.
 
 ---
 
+## 🧪 Research Infrastructure (2026-06) — runbook: `docs/RESEARCH_INFRASTRUCTURE.md`
+
+The rail-equipped validation pipeline + survivorship-free data. **Use this for any research/validation
+(not plain sp500 backtests — those are survivorship-biased mirages).**
+
+| Path | What |
+|---|---|
+| `scripts/run_strategy_battery.py` | Rail-equipped cross-OOS battery. `run_battery(a)` is callable (CLI + loop). Flags: `--market shm --select default --holdout-eval`. |
+| `research/cross_oos/holdout.py` | Rail 1 write-once holdout (`evaluate_holdout`, `holdout_gate`, single-use ledger `research/holdout_ledger.jsonl`). Config `config/holdout.json`. |
+| `research/cross_oos/registry.py` + `adapter.promote_dsr()` | Rail 2 FDR-aware promote bar + `research/hypothesis_registry.jsonl`. |
+| `research/cross_oos/deployment.py` | Rail 3 deployment-sanity (`deployment_sanity`, `deployment_smoke`). |
+| `scripts/run_search.py` | Multi-strategy search orchestrator (`--market shm`). |
+| `scripts/sharadar_download.py` | Bulk-download Sharadar SEP/TICKERS/ACTIONS (Web API export; key `NASDAQ_DATA_LINK_API_KEY`). |
+| `scripts/ingest_sharadar_midsmall.py` | Build the `shm` market from SEP.zip (two-pass, top-N liquid, delisted incl.). |
+| `data/cache/shm/` | **Survivorship-correct mid/small-cap market (research default)**, 609 names, 235 in-window delisted. |
+| `data/cache/sp500/` | LIVE current-tradable universe only (biased for research). |
+| `data/cache/sp500hist/` | yfinance partial-correction large-cap (~32% delisted). |
+| `config/research_default.json` | Points research at `shm`. |
+| `data/universes/`, `data/sharadar/` | Universe defs + Sharadar bulk zips. |
+| `research/strategies/cross_sectional_{momentum,factor,lowvol_reversal}.py` | Cross-sectional FACTOR books (the shape that deploys). MUST tag `features["sector"]`. |
+| Specs | `research/INTEGRITY_RAILS_SPEC.md`, `AUTOMATED_LOOP_SPEC.md`, `UNIVERSE_EXPANSION_SPEC.md`, `DATA_VENDOR_COMPARISON.md` |
+| Trial state | `atlas_state research-trial/survivorship-search-2026-06` (8-week board trial → 2026-08-01) |
+
+---
+
 ## Directory Structure
 
 ```

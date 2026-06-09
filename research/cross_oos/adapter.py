@@ -68,6 +68,22 @@ CORE_GATE_KEYS = (
 # Only a PROMOTE pass maps to summary.overall_verdict == "PASS".
 SCREEN_DSR = 0.70
 PROMOTE_DSR = 0.90  # == ATLAS_DEFAULT_GATES['dsr'] threshold
+PROMOTE_DSR_CAP = 0.99  # FDR-aware bar never exceeds this (some idea must be promotable)
+
+
+def promote_dsr(n_families: int, base: float = PROMOTE_DSR, cap: float = PROMOTE_DSR_CAP) -> float:
+    """Rail 2 — FDR-aware PROMOTE bar that escalates with the cumulative count of DISTINCT
+    hypothesis families tested (cross-family multiple testing). Pre-registered Sidak-flavored form:
+
+        promote_dsr = min(cap, 1 - (1 - base) / sqrt(max(1, n_families)))
+
+    n=1 -> 0.90 (today's behaviour, regression-safe); n=4 -> 0.95; n=9 -> ~0.967; n>=100 -> cap 0.99.
+    The within-family config search is already handled by the effective-N DSR (search_history.py);
+    this corrects the ACROSS-family burden at the promotion threshold only (no double-counting).
+    """
+    import math
+    n = max(1, int(n_families))
+    return float(min(cap, 1.0 - (1.0 - base) / math.sqrt(n)))
 
 
 # ---------------------------------------------------------------------------
@@ -410,5 +426,5 @@ __all__ = [
     "daily_returns", "cpcv_path_sharpes", "build_pbo_matrix",
     "group_daily_pnl", "top_group_frac", "leave_one_ticker_group_out",
     "regime_attribution", "assemble_bundle", "evaluate", "evaluate_tiers",
-    "SCREEN_DSR", "PROMOTE_DSR",
+    "SCREEN_DSR", "PROMOTE_DSR", "PROMOTE_DSR_CAP", "promote_dsr",
 ]

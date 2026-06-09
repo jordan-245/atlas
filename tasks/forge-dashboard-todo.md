@@ -24,6 +24,11 @@
 - [ ] remove ResearchTab references
 
 ## Verify
-- [ ] npm run build passes
-- [ ] endpoint returns valid JSON
-- [ ] restart dashboard, confirm tab renders all 4
+- [x] npm run build passes (ForgeTab chunk 23.85 kB)
+- [x] endpoint returns valid JSON (/api/forge/state, authed 200)
+- [x] restart dashboard, confirm tab renders all 4 (Playwright shots, 0 console errors)
+
+## Review
+All 4 variants built behind a switcher in the new Forge tab (replaces Research). Backend
+/api/forge/state aggregates live loop state. Committed surgically (29fe93ea) — pre-existing
+Midas/finance staged batch left untouched. AWAITING operator pick → then delete unused 3 + switcher.

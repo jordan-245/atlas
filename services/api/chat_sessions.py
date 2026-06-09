@@ -123,7 +123,7 @@ async def chat_create_session_endpoint(
         logger.debug("Could not parse request body: %s", e)
         body = {}
     name = body.get("name")
-    model = body.get("model", "claude-opus-4-7")
+    model = body.get("model", "claude-opus-4-8")
     session = _chat_create_session(name=name, model=model)
     return JSONResponse(session)
 

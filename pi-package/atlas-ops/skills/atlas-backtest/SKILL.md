@@ -10,6 +10,39 @@ Strategy testing, result interpretation, and knowledge recording workflows.
 
 ---
 
+## ⚡ Rail-Equipped Validation (2026-06 — THE standard). Full runbook: `docs/RESEARCH_INFRASTRUCTURE.md`
+
+A backtest is only trustworthy through the **rail-equipped cross-OOS battery on the survivorship-
+correct market**. Plain backtests on `sp500` are SURVIVORSHIP-BIASED MIRAGES (momentum gave CPCV
++1.04 on biased sp500, −0.06 on clean data).
+
+```bash
+python3 scripts/run_strategy_battery.py --strategy <name> --market shm \
+  --grid-size 12 --max-positions 35 --select default --holdout-eval \
+  --output-path backtest/results/search/battery_<name>_shm.json
+# multi-strategy sweep: scripts/run_search.py --market shm
+```
+
+- **`--market shm`** = Sharadar survivorship-correct mid/small-cap (research default). NOT `sp500`
+  (that's the LIVE/current-tradable universe only — biased for research).
+- **3 rails** (all in `run_battery`): write-once HOLDOUT (`--holdout-eval`, single-use), FDR-aware
+  promote bar (`research/hypothesis_registry.jsonl`), deployment-sanity auto-FAIL. Code:
+  `research/cross_oos/{holdout,registry,deployment}.py`. Spec: `research/INTEGRITY_RAILS_SPEC.md`.
+- **Verdict semantics:** trust `artifact.verdict` (final). `cross_oos.tier_raw` is the pre-holdout
+  tier; a raw PROMOTE that FAILS the holdout is downgraded+burned. **A tier is meaningless without
+  the holdout** — a candidate cleared DSR 0.986 + the FDR bar + in-search OOS yet failed the holdout
+  (−1.21). Never re-peek the holdout (single-use ledger).
+- **New strategies MUST tag `features["sector"]`** (else `max_sector_concentration` collapses the book
+  to ~2 positions → deployment-FAIL). Cross-sectional FACTOR books deploy; single-name technicals don't.
+  Templates: `research/strategies/cross_sectional_momentum.py` / `cross_sectional_factor.py`.
+- **Refresh data:** `scripts/sharadar_download.py SEP TICKERS ACTIONS` + `scripts/ingest_sharadar_midsmall.py`
+  (key `NASDAQ_DATA_LINK_API_KEY`). Markets need `config/active/<m>.json` + `sector_map_<m>.json`.
+
+The older sections below (plain `scripts/cli.py backtest`, sp500 ingest) remain for LIVE/ops use but
+are NOT survivorship-correct — use the rail-equipped battery for any research/validation decision.
+
+---
+
 ## Pre-Flight Checklist
 
 Before running ANY backtest:

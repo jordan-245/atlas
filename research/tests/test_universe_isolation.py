@@ -118,6 +118,44 @@ class TestFilterEnabledStrategiesRespectsUniverse:
         assert "unknown_strategy" in result, "Missing strategy should default to enabled"
         assert "known_strategy" not in result
 
+    def test_missing_active_config_returns_empty_fail_closed(self):
+        """#372: a missing active config (retired/disabled universe) must FAIL CLOSED
+        — return an empty list so no workers spawn and the LLM loop is skipped.
+
+        Prior fail-open behaviour caused commodity_etfs sweeps to launch with the
+        global DEFAULT_STRATEGIES against a sp500 fallback, which then triggered
+        ResearchSession market mismatch errors in the LLM loop.
+        """
+        def _raise_missing(market_or_universe):
+            raise FileNotFoundError(
+                f"Config file not found: config/active/{market_or_universe}.json"
+            )
+
+        with patch("utils.config.get_active_config", side_effect=_raise_missing):
+            result = _filter_enabled_strategies(
+                ["trend_following", "mean_reversion", "momentum_breakout"],
+                "commodity_etfs",
+            )
+        assert result == [], (
+            f"Missing active config must fail CLOSED (empty list); got {result}"
+        )
+
+    def test_transient_config_error_remains_fail_open(self):
+        """#372: non-FileNotFoundError exceptions (corrupt JSON, override-layer
+        glitches) keep the legacy fail-open behaviour so a transient hiccup
+        does not silence the entire sweep.
+        """
+        def _raise_transient(market_or_universe):
+            raise ValueError("JSON decode error in override layer")
+
+        with patch("utils.config.get_active_config", side_effect=_raise_transient):
+            result = _filter_enabled_strategies(
+                ["trend_following", "mean_reversion"], "sp500"
+            )
+        assert set(result) == {"trend_following", "mean_reversion"}, (
+            f"Transient config error must fail OPEN (all strategies); got {result}"
+        )
+
 
 # ─── Test 2: run_nightly coerces market to universe ──────────────────────────
 

@@ -742,36 +742,50 @@ class TradePlanGenerator:
         # b. Get active universes from the classification.
         active_universes: list = regime.active_universes
 
-        # Filter passive universes (#300): skip universes where trading.live_enabled
-        # is False so their signals never propagate into the calling market's plan
-        # file.  Downstream consumers (execute_approved.py) already filter via
-        # BrokerRoutingPolicy.should_skip(), but filtering here avoids loading
-        # universe data and generating signals entirely — saving LLM tokens and
-        # eliminating noise in plan_<market>_*.json files.
-        # Fails open (keeps universe) if its config cannot be loaded.
+        # Filter inactive universes (#300/#374): only universes with an active
+        # config AND trading.mode="live" AND trading.live_enabled=true may
+        # generate entries for this market's plan file.  Downstream consumers
+        # (execute_approved.py) still enforce routing policy, but filtering here
+        # prevents passive/archived markets from leaking PAPER/dogfood entries
+        # such as XLE/UNG into plan_sp500_*.json.  Missing config is fail-closed:
+        # if a universe has been archived/deleted, it must not be loaded.
         try:
             from utils.config import get_active_config as _gac  # local import — avoid circular
             _live_universes: list = []
+            _primary_market = self.config.get("market", "")
             for _u in active_universes:
                 try:
-                    _ucfg = _gac(_u)
-                    if _ucfg.get("trading", {}).get("live_enabled", False):
+                    # The calling market's config is already loaded; using it
+                    # avoids a redundant disk read and keeps unit tests that use
+                    # minimal config dicts backward-compatible.
+                    _ucfg = self.config if _u == _primary_market else _gac(_u)
+                    _trading = _ucfg.get("trading", {}) or {}
+                    _mode = _trading.get("mode", "live")
+                    _live_enabled = bool(_trading.get("live_enabled", _mode == "live"))
+                    if _mode == "live" and _live_enabled:
                         _live_universes.append(_u)
                     else:
                         logger.info(
-                            "plan: skipping passive universe %s in regime-aware plan "
-                            "— trading.live_enabled=false (#300)",
-                            _u,
+                            "plan: skipping inactive universe %s in regime-aware plan "
+                            "— trading.mode=%s live_enabled=%s (#374)",
+                            _u, _mode, _live_enabled,
                         )
-                except Exception as _exc:
-                    logger.debug(
-                        "plan: config for universe %s unavailable (fail-open): %s",
+                except FileNotFoundError as _exc:
+                    logger.info(
+                        "plan: skipping universe %s in regime-aware plan — active "
+                        "config missing/archived (#374): %s",
                         _u, _exc,
                     )
-                    _live_universes.append(_u)  # fail-open: include if config missing
+                except Exception as _exc:
+                    logger.warning(
+                        "plan: skipping universe %s in regime-aware plan — config "
+                        "unavailable (fail-closed, #374): %s",
+                        _u, _exc,
+                    )
             active_universes = _live_universes
         except Exception as _exc:
-            logger.warning("Passive-universe filter failed (fail-open): %s", _exc)
+            logger.warning("Universe active-config filter failed (fail-closed): %s", _exc)
+            active_universes = []
 
         # c. Load data for each active universe.
         multi_data: dict = build_multi_universe(active_universes)

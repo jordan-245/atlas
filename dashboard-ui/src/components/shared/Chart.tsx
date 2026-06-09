@@ -46,6 +46,13 @@ ensureChartRegistered()
 // 'area' is line+fill, 'sparkline' is line with everything off.
 export type ChartKind = 'line' | 'area' | 'bar' | 'doughnut' | 'sparkline'
 
+// After the kind->chart.js mapping below, every chart we render is one of
+// these three underlying Chart.js types.  Typing options against this narrow
+// union (rather than `keyof ChartTypeRegistry`) matches what callers actually
+// build and what `defaultChartOptions()` returns -- avoids contravariant
+// function-parameter mismatches on tooltip callbacks etc.
+type SupportedChartType = 'line' | 'bar' | 'doughnut'
+
 function chartJsType(kind: ChartKind): ChartType {
   if (kind === 'area' || kind === 'sparkline') return 'line'
   return kind
@@ -54,7 +61,7 @@ function chartJsType(kind: ChartKind): ChartType {
 interface ChartProps<K extends ChartKind = ChartKind> {
   kind: K
   data: ChartData<keyof ChartTypeRegistry>
-  options?: ChartOptions<keyof ChartTypeRegistry>
+  options?: ChartOptions<SupportedChartType>
   /** Pixel height of the canvas wrapper.  Width is responsive. */
   height?: number | string
   /** Optional className for the wrapper div. */
@@ -144,7 +151,7 @@ function normaliseDatasets(kind: ChartKind, data: ChartData<keyof ChartTypeRegis
 }
 
 /** Generate the per-kind extra options that get folded over the global defaults. */
-function kindOverrides(kind: ChartKind): ChartOptions<keyof ChartTypeRegistry> {
+function kindOverrides(kind: ChartKind): ChartOptions<SupportedChartType> {
   if (kind === 'sparkline') {
     return {
       maintainAspectRatio: false,
@@ -160,7 +167,7 @@ function kindOverrides(kind: ChartKind): ChartOptions<keyof ChartTypeRegistry> {
         point: { radius: 0, hoverRadius: 3 },
         line: { borderWidth: 1.5 },
       },
-    } as ChartOptions<keyof ChartTypeRegistry>
+    } as ChartOptions<SupportedChartType>
   }
 
   if (kind === 'doughnut') {
@@ -170,7 +177,7 @@ function kindOverrides(kind: ChartKind): ChartOptions<keyof ChartTypeRegistry> {
         legend: { display: true, position: 'right' },
       },
       scales: {},
-    } as unknown as ChartOptions<keyof ChartTypeRegistry>
+    } as unknown as ChartOptions<SupportedChartType>
   }
 
   if (kind === 'bar') {
@@ -179,10 +186,10 @@ function kindOverrides(kind: ChartKind): ChartOptions<keyof ChartTypeRegistry> {
         x: { grid: { display: false } },
         y: { beginAtZero: true },
       },
-    } as ChartOptions<keyof ChartTypeRegistry>
+    } as ChartOptions<SupportedChartType>
   }
 
-  return {} as ChartOptions<keyof ChartTypeRegistry>
+  return {} as ChartOptions<SupportedChartType>
 }
 
 export function Chart<K extends ChartKind = ChartKind>({
@@ -198,7 +205,7 @@ export function Chart<K extends ChartKind = ChartKind>({
 
   // Compose options once per render -- defaults < kind-specific < caller.
   const mergedOptions = useMemo(() => {
-    const base = defaultChartOptions() as ChartOptions<keyof ChartTypeRegistry>
+    const base = defaultChartOptions()
     const k = kindOverrides(kind)
     const stage1 = mergeOptions(base, k)
     const stage2 = mergeOptions(stage1, options ?? {})
@@ -206,7 +213,7 @@ export function Chart<K extends ChartKind = ChartKind>({
       stage2.scales = {
         x: { display: false },
         y: { display: false },
-      } as ChartOptions<keyof ChartTypeRegistry>['scales']
+      } as ChartOptions<SupportedChartType>['scales']
     }
     return stage2
   }, [kind, options, bare])

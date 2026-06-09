@@ -22,16 +22,24 @@ __all__ = [
 
 
 def _validate_plan_date(date: str) -> None:
-    """Raise ValueError if plan date is suspiciously far from today (>30d or year mismatch)."""
+    """Raise ValueError if plan date is suspiciously far from today (>30d or year mismatch).
+
+    Only well-formed ISO-8601 date or datetime strings are validated. The guard
+    exists to stop hardcoded *ISO* test dates (root cause: the '2024-03-01'
+    fixture) leaking into the prod DB; production callers always emit a clean
+    '%Y-%m-%d' string. A genuinely malformed string (e.g. '2026-04-08-test') is
+    never a real plan date, so it is skipped silently rather than validated via
+    a fragile first-10-chars prefix slice that mis-fires on suffixed junk.
+    """
     if not date:
         return
-    import logging as _plan_log
-    from datetime import date as _date
-    _log = _plan_log.getLogger(__name__)
+    from datetime import date as _date, datetime as _datetime
     try:
-        plan_d = _date.fromisoformat(date[:10])
+        # Full-string ISO parse: accepts 'YYYY-MM-DD' and 'YYYY-MM-DDTHH:MM:SS';
+        # rejects junk like '2026-04-08-test' (no silent prefix matching).
+        plan_d = _datetime.fromisoformat(date).date()
     except ValueError:
-        return  # Non-standard date string — skip silently
+        return  # Non-ISO date string — skip silently
     today = _date.today()
     delta_days = abs((plan_d - today).days)
     if delta_days > 30 or plan_d.year != today.year:

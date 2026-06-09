@@ -2,11 +2,17 @@
  * WhatIfPanel.tsx -- The "what-if" carrot panel from Variant B4.
  *
  * Premise: the user tends to overspend. Show them, with a slider, how much
- * sooner their largest saver fills if they cut $X/month from spending.
+ * sooner their largest goal saver fills if they cut $X/month from spending.
  * The narrative is the headline; a small comparison bar visualises it.
  *
+ * "Goal saver" here means a long-term goal account (Travel, Emergency,
+ * Savings, Invest, House deposit, ...). Fortnight budget buckets (Rent,
+ * Food, Phone, Fuel, Gym, AI, ...) live under the same Up Bank `saver`
+ * type but are filtered out via `isGoalAccount` from `_goal-classifier.ts`
+ * so they never appear in this panel.
+ *
  * Reads:
- *   - accounts[]: to find the largest saver
+ *   - accounts[]: to find the largest goal saver
  *   - avgMonthlyNet:  baseline savings pace
  *   - monthlyComparison: passed through but currently only used for the
  *     "based on last 6 months" caption. (No comparison sparkline yet --
@@ -19,6 +25,7 @@ import { useMemo, useState } from 'react'
 import type { FinanceAccount, MonthlyComparison } from '../../api/types'
 import { useSaverTargets } from '../../hooks/useSaverTargets'
 import { fmtCcyShort } from './_burndown-math'
+import { isGoalAccount } from './_goal-classifier'
 
 interface WhatIfPanelProps {
   accounts: FinanceAccount[]
@@ -43,16 +50,23 @@ interface LargestSaver {
 }
 
 /**
- * Pick the saver-type account with the largest balance. Returns the looked-up
- * client-side target alongside. If no saver exists, returns null.
+ * Pick the goal-type saver account with the largest balance. Returns the
+ * looked-up client-side target alongside. Budget buckets are filtered out
+ * via `isGoalAccount`; returns null if no goal saver exists.
  */
 function pickLargestSaver(
   accounts: FinanceAccount[],
   targetsMap: Record<string, { target?: number }>,
 ): LargestSaver | null {
   const savers = accounts.filter(
-    (a): a is FinanceAccount & { name: string; balance: number } =>
-      a.type === 'saver' && typeof a.balance === 'number' && typeof a.name === 'string',
+    (a): a is FinanceAccount & { name: string; balance: number } => {
+      if (a.type !== 'saver') return false
+      if (typeof a.balance !== 'number' || typeof a.name !== 'string') return false
+      const stored = targetsMap[a.name]?.target
+      const hasStoredTarget =
+        typeof stored === 'number' && Number.isFinite(stored) && stored > 0
+      return isGoalAccount(a.name, hasStoredTarget)
+    },
   )
   if (savers.length === 0) return null
   const largest = savers.reduce((a, b) => (b.balance > a.balance ? b : a))
@@ -265,7 +279,7 @@ export function WhatIfPanel({
           </>
         ) : (
           <span className="text-[var(--color-text-muted)]">
-            Set a goal on one of your savers to see how much sooner you&rsquo;d hit it.
+            Set a goal on one of your goal accounts to see how much sooner you&rsquo;d hit it.
           </span>
         )}
       </div>

@@ -9,7 +9,14 @@
  *   <Skeleton.Text lines={3} />               — multi-line text block
  *   <Skeleton.Card />                         — card-shaped placeholder (h-32)
  *   <Skeleton.Chart />                        — chart placeholder (h-[280px])
+ *
+ * NB: react-refresh/only-export-components disabled file-wide because the
+ * sub-component variants are attached via Object.assign rather than exported
+ * individually.  Splitting them across files would break the `Skeleton.X`
+ * namespace API used by ~10 callers.  Fast Refresh edge-case only — runtime
+ * behaviour is unaffected.
  */
+/* eslint-disable react-refresh/only-export-components */
 
 // ── Base ─────────────────────────────────────────────────────────────────
 

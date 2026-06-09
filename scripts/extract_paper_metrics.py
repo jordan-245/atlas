@@ -11,6 +11,7 @@ Run:
     python3 scripts/extract_paper_metrics.py --apply --limit 5
     python3 scripts/extract_paper_metrics.py --apply --claim-id clm-...    # single claim
     python3 scripts/extract_paper_metrics.py --apply --include-no-pdf      # also try reference-only sources (no-op until vision pass)
+    python3 scripts/extract_paper_metrics.py --apply --include-low-confidence  # retry claims whose prior phase1.5 attempt failed (#395)
 
 Per-claim outcomes are appended to logs/extract_paper_metrics.log.  A JSON
 summary is printed to stdout.
@@ -69,6 +70,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--include-no-pdf", action="store_true",
                         help="Include claims whose source has no local PDF "
                              "(currently they all skip with reason=no_pdf)")
+    parser.add_argument("--include-low-confidence", action="store_true",
+                        help="Retry claims whose prior Phase 1.5 attempt failed "
+                             "(notes prefixed 'phase1.5:' + confidence='low'). "
+                             "Excluded by default so the cron never retries the "
+                             "same not_found claim forever (#395).")
     parser.add_argument("--timeout", type=int, default=600,
                         help="Per-call pi timeout in seconds (default: 600)")
     parser.add_argument("--verbose", action="store_true")
@@ -85,6 +91,7 @@ def main(argv: list[str] | None = None) -> int:
     log.info("  limit:          %d", args.limit)
     log.info("  claim_id:       %s", args.claim_id or "<batch>")
     log.info("  include_no_pdf: %s", args.include_no_pdf)
+    log.info("  include_low_confidence: %s", args.include_low_confidence)
 
     # ── Dry-run: just list candidates ────────────────────────────────────────
     if not args.apply:
@@ -103,6 +110,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             candidates = list_shell_claims(
                 require_local_pdf=not args.include_no_pdf,
+                include_low_confidence=args.include_low_confidence,
                 limit=args.limit,
             )
             summary = {
@@ -157,6 +165,7 @@ def main(argv: list[str] | None = None) -> int:
             atlas_root=_ATLAS_ROOT,
             limit=args.limit,
             require_local_pdf=not args.include_no_pdf,
+            include_low_confidence=args.include_low_confidence,
             timeout=args.timeout,
         )
 

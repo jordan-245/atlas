@@ -470,10 +470,28 @@ def get_next_experiments(max_count: int = 5) -> List[QueueEntry]:
 
 
 def queue_discovery_batch(max_count: int = 5) -> int:
-    """Generate and queue up to max_count experiments. Returns count queued."""
+    """Generate and queue up to max_count experiments. Returns count queued.
+
+    Queue-hygiene gate: a NEW strategy must pass a deployment-sanity SMOKE (deploys as designed)
+    before it earns a queue slot, so the queue is not flooded with degenerate / non-deploying
+    strategies. (Rail 3 also auto-FAILs these at screen time; this just avoids wasting a full
+    battery run.) Fail-open: a smoke error never blocks queueing.
+    """
     experiments = get_next_experiments(max_count)
     queued = 0
     for entry in experiments:
+        strat = getattr(entry, "strategy_name", None)
+        if getattr(entry, "category", None) == "new_strategy" and strat:
+            try:
+                from research.cross_oos.deployment import deployment_smoke
+                sm = deployment_smoke(strat, getattr(entry, "market", "sp500"))
+                if sm.get("ok") is False:
+                    logger.info("Skip queue (deployment smoke FAIL) %s: peak=%s trades=%s reasons=%s",
+                                strat, sm.get("peak_concurrent"), sm.get("n_trades"),
+                                sm.get("forced_fail_reasons"))
+                    continue
+            except Exception as e:
+                logger.warning("deployment smoke errored for %s (queueing anyway): %s", strat, e)
         try:
             append_to_queue(entry, skip_validation=True)
             queued += 1

@@ -121,8 +121,43 @@ def _dry_run_result(entry: dict) -> dict:
     }
 
 
+def _run_battery_screen(entry: dict) -> dict:
+    """Rail-equipped screening for NEW strategies via run_strategy_battery.run_battery so Rails 1/2/3
+    (holdout quarantine, deployment-sanity auto-FAIL, FDR-aware promote bar) ALL apply. A PROMOTE
+    candidate additionally hits the write-once holdout gate (holdout_eval=True, single-use)."""
+    from types import SimpleNamespace
+    from scripts.run_strategy_battery import run_battery
+    strat = entry['strategy_name']
+    market = entry['market']
+    out_path = PROJECT / 'backtest' / 'results' / f"battery_{strat}_{entry['id']}.json"
+    a = SimpleNamespace(
+        strategy=strat, market=market,
+        grid_size=int(entry.get('grid_size', 12)), max_positions=int(entry.get('max_positions', 35)),
+        pin="", pin_kv="", select="default", workers=None, nice=10,
+        output_path=str(out_path), no_holdout_quarantine=False, holdout_eval=True,
+    )
+    out = run_battery(a)
+    if out is None:
+        return {"error": "battery produced no configs", "total_trades": 0, "method": "cross_oos_battery_railed"}
+    co = out.get("cross_oos", {}) or {}
+    b = co.get("bundle", {}) or {}
+    dep = out.get("deployment", {}) or {}
+    mt = out.get("multiple_testing", {}) or {}
+    return {
+        "verdict": out.get("verdict"), "tier": co.get("tier"), "tier_raw": co.get("tier_raw"),
+        "sharpe": b.get("median_cpcv_sharpe"), "dsr": b.get("dsr"), "pbo": b.get("pbo"),
+        "total_trades": dep.get("n_trades", 0), "deployment_passed": dep.get("passed"),
+        "n_families": mt.get("n_families"), "promote_dsr_used": mt.get("promote_dsr_used"),
+        "holdout": out.get("holdout"), "battery_artifact": str(out_path),
+        "method": "cross_oos_battery_railed",
+    }
+
+
 def _run_single_strategy(entry: dict) -> dict:
-    """Run a single strategy evaluation."""
+    """Run a single strategy evaluation. NEW strategies route through the rail-equipped battery;
+    dormant/other solo checks keep the lighter evaluator."""
+    if entry.get('category') == 'new_strategy':
+        return _run_battery_screen(entry)
     from scripts.strategy_evaluator import evaluate_strategy
     return evaluate_strategy(
         strategy_name=entry['strategy_name'],

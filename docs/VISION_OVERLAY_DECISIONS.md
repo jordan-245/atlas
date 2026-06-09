@@ -23,6 +23,6 @@ Vision and text diverge materially: text says "broadly bullish" while vision sco
 - `overlay_vision.enabled` defaults to `false` in `config/active/sp500.json` — zero production impact
 - Vision branch is lazy-imported; no overhead when flag is off
 - Circuit breaker (`utils.claude_circuit_breaker`) also guards vision path
-- Model: `claude-opus-4-7` (required for image attachment support)
+- Model: `claude-opus-4-8` (required for image attachment support)
 - Chart render pipeline: `overlay.sources.chart_renders` (mplfinance, daily 1Y + hourly 1W)
 - All 15 integration tests pass (`tests/overlay/test_vision_integration.py`)

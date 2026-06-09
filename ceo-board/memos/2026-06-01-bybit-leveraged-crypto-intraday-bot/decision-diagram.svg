@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="470" viewBox="0 0 980 470">
+  <style>
+    .box{fill:#f7f4ee;stroke:#3d352e;stroke-width:2;rx:12;ry:12}
+    .gate{fill:#fff7d6;stroke:#8a6d00;stroke-width:2;rx:12;ry:12}
+    .ok{fill:#e8f5e9;stroke:#1b5e20;stroke-width:2;rx:12;ry:12}
+    .stop{fill:#ffebee;stroke:#b71c1c;stroke-width:2;rx:12;ry:12}
+    text{font-family:Arial, sans-serif;fill:#24201c;font-size:15px}
+    .title{font-size:22px;font-weight:700}
+    .small{font-size:12px}
+    .arrow{stroke:#3d352e;stroke-width:2;marker-end:url(#arrow)}
+  </style>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#3d352e"/></marker></defs>
+  <text x="35" y="35" class="title">Bybit Leveraged Crypto Bot — Conditional Research-Only Decision</text>
+  <rect x="40" y="65" width="230" height="82" class="stop"/>
+  <text x="60" y="94">Live leveraged bot now</text>
+  <text x="60" y="118" class="small">REJECTED: no live keys/capital/leverage</text>
+  <rect x="335" y="65" width="260" height="82" class="gate"/>
+  <text x="355" y="94">Week 1: Midas audit</text>
+  <text x="355" y="118" class="small">Deps, Bybit v5, Freqtrade, secrets</text>
+  <line x1="270" y1="106" x2="335" y2="106" class="arrow"/>
+  <rect x="665" y="65" width="255" height="82" class="gate"/>
+  <text x="685" y="94">If clean: testnet only</text>
+  <text x="685" y="118" class="small">BTC/ETH perps, dry-run, edge report</text>
+  <line x1="595" y1="106" x2="665" y2="106" class="arrow"/>
+  <rect x="335" y="190" width="260" height="82" class="stop"/>
+  <text x="355" y="219">Kill criteria</text>
+  <text x="355" y="243" class="small">&gt;5-10d repair, custom connector, Atlas slip</text>
+  <line x1="465" y1="147" x2="465" y2="190" class="arrow"/>
+  <rect x="665" y="190" width="255" height="82" class="ok"/>
+  <text x="685" y="219">Future board review</text>
+  <text x="685" y="243" class="small">Only after audit/backtest/testnet evidence</text>
+  <line x1="792" y1="147" x2="792" y2="190" class="arrow"/>
+  <rect x="40" y="315" width="880" height="105" class="stop"/>
+  <text x="60" y="343">Live gates: Atlas approval=true + 30 SP500 trades + AUM &gt; $25K + #215/#399/#400 resolved</text>
+  <text x="60" y="368">Edge gates: OOS Sharpe ≥0.8 after fees/funding/slippage, both long/short validated, paper/testnet clean</text>
+  <text x="60" y="393">Risk gates: isolated margin, 1–2x preferred/3x cap, exchange-native stops, kill switch, liquidation monitor, reconciliation</text>
+</svg>

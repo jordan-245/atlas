@@ -1,5 +1,5 @@
 {
-  "version": "v3.2.4",
+  "version": "v3.2.7",
   "project": "Atlas",
   "market": "sp500",
   "description": "v3.2.4 -- added falling-knife guard to mean_reversion (Option A: SMA-200 filter via Prereq 2 backtest comparison 2026-05-19). SP500 v2.2 \u2014 max_open_positions 10\u219215 (Task #26 research: Sharpe 0.868\u21920.983, CAGR 11.7%\u219213.3%, PnL +15%). Base: v2.1 parallel coordinate descent optimized.",
@@ -37,14 +37,14 @@
     "last_recalibrated_at": "2026-04-29T09:25:27+00:00"
   },
   "trading": {
-    "mode": "live",
+    "mode": "paper",
     "broker": "alpaca",
-    "live_enabled": true,
+    "live_enabled": false,
     "holding_period_min": 2,
     "holding_period_max": 20,
     "data_frequency": "daily",
     "order_type": "market_on_open",
-    "auto_approve": true,
+    "auto_approve": false,
     "live_safety": {
       "require_double_approval": false,
       "max_order_value": 5000,
@@ -67,9 +67,9 @@
   },
   "strategies": {
     "momentum_breakout": {
-      "enabled": true,
+      "enabled": false,
       "weight": 0.25,
-      "atr_stop_mult": 0.61,
+      "atr_stop_mult": 1.2,
       "max_hold_days": 15,
       "lookback_days": 14,
       "atr_period": 18,
@@ -671,5 +671,14 @@
     "model": "claude-opus-4-7",
     "max_images": 10,
     "timeout_seconds": 300
-  }
+  },
+  "_change_log": [
+    {
+      "at": "2026-06-03",
+      "change": "momentum_breakout.atr_stop_mult 0.61 -> 1.2",
+      "reason": "0.61 was ~half the research-validated optimum (~1.2; brain kept 1.19-1.26, research_best Sharpe ~1.0). Anomalously tight stop caused same-bar round-trips (-$67/9 trades, diagnostic 2026-06-03). Risk-NEUTRAL: risk-based sizing keeps $ risk/trade constant (fewer shares, wider stop). Reversible.",
+      "by": "CEO live-edge intervention"
+    }
+  ],
+  "_pause_note": "PAPER-ONLY per board memo 2026-06-03-atlas-live-program-path-forward (4-1). Live program demoted to paper: mode=paper, auto_approve=false, live_enabled=false; momentum_breakout retired (live -$38.30/39 trades PF 0.88; cross-OOS TIER FAIL DSR 0.05). Return-to-live gated on PROMOTE-grade strategy + >=40-50 paper trades positive net-of-cost expectancy + positive CLV + >=2 regimes + auto-revert kill-switch + AUM ~$25K."
 }

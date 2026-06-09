@@ -112,7 +112,7 @@ def extract_figures_from_pdf(pdf_path: Path, max_pages: int = _MAX_PAGES_DEFAULT
                 raw = call_pi_vision(
                     prompt=_FIGURE_EXTRACTION_PROMPT,
                     image_paths=[png],
-                    model="claude-opus-4-7",
+                    model="claude-opus-4-8",
                     timeout=180,
                     mode="json",
                 )

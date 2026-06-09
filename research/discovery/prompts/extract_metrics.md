@@ -32,6 +32,8 @@ figure captions usually within this window):
 {pdf_text}
 ```
 
+{resolution_block}
+
 ## Task
 
 Find the paper's **headline** Sharpe, drawdown, CAGR, and related numbers for
@@ -58,6 +60,8 @@ no preamble, no trailing commentary.
 ```json
 {
   "found": true | false,
+  "strategy_name": "<snake_case strategy id or null>",
+  "universe": "<sp500|sector_etfs|treasury_etfs|commodity_etfs|russell_2000 or null>",
   "claimed_sharpe": <number or null>,
   "claimed_solo_sharpe": <number or null>,
   "claimed_max_dd_pct": <positive number or null>,
@@ -74,6 +78,15 @@ no preamble, no trailing commentary.
 
 ## Field Notes
 
+- **`strategy_name`**: Only populate when the **Strategy Resolution** section
+  above asks you to. Report the paper's core strategy as a concise snake_case
+  identifier (e.g. `momentum_breakout`, `rsi_mean_reversion`,
+  `cross_sectional_momentum`) derived from the strategy the paper actually
+  backtests — not the paper title verbatim, and never the `paper__...`
+  placeholder. If resolution was not requested, set this to null.
+- **`universe`**: Only populate when resolving. Map the headline backtest's
+  asset universe to exactly one of `sp500`, `sector_etfs`, `treasury_etfs`,
+  `commodity_etfs`, `russell_2000`. If it doesn't clearly map, set null.
 - **`claimed_sharpe`**: The overall reported Sharpe ratio (assume risk-free
   rate already netted out per paper's convention). If the paper labels a
   number "Sharpe" without qualifiers, use it here.

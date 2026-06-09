@@ -8,7 +8,7 @@ Usage:
     from utils.pi_subprocess import call_pi, call_pi_structured, call_pi_exec, call_pi_vision
 
     # Capture output (default — JSON mode)
-    raw = call_pi("Summarise this: ...", model="claude-opus-4-7")
+    raw = call_pi("Summarise this: ...", model="claude-opus-4-8")
     data = call_pi_structured("Extract JSON: ...")
 
     # Streaming — output goes directly to terminal, prompt passed as positional arg
@@ -19,7 +19,7 @@ Usage:
     raw = call_pi_vision(
         "Analyse this SPY chart...",
         [Path("/tmp/spy_daily.png")],
-        model="claude-opus-4-7",
+        model="claude-opus-4-8",
     )
 """
 from __future__ import annotations
@@ -33,7 +33,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 DEFAULT_SYSTEM_PROMPT = "You are Claude Code, Anthropic's official CLI for Claude."
-DEFAULT_MODEL = "claude-opus-4-7"
+DEFAULT_MODEL = "claude-opus-4-8"
 DEFAULT_TIMEOUT = 1800
 
 
@@ -198,7 +198,7 @@ def call_pi_exec(
 def call_pi_vision(
     prompt: str,
     image_paths,  # list[Path] | list[str]
-    model: str = "claude-opus-4-7",
+    model: str = "claude-opus-4-8",
     timeout: int = 300,
     mode: Optional[str] = "json",
     system_prompt: str = DEFAULT_SYSTEM_PROMPT,
@@ -223,7 +223,7 @@ def call_pi_vision(
         Paths to image files to attach. Each must exist on disk; raises
         ``FileNotFoundError`` for any missing path before spawning the process.
     model:
-        Vision-capable Claude model. Default: ``"claude-opus-4-7"``.
+        Vision-capable Claude model. Default: ``"claude-opus-4-8"``.
     timeout:
         Subprocess timeout in seconds (default: 300 — vision calls are slow).
     mode:

@@ -327,5 +327,149 @@ def test_unknown_strategy_skipped_with_warning(
     warnings = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
     assert any(
         "multiple" in w.lower() or "ambiguous" in w.lower() or "cannot" in w.lower()
+        or "skipping unresolved" in w.lower()
         for w in warnings
     ), f"Expected WARNING about ambiguous strategy; got warnings: {warnings}"
+
+    # #359: ambiguous attribution must record skipped_unresolved, not error.
+    assert not stats["errors"], (
+        f"Ambiguous attribution must not raise hard errors; got: {stats['errors']}"
+    )
+    assert stats.get("skipped_unresolved"), (
+        "Expected skipped_unresolved to be populated for ambiguous attribution"
+    )
+    assert any("ambiguous_no_plan" in s for s in stats["skipped_unresolved"]), (
+        f"Expected ambiguous_no_plan reason in skipped_unresolved: "
+        f"{stats['skipped_unresolved']}"
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Test 6 (#359) — zero PAPER strategies + plan fallback resolves (XLE/UNG case)
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_zero_paper_strategies_plan_fallback_resolves(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#359: When NO PAPER strategies exist for the universe (e.g. commodity_etfs
+    after configs were archived), the plan-file fallback must still attribute
+    the order. Historical plans attribute XLE/UNG to connors_rsi2.
+    """
+    import db.atlas_db as _adb
+
+    # No strategy_lifecycle seeding — zero PAPER strategies for sp500/commodity_etfs.
+    monkeypatch.setattr(
+        spo, "_lookup_strategy_from_plans",
+        lambda ticker, universe, date: "connors_rsi2" if ticker in {"XLE", "UNG"} else None,
+    )
+
+    filled = _make_mock_order(
+        "order-fff-001", "XLE", "buy", 5.0, 5.0, 90.00,
+        status="filled",
+        submitted_at="2026-05-18T20:00:00+00:00",
+        filled_at="2026-05-18T20:30:00+00:00",
+    )
+
+    with _adb.get_db() as db:
+        stats = spo._record_newly_filled_paper_trades(db, [filled], dry_run=False)
+
+    assert stats["paper_trades_inserted"] == 1, (
+        f"Plan fallback for zero-PAPER universe must insert one row; "
+        f"got inserted={stats['paper_trades_inserted']} errors={stats['errors']} "
+        f"skipped={stats.get('skipped_unresolved')}"
+    )
+    assert not stats["errors"], (
+        f"No hard errors expected when plan fallback resolves: {stats['errors']}"
+    )
+    row = _query_paper_trade("XLE")
+    assert row is not None and row["strategy"] == "connors_rsi2"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Test 7 (#359) — zero PAPER + no plan → skipped_unresolved, no errors
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_zero_paper_no_plan_skipped_unresolved(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """#359: Zero PAPER strategies + no plan entry → skipped_unresolved, no error."""
+    import db.atlas_db as _adb
+
+    monkeypatch.setattr(
+        spo, "_lookup_strategy_from_plans",
+        lambda ticker, universe, date: None,
+    )
+
+    filled = _make_mock_order(
+        "order-ggg-001", "XLE", "buy", 5.0, 5.0, 90.00,
+        status="filled",
+        submitted_at="2026-05-18T20:00:00+00:00",
+        filled_at="2026-05-18T20:30:00+00:00",
+    )
+
+    with caplog.at_level(logging.WARNING):
+        with _adb.get_db() as db:
+            stats = spo._record_newly_filled_paper_trades(db, [filled], dry_run=False)
+
+    assert stats["paper_trades_inserted"] == 0
+    assert not stats["errors"], (
+        f"Skipped attribution must NOT escalate to errors: {stats['errors']}"
+    )
+    assert stats["skipped_unresolved"], "Expected skipped_unresolved to be populated"
+    assert any("no_paper_no_plan" in s for s in stats["skipped_unresolved"]), (
+        f"Expected no_paper_no_plan reason: {stats['skipped_unresolved']}"
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Test 8 (#359) — main() returns 0 when only skipped_unresolved (no errors)
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_main_returns_zero_when_only_skipped_unresolved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#359: ``main()`` must return exit code 0 when the only "problem" is
+    skipped_unresolved entries (routine operational noise, not incidents).
+    """
+    # Stub sync_paper_orders so we don't hit a real broker.
+    def _fake_sync(days: int = 7, dry_run: bool = False, backfill_ids=None):
+        return {
+            "fetched": 1,
+            "upserted": 1,
+            "filled_count": 1,
+            "paper_trades_inserted": 0,
+            "paper_exits_recorded": 0,
+            "errors": [],
+            "skipped_unresolved": ["no_paper_no_plan:XLE:2026-05-18"],
+        }
+
+    monkeypatch.setattr(spo, "sync_paper_orders", _fake_sync)
+    monkeypatch.setattr(spo, "_check_staleness", lambda: None)
+    monkeypatch.setattr(spo, "_update_success_stamp", lambda: None)
+
+    rc = spo.main(["--dry-run"])
+    assert rc == 0, f"main() must return 0 with only skipped_unresolved, got {rc}"
+
+
+def test_main_returns_one_when_real_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sanity check: real errors still cause main() to return 1."""
+    def _fake_sync(days: int = 7, dry_run: bool = False, backfill_ids=None):
+        return {
+            "fetched": 0,
+            "upserted": 0,
+            "filled_count": 0,
+            "paper_trades_inserted": 0,
+            "paper_exits_recorded": 0,
+            "errors": ["broker_init:boom"],
+            "skipped_unresolved": [],
+        }
+
+    monkeypatch.setattr(spo, "sync_paper_orders", _fake_sync)
+    monkeypatch.setattr(spo, "_check_staleness", lambda: None)
+    monkeypatch.setattr(spo, "_update_success_stamp", lambda: None)
+
+    rc = spo.main(["--dry-run"])
+    assert rc == 1, f"main() must return 1 when errors present, got {rc}"

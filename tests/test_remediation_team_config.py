@@ -5,7 +5,7 @@ Assertions:
  1.  config.yaml is valid YAML
  2.  teams.remediation exists
  3.  lead.name == "Remediation Lead"
- 4.  lead.model == "claude-opus-4-7"
+ 4.  lead.model == "claude-opus-4-8"
  5.  Two members: "Fix Worker" + "Review Worker"
  6.  Fix Worker domain.write does NOT include any NEVER-list path
  7.  Fix Worker domain.write includes tests/**, dashboard-ui/src/**, docs/**
@@ -94,7 +94,7 @@ def test_3_lead_name(remediation):
 
 
 def test_4_lead_model(remediation):
-    assert remediation["lead"]["model"] == "claude-opus-4-7"
+    assert remediation["lead"]["model"] == "claude-opus-4-8"
 
 
 def test_5_two_members(remediation):

@@ -390,4 +390,4 @@ class TestInvokeReviewerViaPiTeam:
 
         assert "--model" in captured_cmd
         model_idx = captured_cmd.index("--model")
-        assert captured_cmd[model_idx + 1] == "claude-opus-4-7"
+        assert captured_cmd[model_idx + 1] == "claude-opus-4-8"

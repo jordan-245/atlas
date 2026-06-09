@@ -407,7 +407,10 @@ def test_deprecated_sharpe_write_emits_warning(tmp_path: Path, caplog: pytest.Lo
     orig_override = _adb._db_path_override
     try:
         _adb._db_path_override = str(db_path)
-        with caplog.at_level(logging.DEBUG, logger="db.atlas_db"):
+        # NOTE: upsert_research_best now lives in db/research.py (db-split
+        # refactor), so its deprecation log is emitted on the "db.research"
+        # logger rather than the historical "db.atlas_db" name.
+        with caplog.at_level(logging.DEBUG, logger="db.research"):
             _adb.upsert_research_best(
                 strategy="legacy_strat", universe="sp500",
                 params={}, sharpe=0.5,

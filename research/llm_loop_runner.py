@@ -36,6 +36,50 @@ logger = logging.getLogger("llm_loop")
 PROGRAM_MD = ATLAS_ROOT / "research" / "program.md"
 LOGS_DIR = ATLAS_ROOT / "logs"
 
+# Fallback tier-1 strategy list used when the active config cannot be loaded
+# (auth probes, smoke tests, or missing/retired universes). Kept identical to
+# the historical default so behaviour outside the happy path is unchanged.
+_TIER1_FALLBACK_STRATEGIES: list[str] = [
+    "mean_reversion",
+    "trend_following",
+    "opening_gap",
+    "momentum_breakout",
+    "sector_rotation",
+]
+
+
+def _resolve_strategies_for_universe(universe: str) -> list[str]:
+    """Derive the strategy allow-list from ``config/active/{universe}.json``.
+
+    Only strategies with ``enabled: true`` are returned. If the active config
+    cannot be loaded (universe retired, file missing, validation error) we
+    log a warning and fall back to the historical tier-1 list so auth/probe
+    paths and tests that don't isolate the filesystem keep working.
+    """
+    try:
+        from utils.config import get_active_config  # local import — easy to monkeypatch
+        cfg = get_active_config(universe)
+        strats = cfg.get("strategies", {}) if isinstance(cfg, dict) else {}
+        if isinstance(strats, dict):
+            enabled = [
+                name for name, sc in strats.items()
+                if isinstance(sc, dict) and sc.get("enabled") is True
+            ]
+            if enabled:
+                return enabled
+        logger.warning(
+            "Active config for universe=%s has no enabled strategies "
+            "\u2014 using tier-1 fallback",
+            universe,
+        )
+    except Exception as exc:  # pragma: no cover
+        logger.warning(
+            "Could not load active config for universe=%s (%s) "
+            "\u2014 using tier-1 fallback",
+            universe, exc,
+        )
+    return list(_TIER1_FALLBACK_STRATEGIES)
+
 
 def _gather_context(strategies: list[str] | None = None) -> str:
     """Build the context block: leaderboard, strategy status, recent history, best params."""
@@ -55,11 +99,11 @@ def _gather_context(strategies: list[str] | None = None) -> str:
     except Exception as e:
         sections.append(f"## Leaderboard\n(error: {e})")
 
-    # Per-strategy details
+    # Per-strategy details. Callers in run_llm_loop now derive the allow-list
+    # from the active config and pass it in, but keep the tier-1 fallback here
+    # for any direct callers of _gather_context().
     if strategies is None:
-        # Use tier 1 strategies
-        strategies = ["mean_reversion", "trend_following", "opening_gap",
-                       "momentum_breakout", "sector_rotation"]
+        strategies = list(_TIER1_FALLBACK_STRATEGIES)
 
     for strat in strategies:
         try:
@@ -108,11 +152,33 @@ Focus on these strategies in this session: {", ".join(strategies)}
 Work through them in order. If one is already well-optimized (5+ consecutive discards), move to the next.
 """
 
+    # #373 fix — hard scope the LLM loop to the requested universe and active
+    # strategies. Previous runs allowed the model to pick any universe in the
+    # ResearchSession call, which led to market mismatch errors when the loop
+    # was invoked for a non-sp500 universe whose active config had been retired.
+    strategy_scope_str = (
+        f"You MUST restrict ALL ResearchSession calls to universe='{universe}'. "
+        f"Allowed strategies for this session: {', '.join(strategies)}."
+        if strategies else
+        f"You MUST restrict ALL ResearchSession calls to universe='{universe}'."
+    )
+    # Hard cutoff: stop initiating new experiments at minutes - 3 to leave
+    # time for the in-flight experiment + bookkeeping before the subprocess
+    # timeout fires.
+    stop_at = max(1, minutes - 3)
+
     prompt = f"""You are an autonomous research agent running parameter optimization experiments on trading strategies.
 
+## Universe Binding (NON-NEGOTIABLE)
+This session is bound to universe='{universe}'.
+{strategy_scope_str}
+DO NOT switch to a different universe. DO NOT instantiate ResearchSession with any other universe name.
+If a strategy is not in the allowed list above, skip it entirely.
+
 ## Time Budget
-You have {minutes} minutes. Work efficiently. Run as many experiments as possible.
-Stop running experiments 2 minutes before your time is up.
+You have {minutes} minutes total. Work efficiently.
+Stop initiating NEW experiments at minute {stop_at} (i.e. 3 minutes before the budget ends)
+so the in-flight experiment can complete and you can summarise results within the budget.
 
 ## Operating Manual
 {program}
@@ -125,10 +191,30 @@ Stop running experiments 2 minutes before your time is up.
 
 ## Your Task
 1. Review the current state above — leaderboard, history, best params.
-2. Pick the highest-value strategy to work on (or use the focus list if provided).
+2. Pick the highest-value strategy from the allowed list to work on.
 3. Use Bash to run Python code that creates a ResearchSession and runs experiments.
-4. Follow the keep/discard rules from the operating manual strictly.
-5. Run as many experiments as the time budget allows.
+4. Every ResearchSession MUST be constructed with universe='{universe}'.
+5. Follow the keep/discard rules from the operating manual strictly.
+6. Run as many experiments as the time budget allows, respecting the minute-{stop_at} cutoff.
+
+## Result Schema (READ THIS — wrong keys cause KeyErrors)
+The two calls return DIFFERENT shapes. Do not confuse them:
+
+- `s.baseline()` returns the **metrics dict directly**:
+  `{{'sharpe': float, 'total_trades': int, 'max_drawdown_pct': float,
+    'profit_factor': float, 'cagr_pct': float, 'win_rate_pct': float,
+    'sortino': float, 'solo_sharpe': float, 'runtime_s': float}}`.
+  So `baseline['sharpe']` is correct.
+
+- `s.experiment(params, desc)` returns a **wrapper dict**:
+  `{{'metrics': {{...same keys as baseline...}},
+    'recommendation': 'keep'|'discard',
+    'rationale': str,
+    'delta': {{'sharpe': float, 'trades': int, 'max_dd_pct': float}}}}`.
+
+  The metrics live UNDER `r['metrics']`. There is NO top-level `r['sharpe']`.
+  - CORRECT:  `r['metrics']['sharpe']`, `r['recommendation']`, `r['delta']['sharpe']`
+  - WRONG:    `r['sharpe']`  ← raises KeyError; the Sharpe is at `r['metrics']['sharpe']`
 
 ## How to Run Experiments
 Use the Bash tool to run Python code like this:
@@ -138,17 +224,20 @@ cd /root/atlas && python3 -c "
 import sys; sys.path.insert(0, '/root/atlas')
 from research.loop import ResearchSession
 
-s = ResearchSession('mean_reversion', '{universe}')
+# UNIVERSE MUST BE '{universe}' — do not change this string.
+s = ResearchSession('momentum_breakout', '{universe}')
 baseline = s.baseline()
-print('Baseline:', baseline)
+print('Baseline Sharpe:', baseline['sharpe'])           # baseline() = metrics dict
 
 # Try an experiment
 r = s.experiment({{'rsi_period': 7}}, 'shorter RSI period for faster signals')
-print('Result:', r)
-print('Recommendation:', r.get('recommendation'))
+# experiment() = wrapper: metrics nested under r['metrics']
+print('Experiment Sharpe:', r['metrics']['sharpe'])
+print('Recommendation:', r['recommendation'])
+print('Delta Sharpe:', r['delta']['sharpe'])
 
-# Keep or discard based on recommendation
-if r.get('recommendation') == 'keep':
+# Keep or discard based on recommendation (read r['recommendation'], NOT r['sharpe'])
+if r['recommendation'] == 'keep':
     s.keep()
     print('KEPT')
 else:
@@ -162,8 +251,9 @@ print(s.summary())
 IMPORTANT:
 - Always call baseline() first for each new strategy session
 - Each experiment takes 10-60 seconds depending on universe size
-- Read the recommendation from experiment() result before deciding keep/discard
-- Use top_n=50 for faster iterations: ResearchSession('strat', 'sp500', top_n=50)
+- Read `r['recommendation']` from the experiment() result before deciding keep/discard
+- Access metrics via `r['metrics'][...]` — the experiment() result has NO top-level metric keys
+- Use top_n=50 for faster iterations: ResearchSession('strat', '{universe}', top_n=50)
 - After finding improvements with top_n=50, verify with full universe (top_n=None)
 - Record your reasoning for each experiment
 
@@ -227,19 +317,39 @@ def run_llm_loop(
         logger.error("Pi probe failed (%s) — aborting full LLM loop to avoid 30-min hang.", e)
         return {"status": "probe_failed", "error": str(e), "runtime_s": 0}
 
+    # #373 follow-up — if the caller did not pass an explicit strategy list,
+    # derive one from the active config so the prompt's "Allowed strategies
+    # for this session" allow-list and _gather_context() are both scoped to
+    # the universe's currently enabled strategies. This is what bash callers
+    # (scripts/research_window_universe.sh) hit, since they invoke the runner
+    # with --universe but no --strategies.
+    if strategies is None:
+        strategies = _resolve_strategies_for_universe(universe)
+        logger.info(
+            "Derived strategy allow-list from active config (universe=%s): %s",
+            universe, strategies,
+        )
+
     logger.info("Building LLM loop prompt (strategies=%s, minutes=%d)", strategies, minutes)
     prompt = _build_prompt(minutes, strategies, universe=universe)
 
     from utils.pi_subprocess import call_pi, PiSubprocessError  # noqa: PLC0415
 
-    timeout_s = (minutes + 5) * 60  # extra 5 min buffer for startup/cleanup
+    # #373 fix — widen the explicit buffer from 5→10 minutes. For a 25-minute
+    # session the previous 30-minute subprocess cap was too tight: model startup,
+    # tool-use turns, and final summarisation routinely consumed >5 minutes of
+    # slack, producing spurious `timed out` errors. The 10-minute buffer keeps
+    # the cap safely below the systemd unit `TimeoutStartSec` while letting the
+    # loop wind down cleanly. utils.pi_subprocess.DEFAULT_TIMEOUT is intentionally
+    # NOT changed — short-call sites should keep their tight budgets.
+    timeout_s = (minutes + 10) * 60
     logger.info("Invoking Pi CLI via utils.pi_subprocess (timeout=%ds, log=%s)", timeout_s, log_path)
     start = time.time()
 
     try:
         output = call_pi(
             prompt,
-            model="claude-opus-4-7",
+            model="claude-opus-4-8",
             timeout=timeout_s,
             mode="json",
             extra_args=["--tools", "bash,read"],
@@ -288,7 +398,7 @@ def run_llm_loop(
         runtime_s = time.time() - start
         err_msg = str(e)
         if "timed out" in err_msg:
-            logger.error("Pi CLI timed out after %ds", timeout_s, extra={"timeout_s": timeout_s, "model": "claude-opus-4-7"})
+            logger.error("Pi CLI timed out after %ds", timeout_s, extra={"timeout_s": timeout_s, "model": "claude-opus-4-8"})
             with open(log_path, "w") as f:
                 f.write(f"=== LLM Loop TIMEOUT {date_str} ===\nTimeout after {timeout_s}s\n")
             return {"status": "timeout", "runtime_s": round(runtime_s, 1), "log_path": str(log_path)}

@@ -19,8 +19,11 @@ battery, and it scales with AUM. Uses existing daily OHLCV only (no new data).
 Reference: Jegadeesh & Titman (1993); Frazzini & Pedersen (2014).
 Config Section: strategies.cross_sectional_momentum
 """
+import json
 import logging
 from datetime import datetime
+from functools import lru_cache
+from pathlib import Path
 from typing import Any, Dict, List
 
 import numpy as np
@@ -30,6 +33,29 @@ from strategies.base import BaseStrategy, Signal
 from utils.helpers import calc_atr, calc_position_size
 
 logger = logging.getLogger(__name__)
+
+_PROJECT = Path(__file__).resolve().parent.parent.parent
+
+
+@lru_cache(maxsize=4)
+def _load_sector_map(market: str) -> tuple:
+    """Load the per-market ticker->sector map (matches scripts/cli.py precedence).
+
+    Returns a tuple of (ticker, sector) pairs (hashable for lru_cache); callers dict() it.
+    Without sectors, the engine's max_sector_concentration cap collapses the whole book to
+    one 'Unknown' bucket (capped at 2) — so a cross-sectional book MUST tag real sectors.
+    """
+    for p in (_PROJECT / "data" / "processed" / f"sector_map_{market}.json",
+              _PROJECT / "data" / "processed" / "sector_map.json"):
+        if p.exists():
+            try:
+                m = json.load(open(p))
+                if m:
+                    return tuple((k, v) for k, v in m.items() if v)
+            except Exception as e:
+                logger.warning("cross_sectional_momentum: sector map load failed for %s: %s", p, e)
+    logger.warning("cross_sectional_momentum: no sector map for market=%s — sector cap will collapse book", market)
+    return tuple()
 
 
 class CrossSectionalMomentum(BaseStrategy):
@@ -57,9 +83,12 @@ class CrossSectionalMomentum(BaseStrategy):
         self.w_qual = float(c.get("w_qual", 0.5))
         self.trend_filter = bool(c.get("trend_filter", True))
         self.min_price = float(c.get("min_price", 5.0))
+        self.market = config.get("market", "sp500")
+        self._sectors = dict(_load_sector_map(self.market))
         self._logger.info(
-            "CrossSectionalMomentum init: mom=%d-%d vol=%d top_n=%d exit_rank=%d",
+            "CrossSectionalMomentum init: mom=%d-%d vol=%d top_n=%d exit_rank=%d sectors=%d",
             self.mom_lookback, self.mom_skip, self.vol_lookback, self.top_n, self.exit_rank,
+            len(self._sectors),
         )
 
     @property
@@ -192,8 +221,10 @@ class CrossSectionalMomentum(BaseStrategy):
                 confidence=float(min(0.9, 0.5 + 0.4 * (self.top_n - info["rank"] + 1) / self.top_n)),
                 rationale=(f"{ticker} rank {info['rank']}/{self.top_n}: 12-1 mom "
                            f"{info['mom']*100:.1f}%, vol {info['vol']*100:.2f}%/day, above trend."),
+                sector=self._sectors.get(ticker, "Unknown"),
                 features={"rank": info["rank"], "composite": round(info["composite"], 3),
-                          "mom": round(info["mom"], 4), "vol": round(info["vol"], 5)},
+                          "mom": round(info["mom"], 4), "vol": round(info["vol"], 5),
+                          "sector": self._sectors.get(ticker, "Unknown")},
                 timestamp=datetime.now(),
             ))
         self._logger.info("%s: %d entry signals (universe ranked: %d)",

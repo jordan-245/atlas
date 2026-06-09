@@ -1,3 +1,9 @@
+# Atlas Agent Instructions
+
+Canonical instructions for GPT/Pi coding agents working in `/root/atlas`.
+
+`AGENTS.md` is the authoritative agent-instruction file. `CLAUDE.md` may remain for legacy Claude-tool compatibility, but new or updated agent rules belong here first.
+
 ## Memory
 
 - **Read `memory/SUMMARY.md` at the start of every session**
@@ -67,7 +73,7 @@
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **atlas** (46573 symbols, 77167 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **atlas** (46227 symbols, 76607 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

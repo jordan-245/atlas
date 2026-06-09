@@ -934,21 +934,44 @@ def leaderboard(market: str = "sp500") -> str:
     Reads from research/best/*.json. Returns formatted table.
     """
     BEST_DIR.mkdir(parents=True, exist_ok=True)
+
+    def _f(v) -> float:
+        """Coerce a metric to float, mapping None/blank/bad values to 0.0.
+
+        research/best/*.json may store an explicit ``null`` for a metric (e.g.
+        crypto best rows with no max_drawdown_pct). ``dict.get(k, 0)`` returns
+        ``None`` in that case because the key *exists*, which then blows up the
+        ``f"{value:>7.4f}"`` formatter with
+        ``unsupported format string passed to NoneType.__format__`` and crashes
+        the whole LLM-loop context gather. Coerce defensively. (#392)
+        """
+        try:
+            return float(v) if v is not None else 0.0
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _i(v) -> int:
+        """Coerce a count metric to int, mapping None/bad values to 0. (#392)"""
+        try:
+            return int(v) if v is not None else 0
+        except (TypeError, ValueError):
+            return 0
+
     entries = []
     for path in sorted(BEST_DIR.glob("*.json")):
         try:
             with open(path) as f:
                 data = json.load(f)
-            m = data.get("metrics", {})
+            m = data.get("metrics", {}) or {}
             entries.append({
                 "strategy": data.get("strategy", path.stem),
-                "sharpe": m.get("sharpe", 0),
-                "trades": m.get("total_trades", 0),
-                "max_dd": m.get("max_drawdown_pct", 0),
-                "pf": m.get("profit_factor", 0),
-                "cagr": m.get("cagr_pct", 0),
-                "runs": data.get("experiments_run", 0),
-                "kept": data.get("experiments_kept", 0),
+                "sharpe": _f(m.get("sharpe")),
+                "trades": _i(m.get("total_trades")),
+                "max_dd": _f(m.get("max_drawdown_pct")),
+                "pf": _f(m.get("profit_factor")),
+                "cagr": _f(m.get("cagr_pct")),
+                "runs": _i(data.get("experiments_run")),
+                "kept": _i(data.get("experiments_kept")),
             })
         except (json.JSONDecodeError, OSError):
             pass
@@ -995,7 +1018,12 @@ def strategy_status() -> str:
         in_registry = "yes" if name in STRATEGY_REGISTRY else "sandbox"
         best = load_best(name)
         has_best = "yes" if best else "no"
-        best_sharpe = f"{best['metrics'].get('sharpe', 0):.4f}" if best else "-"
+        # Defensive: metrics.sharpe may be an explicit null in the JSON (#392).
+        _sh = (best.get("metrics", {}) or {}).get("sharpe") if best else None
+        try:
+            best_sharpe = f"{float(_sh):.4f}" if _sh is not None else "-"
+        except (TypeError, ValueError):
+            best_sharpe = "-"
         lines.append(f"{name:<28} {in_registry:>11} {has_best:>9} {best_sharpe:>12}")
 
     lines.append("")

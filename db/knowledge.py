@@ -25,6 +25,7 @@ __all__ = [
     "insert_source",
     "get_source",
     "list_sources",
+    "list_sources_without_claims",
     # claims
     "insert_claim",
     "get_claim",
@@ -124,6 +125,53 @@ def list_sources(
         return result
 
 
+def list_sources_without_claims(
+    *,
+    kind: Optional[str] = None,
+    require_local_pdf: bool = True,
+    limit: int = 10_000,
+) -> List[Dict]:
+    """Return source rows that have NO claim row referencing them.
+
+    These are ingest-only sources -- PDF metadata captured into ``sources`` but
+    never converted into a shell claim (e.g. because the discovery spec
+    extractor never wrote a ``specs_*.json`` covering them).  Used by the
+    source-derived backfill path to bootstrap shell claims directly from PDF
+    metadata when specs are absent.
+
+    Args:
+        kind: Restrict to a source kind (e.g. 'paper').  None = all kinds.
+        require_local_pdf: When True (default), only sources with a non-NULL
+            local_path -- i.e. the PDF is on disk for later text extraction.
+        limit: Max rows.
+    """
+    with _adb.get_db() as db:
+        query = """
+            SELECT s.*
+            FROM sources s
+            LEFT JOIN claims c ON c.source_id = s.id
+            WHERE c.id IS NULL
+        """
+        params: List[Any] = []
+        if kind:
+            query += " AND s.kind = ?"
+            params.append(kind)
+        if require_local_pdf:
+            query += " AND s.local_path IS NOT NULL"
+        query += f" ORDER BY s.ingested_at DESC LIMIT {int(limit)}"
+        rows = db.execute(query, params).fetchall()
+        result = []
+        for row in rows:
+            r = dict(row)
+            if r.get("authors"):
+                try:
+                    r["authors"] = json.loads(r["authors"])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            result.append(r)
+        return result
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # claims
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -204,6 +252,7 @@ def list_claims(
 def list_shell_claims(
     *,
     require_local_pdf: bool = True,
+    include_low_confidence: bool = False,
     limit: int = 100,
 ) -> List[Dict]:
     """Return active claims with NULL claimed_sharpe -- candidates for Phase 1.5
@@ -213,6 +262,15 @@ def list_shell_claims(
         require_local_pdf: When True (default), only return claims whose source
             has a non-NULL local_path -- i.e. the PDF is on disk and can be
             text-extracted.  Pass False to include reference-only sources.
+        include_low_confidence: When False (default), exclude claims that have
+            ALREADY had a Phase 1.5 extraction attempt fail -- identified by a
+            notes value prefixed ``phase1.5:`` AND ``extraction_confidence =
+            'low'``.  This stops the cron from re-running the same not_found /
+            failed claim forever (#395).  Fresh shell claims (spec- or
+            source-derived) also start at ``extraction_confidence='low'`` but
+            carry JSON notes (or none) rather than a ``phase1.5:`` prefix, so
+            they are NEVER excluded by this filter.  Pass True to deliberately
+            retry the previously-failed claims.
         limit: Max rows.
     """
     with _adb.get_db() as db:
@@ -223,6 +281,7 @@ def list_shell_claims(
                 c.strategy        AS strategy,
                 c.universe        AS universe,
                 c.notes           AS notes,
+                c.extraction_confidence AS extraction_confidence,
                 s.title           AS source_title,
                 s.url             AS source_url,
                 s.local_path      AS local_path,
@@ -234,6 +293,15 @@ def list_shell_claims(
               AND c.claimed_max_dd_pct IS NULL
               AND c.claimed_cagr_pct IS NULL
         """
+        if not include_low_confidence:
+            # Exclude claims whose previous Phase 1.5 attempt failed (notes
+            # prefixed 'phase1.5:' and confidence demoted to 'low').  Fresh
+            # shell claims have JSON/empty notes so they survive this filter
+            # even though they also start at confidence='low'.
+            query += (
+                " AND NOT (c.notes LIKE 'phase1.5:%'"
+                " AND c.extraction_confidence = 'low')"
+            )
         if require_local_pdf:
             query += " AND s.local_path IS NOT NULL"
         query += f" ORDER BY c.created_at ASC LIMIT {int(limit)}"
@@ -255,6 +323,8 @@ def update_claim_metrics(
     period_end: Optional[str] = None,
     extraction_confidence: Optional[str] = None,
     notes: Optional[str] = None,
+    strategy: Optional[str] = None,
+    universe: Optional[str] = None,
 ) -> None:
     """Populate the claimed_* columns on an existing claim row.
 
@@ -262,22 +332,35 @@ def update_claim_metrics(
     Bumps updated_at on every call.  Designed for Phase 1.5 LLM extraction
     pass that fills in metrics on previously-inserted shell claims.
 
-    After the UPDATE commits, fires sync_contradictions(strategy=...) so the
-    contradictions table reflects the new metric immediately.  Defensive --
-    a sync error is logged but does not propagate (callers expect this
-    function to never raise).
+    Strategy resolution (#395 follow-up): for source-derived placeholder claims
+    (strategy like ``paper__<slug>``) the LLM pass also infers the paper's real
+    strategy.  Pass ``strategy=`` (and optionally ``universe=``) to rewrite the
+    placeholder to the resolved key.  Known/spec-derived claims simply leave
+    these None so their strategy is never mutated.  When the strategy actually
+    changes, any *unresolved* contradiction rows still pinned to the OLD
+    strategy are deleted before the resync so a stale placeholder can't leave a
+    dangling contradiction behind.
+
+    After the UPDATE commits, fires sync_contradictions(strategy=...) for the
+    *effective* (post-update) strategy so the contradictions table reflects the
+    new metric immediately.  Defensive -- a sync error is logged but does not
+    propagate (callers expect this function to never raise).
     """
-    strategy: Optional[str] = None
+    old_strategy: Optional[str] = None
+    claim_exists = False
     with _adb.get_db() as db:
         row = db.execute(
             "SELECT strategy FROM claims WHERE id = ?", (id,)
         ).fetchone()
         if row is not None:
-            strategy = row["strategy"]
+            claim_exists = True
+            old_strategy = row["strategy"]
 
         db.execute(
             """
             UPDATE claims SET
+                strategy               = COALESCE(?, strategy),
+                universe               = COALESCE(?, universe),
                 claimed_sharpe         = COALESCE(?, claimed_sharpe),
                 claimed_solo_sharpe    = COALESCE(?, claimed_solo_sharpe),
                 claimed_max_dd_pct     = COALESCE(?, claimed_max_dd_pct),
@@ -292,19 +375,41 @@ def update_claim_metrics(
                 updated_at             = datetime('now')
             WHERE id = ?
             """,
-            (claimed_sharpe, claimed_solo_sharpe, claimed_max_dd_pct,
-             claimed_trades, claimed_cagr_pct, claimed_profit_factor,
-             claimed_avg_hold_days, period_start, period_end,
-             extraction_confidence, notes, id),
+            (strategy, universe, claimed_sharpe, claimed_solo_sharpe,
+             claimed_max_dd_pct, claimed_trades, claimed_cagr_pct,
+             claimed_profit_factor, claimed_avg_hold_days, period_start,
+             period_end, extraction_confidence, notes, id),
         )
 
-    if strategy is not None:
+        # Effective strategy after the COALESCE update.
+        effective_strategy = strategy if strategy is not None else old_strategy
+        strategy_changed = (
+            claim_exists
+            and strategy is not None
+            and old_strategy is not None
+            and strategy != old_strategy
+        )
+
+        # On a real strategy change (placeholder -> resolved), drop any
+        # unresolved contradictions still tagged with the old strategy so the
+        # placeholder can't strand a dangling row.  Resolved rows are kept for
+        # audit history.
+        if strategy_changed:
+            db.execute(
+                """
+                DELETE FROM contradictions
+                WHERE claim_id = ? AND strategy != ? AND resolution IS NULL
+                """,
+                (id, effective_strategy),
+            )
+
+    if claim_exists and effective_strategy is not None:
         try:
-            sync_contradictions(strategy=strategy)
+            sync_contradictions(strategy=effective_strategy)
         except Exception as exc:  # noqa: BLE001 -- intentionally swallow
             _log.warning(
                 "sync_contradictions hook failed for claim_id=%s strategy=%s: %s",
-                id, strategy, exc,
+                id, effective_strategy, exc,
             )
 
 

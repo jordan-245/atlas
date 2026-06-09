@@ -1,0 +1,21 @@
+{
+  "id": "2026-06-01-bybit-leveraged-crypto-intraday-bot",
+  "title": "Should We Build a Bybit Leveraged Intraday Crypto Trading Bot?",
+  "date": "2026-06-01",
+  "decision": "conditional",
+  "confidence": "high_for_no_live_implementation_medium_for_research_spike",
+  "vote_for": 5,
+  "vote_against": 0,
+  "vote_abstain": 0,
+  "recommendation": "Do not implement live leveraged trading. Approve only a bounded Midas/Freqtrade audit and, if clean, BTC/ETH Bybit testnet research with zero live keys/capital/leverage.",
+  "memo_path": "/root/atlas/ceo-board/memos/2026-06-01-bybit-leveraged-crypto-intraday-bot/memo.md",
+  "midas_task": 30,
+  "key_gates": [
+    "No live Bybit keys or capital during approved scope",
+    "Week 1 Midas/Freqtrade audit only; kill if >5-10 days to testnet-ready",
+    "BTC/ETH perpetuals only if testnet proceeds",
+    "No live capital until Atlas approval=true, 30+ SP500 live trades, AUM > $25K, #215/#399/#400 resolved",
+    "OOS edge after fees/funding/slippage and long/short side validation required",
+    "Kill switch, liquidation monitor, circuit breaker, and reconciliation must be independently verified before live keys"
+  ]
+}

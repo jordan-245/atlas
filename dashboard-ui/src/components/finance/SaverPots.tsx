@@ -1,7 +1,21 @@
+/**
+ * SaverPots -- visualises long-term goal saver accounts (Travel, Emergency,
+ * Savings, Invest, House deposit, ...) as filling pots with a per-pot goal
+ * target and an ETA derived from the user's average monthly net savings.
+ *
+ * NOT every Up Bank saver-type account is a goal. The user also runs
+ * fortnight budget buckets (Rent, Food, Phone, Fuel, Gym, Bills, AI, ...)
+ * as saver-type accounts; those are filtered out here via `isGoalAccount`
+ * from `_goal-classifier.ts` so this panel stays focused on goals only.
+ *
+ * Per-account goal targets live in localStorage (Up Bank doesn't model
+ * them); see `useSaverTargets` for storage + cross-tab sync.
+ */
 import { useId, useState, type KeyboardEvent } from 'react'
 import type { FinanceAccount } from '../../api/types'
 import { fmtCcy } from '../../lib/format'
 import { useSaverTargets, setSaverTarget } from '../../hooks/useSaverTargets'
+import { isGoalAccount } from './_goal-classifier'
 
 interface SaverPotsProps {
   accounts: FinanceAccount[]
@@ -313,12 +327,22 @@ function SaverPot({ account, target, hue, avgMonthlyNet }: PotProps) {
 
 export function SaverPots({ accounts, avgMonthlyNet }: SaverPotsProps) {
   const targets = useSaverTargets()
-  const savers = accounts.filter(isSaver)
 
-  if (savers.length === 0) {
+  // Keep only saver-type accounts that look like long-term goals. Budget
+  // buckets (Rent, Food, Phone, ...) share the same Up Bank type but are
+  // explicitly excluded by the classifier.
+  const goals = accounts.filter((account) => {
+    if (!isSaver(account)) return false
+    const stored = targets[account.name ?? '']?.target
+    const hasStoredTarget =
+      typeof stored === 'number' && Number.isFinite(stored) && stored > 0
+    return isGoalAccount(account.name, hasStoredTarget)
+  })
+
+  if (goals.length === 0) {
     return (
       <div className="text-sm text-[var(--color-text-muted)]">
-        No saver accounts found.
+        No goal accounts found.
       </div>
     )
   }
@@ -326,10 +350,10 @@ export function SaverPots({ accounts, avgMonthlyNet }: SaverPotsProps) {
   return (
     <div data-testid="saver-pots">
       <div className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-text-muted)] font-semibold mb-3">
-        SAVERS ({savers.length})
+        GOALS ({goals.length})
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        {savers.map((account, i) => {
+        {goals.map((account, i) => {
           const name = account.name ?? ''
           const entry = targets[name]
           const hue = HUES[i % HUES.length]

@@ -44,6 +44,16 @@ python3 scripts/sanity_check.py --queue donchian_breakout      # add to queue
 
 ## Key Principles
 
+> ⚠️ **2026-06 updates (see `docs/RESEARCH_INFRASTRUCTURE.md`):**
+> - **Validate on `--market shm`** (survivorship-correct mid/small-cap), NOT `sp500` (biased mirage),
+>   via the rail-equipped battery with `--holdout-eval`. A tier is meaningless without the holdout.
+> - **MUST tag `features["sector"]`** in every Signal (load `data/processed/sector_map_<market>.json`;
+>   set `Signal.sector` AND `features["sector"]`). Omit → `max_sector_concentration` collapses the book
+>   to ~2 positions → deployment-sanity auto-FAIL (this was the csm bug). Template:
+>   `research/strategies/cross_sectional_momentum.py`.
+> - **Cross-sectional FACTOR books deploy** on a broad universe; single-name technicals don't (Pass-1
+>   finding: 20/21 single-name strategies deployment-FAILed on `shm`).
+
 1. **Sandbox first.** All new code goes in `research/strategies/` — never directly to `strategies/`.
 2. **No auto-promotion.** Human approval is always required before a strategy goes live.
 3. **Sanity check before queuing.** Run `scripts/sanity_check.py` to catch import/logic errors before burning compute.

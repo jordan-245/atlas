@@ -191,7 +191,7 @@ def invoke_reviewer_via_pi_team(
         "--team", "remediation",
         "--member", "Review Worker",
         "--system-prompt", "You are Claude Code, Anthropic's official CLI for Claude.",
-        "--model", "claude-opus-4-7",
+        "--model", "claude-opus-4-8",
         "--no-session",
         "--no-tools",   # reviewer is read-only — no edits, no shell
         "--mode", "json",

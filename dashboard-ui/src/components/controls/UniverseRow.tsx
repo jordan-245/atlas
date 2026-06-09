@@ -28,8 +28,14 @@ export function UniverseRow({ row }: { row: UniverseAdminRow }) {
   const [open, setOpen] = useState(false)
   const mutation = useChangeUniverseState()
 
+  // Snapshot "now" once per mount via the useState lazy initializer.
+  // Calling Date.now() during render is impure (react-hooks/purity) — since
+  // the only consumer is the “expires within 7 days” badge, a per-mount
+  // snapshot is accurate enough.
+  const [nowMs] = useState<number>(() => Date.now())
+
   const overrideExpiringSoon = row.override?.expires_at
-    ? (new Date(row.override.expires_at).getTime() - Date.now()) < 7 * 24 * 3600 * 1000
+    ? (new Date(row.override.expires_at).getTime() - nowMs) < 7 * 24 * 3600 * 1000
     : false
 
   const isProduction = row.effective_state === 'live'

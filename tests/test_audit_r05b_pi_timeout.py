@@ -156,7 +156,7 @@ def test_probe_called_before_main_call(monkeypatch: pytest.MonkeyPatch, tmp_path
     assert call_log[0] == "claude-haiku-4-5", (
         f"First call must be the haiku probe, got: {call_log[0]!r}"
     )
-    assert call_log[1] == "claude-opus-4-7", (
+    assert call_log[1] == "claude-opus-4-8", (
         f"Second call must be the opus main call, got: {call_log[1]!r}"
     )
     # Confirm the loop completed successfully after the probe passed
@@ -255,3 +255,164 @@ def test_probe_empty_response_returns_probe_failed(
 
     assert result.get("status") == "probe_failed", f"Expected probe_failed, got: {result}"
     assert not sonnet_called["flag"], "Sonnet call must not happen after empty probe response"
+
+
+# ---------------------------------------------------------------------------
+# Test 6 (#373) — explicit Pi timeout buffer is ≥ 10 minutes
+# ---------------------------------------------------------------------------
+
+def test_timeout_buffer_minimum_ten_minutes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """#373: run_llm_loop must pass a timeout of at least (minutes + 10) * 60s
+    to call_pi for the main opus call. The previous 5-minute buffer was too
+    tight — 25-minute sessions routinely needed >5 minutes of slack for model
+    startup, tool turns, and final summarisation.
+    """
+    _stub_auth_and_breaker(monkeypatch)
+
+    import utils.pi_subprocess as pi_mod
+    from research import llm_loop_runner
+
+    captured: list[dict] = []
+
+    def _capture(prompt: str, **kwargs) -> str:  # type: ignore[misc]
+        model = kwargs.get("model", "")
+        captured.append({"model": model, "timeout": kwargs.get("timeout")})
+        if model == "claude-haiku-4-5":
+            return "probe ok"
+        return '{"result": "done", "cost_usd": 0.0, "num_turns": 1}'
+
+    monkeypatch.setattr(pi_mod, "call_pi", _capture)
+    monkeypatch.setattr(llm_loop_runner, "LOGS_DIR", tmp_path)
+
+    minutes = 25
+    result = llm_loop_runner.run_llm_loop(
+        minutes=minutes, log_path=tmp_path / "timeout_buffer.log"
+    )
+    assert result.get("status") == "complete", f"Expected complete, got {result}"
+
+    # Pull the timeout used for the main (opus) call.
+    main_calls = [c for c in captured if c["model"] == "claude-opus-4-8"]
+    assert main_calls, f"No main opus call captured; got: {captured}"
+    main_timeout = main_calls[0]["timeout"]
+    expected_min = (minutes + 10) * 60
+    assert main_timeout >= expected_min, (
+        f"Pi timeout buffer too tight: got {main_timeout}s, "
+        f"need ≥ {expected_min}s (minutes={minutes} + 10 min buffer)"
+    )
+
+
+def test_prompt_uses_active_config_enabled_strategies_when_none_passed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """#373 follow-up: when run_llm_loop is called with strategies=None
+    and a universe, the prompt's 'Allowed strategies for this session'
+    allow-list must be derived from config/active/{universe}.json and
+    include ONLY strategies whose entry has ``enabled: true``.
+
+    This guards against scripts/research_window_universe.sh invoking
+    `llm_loop_runner.py --minutes 25 --universe sp500` (no --strategies
+    flag) and the LLM picking up disabled strategies from the prompt.
+    """
+    _stub_auth_and_breaker(monkeypatch)
+
+    import re
+    import utils.config as utils_config
+    import utils.pi_subprocess as pi_mod
+    from research import llm_loop_runner
+
+    # Mock active config: only momentum_breakout enabled.
+    fake_cfg = {
+        "strategies": {
+            "momentum_breakout": {"enabled": True, "weight": 1.0},
+            "mean_reversion":    {"enabled": False, "weight": 0.0},
+            "trend_following":   {"enabled": False},
+        }
+    }
+    monkeypatch.setattr(
+        utils_config, "get_active_config", lambda *a, **kw: fake_cfg
+    )
+
+    captured: list[str] = []
+
+    def _capture(prompt: str, **kwargs) -> str:  # type: ignore[misc]
+        model = kwargs.get("model", "")
+        if model == "claude-opus-4-8":
+            captured.append(prompt)
+            return '{"result": "done"}'
+        return "probe ok"
+
+    monkeypatch.setattr(pi_mod, "call_pi", _capture)
+    monkeypatch.setattr(llm_loop_runner, "LOGS_DIR", tmp_path)
+
+    llm_loop_runner.run_llm_loop(
+        minutes=5,
+        universe="sp500",
+        # strategies=None on purpose — must be derived from active config.
+        log_path=tmp_path / "derived_strats.log",
+    )
+
+    assert captured, "Expected main opus prompt to be captured"
+    body = captured[0]
+
+    # The allow-list line must be present and contain ONLY momentum_breakout.
+    m = re.search(
+        r"Allowed strategies for this session:\s*([^\n.]*?)\.",
+        body,
+    )
+    assert m, (
+        "Prompt missing 'Allowed strategies for this session:' allow-list line. "
+        f"Prompt head: {body[:600]!r}"
+    )
+    allow_list = [s.strip() for s in m.group(1).split(",") if s.strip()]
+    assert "momentum_breakout" in allow_list, (
+        f"Enabled strategy missing from allow-list: {allow_list!r}"
+    )
+    assert "mean_reversion" not in allow_list, (
+        f"Disabled strategy 'mean_reversion' must NOT be in allow-list: {allow_list!r}"
+    )
+    assert "trend_following" not in allow_list, (
+        f"Disabled strategy 'trend_following' must NOT be in allow-list: {allow_list!r}"
+    )
+
+
+def test_prompt_binds_to_passed_universe(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """#373: the prompt sent to the main call must explicitly bind
+    ResearchSession to the passed universe, so the LLM cannot silently
+    drift to a different market.
+    """
+    _stub_auth_and_breaker(monkeypatch)
+
+    import utils.pi_subprocess as pi_mod
+    from research import llm_loop_runner
+
+    captured: list[str] = []
+
+    def _capture_prompt(prompt: str, **kwargs) -> str:  # type: ignore[misc]
+        model = kwargs.get("model", "")
+        if model == "claude-opus-4-8":
+            captured.append(prompt)
+            return '{"result": "done"}'
+        return "probe ok"
+
+    monkeypatch.setattr(pi_mod, "call_pi", _capture_prompt)
+    monkeypatch.setattr(llm_loop_runner, "LOGS_DIR", tmp_path)
+
+    llm_loop_runner.run_llm_loop(
+        minutes=5,
+        universe="commodity_etfs",
+        strategies=["connors_rsi2"],
+        log_path=tmp_path / "universe_bind.log",
+    )
+
+    assert captured, "Expected main prompt to be captured"
+    body = captured[0]
+    assert "commodity_etfs" in body, (
+        "Prompt must mention the bound universe name 'commodity_etfs'"
+    )
+    assert "universe='commodity_etfs'" in body, (
+        "Prompt must include explicit ResearchSession(universe='commodity_etfs') binding"
+    )

@@ -237,6 +237,107 @@ class TestListShellClaims:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# #395 hardening: failed Phase 1.5 extractions must not be re-eligible forever
+# ═══════════════════════════════════════════════════════════════════════════════
+class TestLowConfidenceFilter:
+    """A failed Phase 1.5 attempt leaves the claim with NULL metrics, notes
+    prefixed 'phase1.5:' and extraction_confidence='low'.  list_shell_claims /
+    extract_pending must exclude these by default (so the cron never retries the
+    same not_found claim forever) but include them with the retry flag.  Fresh
+    shell claims also start at confidence='low' but carry JSON notes, so they
+    are NEVER excluded.
+    """
+
+    def _mark_phase15_failed(self, claim_id: str, note: str) -> None:
+        """Simulate a prior failed Phase 1.5 attempt on an existing shell claim."""
+        kn.update_claim_metrics(
+            id=claim_id,
+            extraction_confidence="low",
+            notes=note,
+        )
+
+    def test_fresh_low_confidence_claim_is_listed(self, atlas_root):
+        # Fresh shell claim: extraction_confidence='low' + JSON notes (no
+        # 'phase1.5:' prefix) -> must still be listed by default.
+        _seed_shell_claim(atlas_root, source_id="src-fresh", strategy="strat_fresh")
+        rows = kn.list_shell_claims()
+        assert {r["strategy"] for r in rows} == {"strat_fresh"}
+        # Sanity: the seed really is low-confidence.
+        c = kn.get_claim(f"clm-src-fresh-strat_fresh-0")
+        assert c["extraction_confidence"] == "low"
+
+    def test_phase15_failed_claim_excluded_by_default(self, atlas_root):
+        claim_id, _, _ = _seed_shell_claim(
+            atlas_root, source_id="src-failed", strategy="strat_failed")
+        self._mark_phase15_failed(
+            claim_id, "phase1.5: LLM reported no metrics for this strategy: lit review")
+        assert kn.list_shell_claims() == []
+
+    def test_retry_flag_includes_failed_claim(self, atlas_root):
+        claim_id, _, _ = _seed_shell_claim(
+            atlas_root, source_id="src-failed", strategy="strat_failed")
+        self._mark_phase15_failed(claim_id, "phase1.5: LLM reported no metrics")
+        rows = kn.list_shell_claims(include_low_confidence=True)
+        assert {r["strategy"] for r in rows} == {"strat_failed"}
+
+    def test_mixed_fresh_and_failed(self, atlas_root):
+        # One fresh, one failed -> default lists only fresh; retry lists both.
+        _seed_shell_claim(atlas_root, source_id="src-fresh", strategy="strat_fresh",
+                          pdf_name="2401.11111.pdf")
+        failed_id, _, _ = _seed_shell_claim(
+            atlas_root, source_id="src-failed", strategy="strat_failed",
+            pdf_name="2401.22222.pdf")
+        self._mark_phase15_failed(failed_id, "phase1.5: pi error: RuntimeError: boom")
+
+        assert {r["strategy"] for r in kn.list_shell_claims()} == {"strat_fresh"}
+        assert {r["strategy"] for r in kn.list_shell_claims(include_low_confidence=True)} \
+            == {"strat_fresh", "strat_failed"}
+
+    def test_not_found_extraction_self_excludes_then_retryable(
+        self, atlas_root, monkeypatch
+    ):
+        # End-to-end: a not_found extraction marks the claim; the next default
+        # batch no longer picks it up, but the retry flag re-includes it.
+        _seed_shell_claim(atlas_root, source_id="src-nf", strategy="strat_nf")
+        _patch_pdftotext(monkeypatch)
+        joined = kn.list_shell_claims()[0]
+        result = paper_metrics.extract_one(
+            joined, atlas_root=atlas_root,
+            call_pi_fn=_fake_pi({"found": False, "notes": "no backtest"}))
+        assert result.reason == "not_found"
+
+        # Default batch is now empty (claim self-excluded), so the cron stops
+        # hammering the same claim.
+        assert paper_metrics.extract_pending(
+            atlas_root=atlas_root, call_pi_fn=_fake_pi({"found": False})) == []
+        # Retry flag re-includes it.
+        retry = kn.list_shell_claims(include_low_confidence=True)
+        assert {r["strategy"] for r in retry} == {"strat_nf"}
+
+    def test_extract_pending_honors_flag(self, atlas_root, monkeypatch):
+        # A phase1.5-failed claim is skipped by default extract_pending, but
+        # reprocessed when include_low_confidence=True.
+        claim_id, _, _ = _seed_shell_claim(
+            atlas_root, source_id="src-retry", strategy="strat_retry")
+        self._mark_phase15_failed(claim_id, "phase1.5: LLM reported no metrics")
+        _patch_pdftotext(monkeypatch)
+
+        # Default: nothing to do (the failed claim is excluded).
+        assert paper_metrics.extract_pending(
+            atlas_root=atlas_root, call_pi_fn=_fake_pi({"found": True})) == []
+
+        # Retry flag: the claim is reprocessed; this time the LLM finds metrics.
+        good = {"found": True, "claimed_sharpe": 1.5,
+                "extraction_confidence": "high", "notes": "Table 2"}
+        results = paper_metrics.extract_pending(
+            atlas_root=atlas_root, include_low_confidence=True,
+            call_pi_fn=_fake_pi(good))
+        assert len(results) == 1 and results[0].ok
+        c = kn.get_claim(claim_id)
+        assert c["claimed_sharpe"] == 1.5
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # extract_one
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -424,3 +525,233 @@ class TestExtractPending:
     def test_empty_when_no_pending(self, atlas_root):
         results = paper_metrics.extract_pending(atlas_root=atlas_root)
         assert results == []
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# #395: source-derived shell claims are visible to extract_paper_metrics
+# ═══════════════════════════════════════════════════════════════════════════════
+class TestSourceDerivedClaimVisibleToExtractor:
+    """The restored flow: a source-derived shell claim (no spec file) with a
+    local PDF must be picked up by list_shell_claims and extract_pending."""
+
+    def test_extract_paper_metrics_sees_source_backfilled_claim(
+        self, atlas_root, monkeypatch
+    ):
+        from research.discovery.extractors import paper_metadata, spec_to_claims
+
+        # 1. Ingest a PDF -> source row (no claim yet).
+        pdf = atlas_root / "research" / "discovery" / "papers" / "2605.07835v1.pdf"
+        pdf.write_bytes(b"%PDF-1.4\nfake paper bytes")
+        source_id, _ = paper_metadata.extract_one(pdf, atlas_root=atlas_root)
+        assert kn.list_shell_claims(require_local_pdf=True) == []
+
+        # 2. Source-derived backfill creates a shell claim with NULL metrics.
+        results = spec_to_claims.extract_claims_from_sources()
+        assert len(results) == 1
+        claim_id = results[0]["claim_id"]
+
+        # 3. extract_paper_metrics can now SEE the shell claim (local PDF).
+        shells = kn.list_shell_claims(require_local_pdf=True)
+        assert len(shells) == 1
+        assert shells[0]["claim_id"] == claim_id
+        assert shells[0]["source_id"] == source_id
+        assert shells[0]["local_path"] is not None
+
+        # 4. And the batch extractor processes it end-to-end with a fake LLM.
+        _patch_pdftotext(monkeypatch, text="Headline Sharpe 1.2 in Table 1.")
+        good = {"found": True, "claimed_sharpe": 1.2,
+                "extraction_confidence": "high", "notes": "Table 1"}
+        proc = paper_metrics.extract_pending(
+            atlas_root=atlas_root, call_pi_fn=_fake_pi(good))
+        assert len(proc) == 1 and proc[0].ok is True
+        c = kn.get_claim(claim_id)
+        assert c["claimed_sharpe"] == 1.2
+        # Now populated -> no longer a shell.
+        assert kn.list_shell_claims(require_local_pdf=True) == []
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# #395 follow-up: source-derived placeholder claims resolve their real strategy
+# ═══════════════════════════════════════════════════════════════════════════════
+class TestSourceDerivedStrategyResolution:
+    """A source-derived shell claim has a 'paper__<slug>' placeholder strategy
+    and a notes flag.  The LLM pass must (a) be told to infer the real strategy,
+    and (b) persist the resolved strategy + universe + metrics back to the row.
+    """
+
+    def _seed_placeholder_claim(self, atlas_root, monkeypatch):
+        """Ingest a PDF -> source -> source-derived shell claim (placeholder)."""
+        from research.discovery.extractors import paper_metadata, spec_to_claims
+
+        pdf = atlas_root / "research" / "discovery" / "papers" / "2605.07835v1.pdf"
+        pdf.write_bytes(b"%PDF-1.4\nfake paper bytes")
+        source_id, _ = paper_metadata.extract_one(pdf, atlas_root=atlas_root)
+        results = spec_to_claims.extract_claims_from_sources()
+        assert len(results) == 1
+        claim_id = results[0]["claim_id"]
+        # Sanity: starts as a placeholder needing resolution.
+        c = kn.get_claim(claim_id)
+        assert c["strategy"].startswith("paper__")
+        return claim_id, source_id
+
+    def test_needs_resolution_detection(self, atlas_root, monkeypatch):
+        claim_id, _ = self._seed_placeholder_claim(atlas_root, monkeypatch)
+        shell = kn.list_shell_claims(require_local_pdf=True)[0]
+        # Both signals present (placeholder prefix + notes flag).
+        assert paper_metrics._needs_strategy_resolution(shell) is True
+
+        # A known/spec-derived claim is NOT flagged for resolution.
+        _seed_shell_claim(atlas_root, source_id="src-known",
+                          strategy="rsi_volume_reversal",
+                          pdf_name="2401.55555.pdf")
+        known = [s for s in kn.list_shell_claims(require_local_pdf=True)
+                 if s["claim_id"].startswith("clm-src-known")][0]
+        assert paper_metrics._needs_strategy_resolution(known) is False
+
+    def test_resolution_block_in_prompt_when_placeholder(self, atlas_root, monkeypatch):
+        self._seed_placeholder_claim(atlas_root, monkeypatch)
+        shell = kn.list_shell_claims(require_local_pdf=True)[0]
+        prompt = paper_metrics.render_prompt(
+            strategy_name=shell["strategy"],
+            source_title="t",
+            pdf_text="body",
+            parameters={},
+            needs_resolution=paper_metrics._needs_strategy_resolution(shell),
+        )
+        assert "Strategy Resolution Required" in prompt
+        assert "{resolution_block}" not in prompt
+
+        # Known strategy gets the "already known" block instead.
+        kept = paper_metrics.render_prompt(
+            strategy_name="rsi_volume_reversal", source_title="t",
+            pdf_text="body", parameters={}, needs_resolution=False)
+        assert "Strategy Already Known" in kept
+
+    def test_resolution_updates_strategy_and_universe(self, atlas_root, monkeypatch):
+        claim_id, _ = self._seed_placeholder_claim(atlas_root, monkeypatch)
+        _patch_pdftotext(monkeypatch, text="A momentum breakout strategy on US large caps.")
+
+        resp = {
+            "found": True,
+            "strategy_name": "Momentum Breakout",  # model returns Title Case
+            "universe": "S&P 500",                  # paper-language label
+            "claimed_sharpe": 1.7,
+            "claimed_max_dd_pct": 14.0,
+            "extraction_confidence": "high",
+            "notes": "Table 3",
+        }
+        shell = kn.list_shell_claims(require_local_pdf=True)[0]
+        result = paper_metrics.extract_one(
+            shell, atlas_root=atlas_root, call_pi_fn=_fake_pi(resp))
+
+        assert result.ok is True
+        assert result.strategy == "momentum_breakout"  # snake_cased + persisted
+        c = kn.get_claim(claim_id)
+        assert c["strategy"] == "momentum_breakout"
+        assert c["universe"] == "sp500"               # alias-mapped
+        assert c["claimed_sharpe"] == 1.7
+        assert c["claimed_max_dd_pct"] == 14.0
+        assert c["notes"].startswith("phase1.5: resolved strategy -> momentum_breakout")
+        # No longer a shell or a placeholder.
+        assert kn.list_shell_claims(require_local_pdf=True) == []
+
+    def test_resolution_syncs_contradiction_for_resolved_strategy(
+        self, atlas_root, monkeypatch
+    ):
+        from db.research import upsert_research_best
+
+        claim_id, _ = self._seed_placeholder_claim(atlas_root, monkeypatch)
+        # Atlas has already measured the REAL strategy with a much lower Sharpe.
+        upsert_research_best(strategy="momentum_breakout", universe="sp500",
+                             params={}, solo_sharpe=0.4)
+        # Before resolution: placeholder can't match -> no contradiction anywhere.
+        assert kn.get_open_contradictions() == []
+
+        _patch_pdftotext(monkeypatch, text="Momentum breakout, Sharpe 1.6.")
+        resp = {
+            "found": True,
+            "strategy_name": "momentum_breakout",
+            "universe": "sp500",
+            "claimed_sharpe": 1.6,    # |1.6 - 0.4| = 1.2 -> critical
+            "extraction_confidence": "high",
+            "notes": "Table 1",
+        }
+        shell = kn.list_shell_claims(require_local_pdf=True)[0]
+        paper_metrics.extract_one(shell, atlas_root=atlas_root,
+                                  call_pi_fn=_fake_pi(resp))
+
+        # Contradiction now exists for the RESOLVED strategy...
+        opens = kn.get_open_contradictions(strategy="momentum_breakout")
+        assert len(opens) == 1
+        assert opens[0]["severity"] == "critical"
+        assert opens[0]["claim_id"] == claim_id
+        # ...and none linger under the old placeholder strategy.
+        placeholder = kn.get_claim(claim_id)  # strategy now resolved
+        assert placeholder["strategy"] == "momentum_breakout"
+
+    def test_found_false_keeps_placeholder_and_no_metrics(self, atlas_root, monkeypatch):
+        claim_id, _ = self._seed_placeholder_claim(atlas_root, monkeypatch)
+        _patch_pdftotext(monkeypatch, text="A theory paper with no backtest.")
+
+        result = paper_metrics.extract_one(
+            kn.list_shell_claims(require_local_pdf=True)[0],
+            atlas_root=atlas_root,
+            call_pi_fn=_fake_pi({"found": False, "notes": "no backtest"}),
+        )
+        assert result.ok is False and result.reason == "not_found"
+        c = kn.get_claim(claim_id)
+        # Strategy stays a placeholder; metrics stay NULL -> retryable shell.
+        assert c["strategy"].startswith("paper__")
+        assert c["claimed_sharpe"] is None
+        # Still detected as needing resolution on a retry (prefix survives).
+        assert paper_metrics._needs_strategy_resolution(c) is True
+
+    def test_found_true_but_no_strategy_name_keeps_placeholder(
+        self, atlas_root, monkeypatch
+    ):
+        # Model gave metrics but failed to name the strategy: persist metrics,
+        # keep placeholder (placeholder never matches research_best -> safe).
+        claim_id, _ = self._seed_placeholder_claim(atlas_root, monkeypatch)
+        _patch_pdftotext(monkeypatch, text="Headline Sharpe 1.1.")
+        resp = {"found": True, "claimed_sharpe": 1.1,
+                "extraction_confidence": "medium", "notes": "abstract"}
+        result = paper_metrics.extract_one(
+            kn.list_shell_claims(require_local_pdf=True)[0],
+            atlas_root=atlas_root, call_pi_fn=_fake_pi(resp))
+        assert result.ok is True
+        c = kn.get_claim(claim_id)
+        assert c["claimed_sharpe"] == 1.1
+        assert c["strategy"].startswith("paper__")  # unchanged
+
+
+class TestSpecDerivedStrategyNotMutated:
+    """Spec-derived/known claims must NEVER have their strategy rewritten, even
+    if the LLM volunteers a strategy_name in its JSON."""
+
+    def test_known_strategy_unchanged_even_if_llm_returns_name(
+        self, atlas_root, monkeypatch
+    ):
+        claim_id, _, _ = _seed_shell_claim(atlas_root, strategy="rsi_volume_reversal")
+        _patch_pdftotext(monkeypatch, text="Some paper text.")
+        # LLM (mischievously) returns a different strategy_name.
+        resp = {
+            "found": True,
+            "strategy_name": "totally_different_strategy",
+            "universe": "treasury_etfs",
+            "claimed_sharpe": 1.3,
+            "extraction_confidence": "high",
+            "notes": "Table 2",
+        }
+        result = paper_metrics.extract_one(
+            kn.list_shell_claims(require_local_pdf=True)[0],
+            atlas_root=atlas_root, call_pi_fn=_fake_pi(resp))
+
+        assert result.ok is True
+        assert result.strategy == "rsi_volume_reversal"  # NOT mutated
+        c = kn.get_claim(claim_id)
+        assert c["strategy"] == "rsi_volume_reversal"
+        assert c["universe"] == "sp500"                  # original, not clobbered
+        assert c["claimed_sharpe"] == 1.3                # metrics still applied
+        # notes uses the plain (non-resolution) prefix.
+        assert c["notes"].startswith("phase1.5: Table 2") or \
+               c["notes"].startswith("phase1.5: ")

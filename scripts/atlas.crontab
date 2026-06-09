@@ -139,6 +139,9 @@ TZ=Australia/Brisbane
 30 6 * * * cd /root/atlas && /usr/bin/python3 scripts/check_live_research_divergence.py >> /root/atlas/logs/live_research_divergence.log 2>&1
 
 # ── Weekly ops ─────────────────────────────────────────────────────────────────
+# Sunday 06:00 AEST — weekly maintenance (log rotation, pycache/cache cleanup, SQLite ANALYZE)
+0 6 * * 0 /usr/bin/flock -n /tmp/weekly_maintenance.lock bash -c 'cd /root/atlas && timeout 30m bash scripts/weekly_maintenance.sh' >> /root/atlas/logs/weekly_maintenance.log 2>&1
+
 # Saturday 09:00 AEST (Fri 23:00 UTC) — weekly strategy health check (sp500)
 # NOTE: heartbeat.json expected_cron="0 23 * * 5" is in UTC; this line is in AEST.
 0 9 * * 6 /root/atlas/scripts/pi-cron.sh health-check sp500

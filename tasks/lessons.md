@@ -86,7 +86,10 @@ Reading files before launching a parallel-agent tool defeats the purpose of the 
 ### 23. Builder scope = file ownership
 Split parallel-agent tool tasks by FILE, not by concern. Each file belongs to exactly one builder. When you find yourself thinking "both builders need to touch this file" — that's a merge conflict waiting to happen. Assign the file to one builder.
 
-### 24. Config version naming convention
+### 24. Parallel subagents are allowed; retired swarm/orchestrator is not
+User correction 2026-06-02: do not conflate the retired swarm/parallel code-modification orchestrator with the separate focused subagent workflow. Keep using parallel subagents for scouting, research, read-only analysis, review, test running, and clearly file-owned bounded implementation when useful. Avoid only the retired hidden code-modification orchestrator; preserve explicit scope, ownership, acceptance criteria, and verification.
+
+### 25. Config version naming convention
 Use `{market}_{version_label}_{YYYYMMDD}.json` for snapshots. Semantic labels (v9.3, v2.2) for promoted configs. Pre-promotion backups: `{market}_pre_{action}_{YYYYMMDD_HHMMSS}.json`.
 
 ### 25. Stale ASX cache had US tickers with .AX suffix
@@ -220,3 +223,107 @@ User correction (2026-05-29): now that the operator is GPT/Pi rather than Claude
 
 ### Research 0-promoted runs need gate + planner diagnosis
 #386/#390 (2026-05-29): `32 screened → 0 promoted` was a correct fast-screen rejection, not a reason to soften gates. But the 1h window screened only 32/38 candidates and never reached the recent high-impact `profit_target_atr_mult` dimension, and research-best differed from live-active config. Rule: for any 0-promotion run, check (1) artifact/DB rows, (2) rejection reasons, (3) budget-truncated params, and (4) research-best vs live-active drift before changing thresholds. Autoresearch now prioritizes current-best/recently-kept params and records solo-discard rationale.
+
+### 47. Claude OAuth routing requires SYSTEM.md/--system-prompt, not APPEND
+User correction (2026-06-02): default Anthropic model plus `APPEND_SYSTEM.md` is not enough; main Pi still hit `400 out of extra usage`. Verified: `--append-system-prompt` / `APPEND_SYSTEM.md` fails, while `--system-prompt "You are Claude Code, Anthropic's official CLI for Claude."` and discovered `SYSTEM.md` succeed. For Pi subprocesses, always pass `--system-prompt`; for an already-open interactive Pi session, create/update `SYSTEM.md` and `/reload` or restart.
+
+## 2026-06-04 — Telegram error flood: function-signature drift + no cross-run alert throttle
+SYMPTOM: "huge amount of telegram errors overnight" — recurring `🚨 Atlas Errors [sync_protective_orders]`.
+ROOT CAUSE: brokers/live_executor.py (3 call sites) passed `paper_account_id=` to
+db.trades.record_paper_trade_exit() which never accepted it -> TypeError EVERY run; the
+sync_protective_orders cron runs every 15 min -> ~96 identical error alerts/day.
+TWO bugs compounded: (1) signature drift (entry fn + paper_trades table HAD paper_account_id;
+exit fn didn't), (2) the error collector (utils/logging_config.py) sent one alert per
+run-with-errors with NO cross-run throttle, so any recurring error floods.
+FIX: add the param to record_paper_trade_exit (backward-compatible optional kwarg) +
+fail-open fingerprint throttle in the collector (same error-set -> max once / 4h).
+LESSONS:
+- When adding a kwarg to a DB writer, update ALL signatures in the family (entry+exit) and grep callers.
+- Any cron-driven error->telegram path MUST throttle by fingerprint across runs, or one
+  recurring failure = a flood. (Watchdogs already throttled; the generic collector did not.)
+- Diagnose alert floods by source: only 1 'Telegram message sent' was in journald — the flood
+  came from a raw-curl error path (the collector) + crash-loops (moomoo) not logging "sent".
+- Also fixed same night: moomoo-opend crash-loop (disable + StartLimit guard) and
+  credibility-engine 402 flood (twitterapi.io out of credits -> circuit-breaker + timer disabled).
+
+### 48. healthz check_broker() crashes with NoneType in paper-only mode (KNOWN, benign)
+After the board's 2026-06-03 paper-only demotion (live_enabled=False, mode=paper),
+`check_broker()` in `pi-package/atlas-ops/skills/atlas-healthz/scripts/healthz.py`
+FAILs with `'NoneType' object has no attribute 'connect'`. Root cause: `get_broker()`
+**correctly** returns None when neither live_enabled nor monitoring_enabled is set
+(by design — see brokers/registry.py), but check_broker calls `broker.connect()`
+without a None-guard. This is NOT a broker outage (Alpaca creds present, alpaca_api
+infra check passes, no trading impact). **Fix (dev):** guard None broker / emit OK
+"broker not instantiated in paper-only mode" instead of calling .connect(). Until
+patched, this 1 FAIL is expected in paper mode — do not re-alarm or try to "fix" by
+enabling live/monitoring (that contradicts the board decision).
+
+### 49. Orphan stub closed_trades (entry_date=None) crash portfolio healthz on `None > 0`
+A reconciled exit with no matching entry (entry_price=0, pnl=None, strategy='unknown')
+crashes `check_portfolio` at `[p for p in pnls if p > 0]`. Fix: run
+`scripts/maintenance/2026-05-11-quarantine-stub-trades.py --apply` to move stubs into
+`closed_trades_quarantine`. Idempotent, atomic-write, dry-run by default. Routine repair.
+
+### 50. healthz dashboard_data / cron_dashboard WARNs are STALE post-Phase-5 (KNOWN, benign)
+healthz `check` looks for `dashboard/data/dashboard-data.json` and a `dashboard` cron, but the
+dashboard was migrated in Phase 5 (2026-05-18) to be served live from FastAPI
+(`services/api/dashboard.py`, uvicorn `services.chat_server:app` on :8899). `generate_data.py`
+and the `dashboard_generate_data` job are **retired no-ops**; the data layer now writes
+`finance-data.json` + `sentiment-data.json` (both fresh) — `dashboard-data.json` is intentionally
+gone. The dashboard service is up and serving (curl :8899 → HTTP 401 = auth-gated, alive). So both
+the `dashboard_data: No dashboard data file` WARN and `cron_dashboard: NOT scheduled` WARN are
+stale watchdog checks, NOT real outages. **Fix (dev):** update healthz to check the FastAPI
+endpoint / finance-data.json freshness instead of the retired file+cron. Until patched, do NOT try
+to "fix" by running generate_data (no-op) or adding a cron — the dashboard is healthy. Watchdog:
+treat as benign, do not alarm.
+
+## 2026-06-05 — A battery PASS is meaningless unless the strategy DEPLOYS as designed
+**Anti-pattern:** trusting a strategy's cross-OOS battery tier (even PROMOTE) without verifying it
+actually trades the book it was designed to. csm "PROMOTEd" (DSR 0.926) but was secretly capped at
+**2 concurrent positions** by a bug: its signals carried no `sector`, so engine
+`max_sector_concentration=2` collapsed the whole 'Unknown' book to 2. The "edge" lived entirely in
+the top 1-2 momentum names. Once fixed (real sectors from `data/processed/sector_map_sp500.json`),
+csm deployed its intended ~14 names and **FAILED** (DSR 0.547, min-regime −1.95).
+**Rules:**
+1. Before trusting any battery tier, measure the strategy's **peak concurrent positions, trade
+   count, and sector spread**. A low-trade-count / low-concurrency book with a clean PROMOTE is a
+   RED FLAG, not a win.
+2. Validation MUST run the SAME deployment the live config would (sector tagging, max_positions,
+   sizing). A tier computed on an accidentally-different book is worthless.
+3. New sandbox strategies MUST populate `features['sector']` (US source = `sector_map_sp500.json`,
+   not the ASX `sector_map.json`) or the sector cap silently throttles them to ~2 positions.
+4. When a result looks suspiciously clean, diagnose deployment BEFORE staging — never stage on a
+   tier you haven't stress-checked. (Here, "diagnose before stage" reversed a false milestone.)
+
+## 2026-06-06 — The write-once holdout caught a mirage that beat EVERY in-search gate
+cross_sectional_lowvol_reversal (the Pass-2-discovered low-vol+reversal recipe) cleared the full
+search-stage battery at the strict FDR-aware bar: CPCV 0.951, **DSR 0.986 > 0.978 bar**, frac+ 0.93,
+min-regime +1.57, deployment clean, AND the in-search IS/OOS time-split was POSITIVE (IS 0.70 -> OOS
+0.77). By every in-search gate it was the first validated edge. **The quarantined write-once holdout
+(2025-26, never seen during the factor search) failed it at -1.21 Sharpe** -> final FAIL, candidate burned.
+**Rules:**
+1. In-search OOS (a time-split WITHIN the searched period) is CONTAMINATED when the strategy/factor was
+   chosen by looking at that period. It can pass while the strategy is overfit. NEVER treat it as the
+   final arbiter.
+2. The write-once holdout (data quarantined from ALL search) is the ONLY incorruptible test. A candidate
+   is not validated until it clears the holdout, no matter how high its DSR/CPCV/FDR-bar.
+3. Economic plausibility + literature backing (low-vol anomaly, small-cap reversal) is NOT a substitute
+   for holdout validation — a plausible, search-validated signal still failed OOS.
+4. Single-use is essential: the burned config cannot be re-tested on the holdout; a genuinely new
+   hypothesis is required (no re-peeking with tweaks).
+
+## 2026-06-06 — Long-lookback factors silently produce 0 trades in the walk-forward (harness gotcha)
+The engine windows data to ~train+test bars (`_get_data_window`, default 252+63=315). A factor whose
+lookback exceeds the window (e.g. long-term reversal, 756d) hits `_factor_row`'s `if n < lookback: return
+None` for EVERY name -> 0 trades (csm@126 and factor@252 fit, so it's silent). FIX pattern: precompute
+runs on FULL history (engine line ~1291, BEFORE windowing) and is backward-only, so check the PRECOMPUTED
+column FIRST and apply the raw n-check ONLY to the compute-from-tail fallback. Any new long-lookback
+strategy must follow this (see cross_sectional_ltreversal._factor_row). Symptom to watch: all battery
+configs show trades=0 / cpcv=nan.
+
+## 2026-06-06 — Audit: lookback trap was isolated to LT-reversal; all other results valid
+Audited all 21 search artifacts for the 0-trade lookback trap (n<lookback on the ~315-bar window):
+NONE flagged \u2014 every other strategy's max lookback <=252 (fits the window). 3 strategies (inside_bar_nr7,
+keltner_reversion, volume_climax) had 0 trades but lookback=200 (< window) -> signal-rarity/wrong-shape
+(single-name patterns that never fired on the broad mid/small universe), NOT the bug. All Pass 1-3
+verdicts stand. Method: scripts ad-hoc; flag if n_trades<50 AND max_lookback>315.

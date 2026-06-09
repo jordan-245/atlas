@@ -11,8 +11,10 @@ Test categories
 * TestRegimeEnabled   — ``regime_enabled=True`` exercises the full pipeline:
   RegimeModel → build_multi_universe → strategy filtering → signal tagging →
   PortfolioConstructor → plan enrichment.
-* TestGracefulFallback — any exception in the regime pipeline falls back to
-  SP500-only mode with a warning log.
+* TestGracefulFallback — fail-closed (task #360): any failure to produce a
+  trustworthy regime classification rejects all signals and returns an empty,
+  explicitly-rejected plan (no SP500 fallback, no strategy execution, no crash)
+  with a warning log.
 """
 
 from __future__ import annotations
@@ -140,6 +142,22 @@ _PATCH_CONSTRUCTOR      = "portfolio.constructor.PortfolioConstructor"
 def patch_save_plan(monkeypatch):
     """Prevent every test from writing plan files to disk or hitting SQLite."""
     monkeypatch.setattr(TradePlanGenerator, "_save_plan", lambda self, plan, date: None)
+
+
+@pytest.fixture(autouse=True)
+def patch_active_universe_configs(monkeypatch):
+    """Default non-primary regime universes to active/live for focused unit tests.
+
+    Production now fails closed when a regime universe has no active config (#374).
+    Most tests in this module exercise regime plumbing, not config availability,
+    so they opt into active configs by default. Specific tests override this
+    fixture to assert inactive/missing universes are skipped.
+    """
+
+    def _fake_get_active_config(market: str) -> dict:
+        return {"market": market, "trading": {"mode": "live", "live_enabled": True}}
+
+    monkeypatch.setattr("utils.config.get_active_config", _fake_get_active_config)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -347,6 +365,75 @@ class TestRegimeEnabled:
             )
 
             mock_build.assert_called_once_with(universes)
+
+    def test_missing_archived_universe_configs_are_skipped_fail_closed(self, monkeypatch):
+        """Archived/deleted non-primary configs must not leak into SP500 plans (#374)."""
+        gen = TradePlanGenerator(_make_portfolio(), _make_config(regime_enabled=True))
+        regime = _make_regime_classification(
+            universes=["sp500", "sector_etfs", "commodity_etfs"]
+        )
+
+        def _get_active_config(market: str) -> dict:
+            if market == "sp500":
+                return {"market": "sp500", "trading": {"mode": "live", "live_enabled": True}}
+            raise FileNotFoundError(f"Config file not found: {market}")
+
+        monkeypatch.setattr("utils.config.get_active_config", _get_active_config)
+
+        with patch(_PATCH_REGIME_MODEL) as mock_cls, \
+             patch(_PATCH_BUILD_MULTI) as mock_build, \
+             patch(_PATCH_CONSTRUCTOR) as mock_ctor:
+
+            inst = MagicMock()
+            inst.classify_current.return_value = regime
+            inst.classify_and_record.return_value = regime
+            mock_cls.return_value = inst
+            mock_build.return_value = {"sp500": {}}
+            mock_ctor.return_value.construct.return_value = _make_constructed_portfolio()
+
+            plan = gen.generate_regime_plan(
+                strategies=[],
+                prices={},
+                trade_date="2026-01-01",
+                equity=10_000.0,
+            )
+
+        mock_build.assert_called_once_with(["sp500"])
+        assert plan["active_universes"] == ["sp500"]
+
+    def test_passive_or_disabled_universes_are_skipped(self, monkeypatch):
+        """mode=passive or live_enabled=false universes are not plan sources (#374)."""
+        gen = TradePlanGenerator(_make_portfolio(), _make_config(regime_enabled=True))
+        regime = _make_regime_classification(
+            universes=["sp500", "sector_etfs", "commodity_etfs"]
+        )
+
+        configs = {
+            "sector_etfs": {"market": "sector_etfs", "trading": {"mode": "passive", "live_enabled": True}},
+            "commodity_etfs": {"market": "commodity_etfs", "trading": {"mode": "live", "live_enabled": False}},
+        }
+        monkeypatch.setattr("utils.config.get_active_config", lambda market: configs[market])
+
+        with patch(_PATCH_REGIME_MODEL) as mock_cls, \
+             patch(_PATCH_BUILD_MULTI) as mock_build, \
+             patch(_PATCH_CONSTRUCTOR) as mock_ctor:
+
+            inst = MagicMock()
+            inst.classify_current.return_value = regime
+            inst.classify_and_record.return_value = regime
+            mock_cls.return_value = inst
+            mock_build.return_value = {"sp500": {}}
+            mock_ctor.return_value.construct.return_value = _make_constructed_portfolio()
+
+            plan = gen.generate_regime_plan(
+                strategies=[],
+                prices={},
+                trade_date="2026-01-01",
+                equity=10_000.0,
+            )
+
+        mock_build.assert_called_once_with(["sp500"])
+        assert plan["active_universes"] == ["sp500"]
 
     def test_strategy_filtering_respects_regime_types(self):
         """Only strategies whose name appears in enabled_strategies are invoked."""
@@ -631,10 +718,15 @@ class TestRegimeEnabled:
 
 
 class TestGracefulFallback:
-    """Regime model failures must not crash the plan run."""
+    """Regime model failures must fail closed: no crash, no SP500 fallback.
+
+    Per task #360 the regime gate never silently reverts to raw SP500 strategy
+    execution when classification fails — it rejects all signals and returns an
+    empty, explicitly-rejected plan. These tests pin that fail-closed contract.
+    """
 
     def test_fallback_on_classify_current_error(self):
-        """ValueError from classify_current → falls back to SP500-only, no raise."""
+        """ValueError from classify_current → fail closed (empty, rejected plan; no raise)."""
         gen = TradePlanGenerator(_make_portfolio(), _make_config(regime_enabled=True))
         strat = _make_strategy("momentum_breakout")
 
@@ -651,7 +743,10 @@ class TestGracefulFallback:
                 sp500_data={"AAPL": MagicMock()},
             )
 
+        # Fail closed: well-formed plan, but explicitly blocked with no entries.
         assert plan["status"] == "PENDING_APPROVAL"
+        assert plan["regime_gate_blocked"] is True
+        assert plan["proposed_entries"] == []
 
     def test_fallback_plan_has_no_regime_metadata(self):
         """A fallback plan must NOT contain regime fields."""
@@ -672,8 +767,15 @@ class TestGracefulFallback:
         assert "sizing_multiplier" not in plan
         assert "regime_reasoning" not in plan
 
-    def test_fallback_runs_strategies_on_sp500_data(self):
-        """After regime failure the strategy is still called with the sp500_data."""
+    def test_regime_failure_does_not_run_strategies(self):
+        """Fail closed: a regime classification failure rejects all signals.
+
+        When ``regime_enabled=True`` and ``classify_current`` raises, the regime
+        gate must NOT fall back to raw SP500 strategy execution — doing so would
+        bypass the regime risk gate and could place trades in an inappropriate
+        regime. Instead no strategy is invoked and an empty, explicitly-rejected
+        plan is returned (task #360).
+        """
         gen = TradePlanGenerator(_make_portfolio(), _make_config(regime_enabled=True))
         strat = _make_strategy("momentum_breakout")
         sp500_data = {"AAPL": MagicMock()}
@@ -683,7 +785,7 @@ class TestGracefulFallback:
                 "SQLite unavailable"
             )
 
-            gen.generate_regime_plan(
+            plan = gen.generate_regime_plan(
                 strategies=[strat],
                 prices={},
                 trade_date="2026-01-01",
@@ -691,10 +793,18 @@ class TestGracefulFallback:
                 sp500_data=sp500_data,
             )
 
-        strat.generate_signals.assert_called_once_with(sp500_data, 10_000.0, [])
+        # Fail closed: strategy execution is skipped entirely.
+        strat.generate_signals.assert_not_called()
+        # Empty, explicitly-blocked plan tagged with the failure reason.
+        assert plan["proposed_entries"] == []
+        assert plan["regime_gate_blocked"] is True
+        assert "SQLite unavailable" in plan["regime_gate_reason"]
+        assert plan["status"] == "PENDING_APPROVAL"
+        # No trustworthy regime classification → no regime metadata attached.
+        assert "regime_state" not in plan
 
     def test_fallback_on_build_multi_universe_error(self):
-        """build_multi_universe failure → falls back gracefully."""
+        """build_multi_universe failure (after classification) → fail closed, no crash."""
         gen = TradePlanGenerator(_make_portfolio(), _make_config(regime_enabled=True))
         regime = _make_regime_classification()
 

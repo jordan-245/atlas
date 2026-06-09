@@ -30,6 +30,8 @@ mkdir -p "$LOG_DIR"
 cd "$PROJECT"
 
 # Per-universe params: hours, workers, do_llm
+# Validate the universe name first so unknown universes hit the error branch
+# below before the missing-active-config skip can mask a typo as success.
 case "$UNIVERSE" in
     sp500)           HOURS=1.0;  WORKERS=3; DO_LLM=1; SWEEP_TIMEOUT=4200 ;;
     commodity_etfs)  HOURS=0.5;  WORKERS=2; DO_LLM=1; SWEEP_TIMEOUT=2400 ;;
@@ -40,6 +42,20 @@ case "$UNIVERSE" in
         exit 2
         ;;
 esac
+
+# Guard: skip known universes with no active config (retired/archived markets).
+# #372 fix — non-SP500 timers may still fire after their active configs were
+# archived; previously the sweep ran with no enabled strategies and the LLM
+# loop produced ResearchSession market mismatches. Detect early and exit 0
+# cleanly so systemd treats it as success and the tiny-log sentinel is not
+# triggered (we exit before reaching that check). Only reachable for known
+# universes — unknown names already exited above with code 2.
+ACTIVE_CFG="$PROJECT/config/active/${UNIVERSE}.json"
+if [ ! -f "$ACTIVE_CFG" ]; then
+    msg="$(date -Iseconds) [$UNIVERSE] SKIPPED -- no active config at $ACTIVE_CFG (universe retired or never enabled)"
+    echo "$msg" | tee -a "$LOGFILE"
+    exit 0
+fi
 
 echo "$(date -Iseconds) [$UNIVERSE] sweep start (hours=$HOURS, workers=$WORKERS, llm=$DO_LLM)" | tee -a "$LOGFILE"
 

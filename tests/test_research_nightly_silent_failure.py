@@ -110,13 +110,19 @@ def test_count_rows_added_filters_by_timestamp() -> None:
 
 
 def test_silent_failure_threshold_lookup() -> None:
-    """MIN_ROWS_PER_UNIVERSE has expected floor values; missing keys fall back to DEFAULT_MIN_ROWS."""
+    """MIN_ROWS_PER_UNIVERSE static fallback floors; missing keys -> DEFAULT_MIN_ROWS.
+
+    These are the static fallback floors used when an active config is missing,
+    has zero enabled strategies, or fails to parse. The live per-run threshold is
+    allow-list-aware via _resolve_min_rows (see test_research_silent_failure_threshold.py).
+    Values reflect the 2026-05-12 recalibration (commodity 20->5, gold 10->3).
+    """
     from research.autoresearch_nightly import MIN_ROWS_PER_UNIVERSE, DEFAULT_MIN_ROWS
 
     assert MIN_ROWS_PER_UNIVERSE["sp500"] == 50
-    assert MIN_ROWS_PER_UNIVERSE["commodity_etfs"] == 20
+    assert MIN_ROWS_PER_UNIVERSE["commodity_etfs"] == 5
     assert MIN_ROWS_PER_UNIVERSE["sector_etfs"] == 20
-    assert MIN_ROWS_PER_UNIVERSE["gold_etfs"] == 10
+    assert MIN_ROWS_PER_UNIVERSE["gold_etfs"] == 3
     assert MIN_ROWS_PER_UNIVERSE["treasury_etfs"] == 10
     assert MIN_ROWS_PER_UNIVERSE["defensive_etfs"] == 10
     assert MIN_ROWS_PER_UNIVERSE["asx"] == 10

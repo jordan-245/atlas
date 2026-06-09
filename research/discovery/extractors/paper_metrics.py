@@ -43,6 +43,42 @@ _PDF_TEXT_CHARS = 20_000
 # Where the prompt template lives.
 _PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "extract_metrics.md"
 
+# Atlas universe keys the LLM may resolve a paper's universe to.  Anything else
+# is treated as "unspecified" (NULL) so we never guess.
+_VALID_UNIVERSES = {
+    "sp500", "sector_etfs", "treasury_etfs", "commodity_etfs", "russell_2000",
+}
+
+# Prefix marking a source-derived placeholder strategy (see
+# spec_to_claims._source_strategy_placeholder).  Claims carrying this prefix --
+# or a notes flag -- need their real strategy inferred by the LLM pass.
+_PLACEHOLDER_STRATEGY_PREFIX = "paper__"
+
+# Injected into the prompt when the claim's strategy must be resolved.
+_RESOLUTION_BLOCK = """## Strategy Resolution Required
+
+The `strategy_name` shown above is a PLACEHOLDER generated from the source
+filename -- it is NOT the paper's real strategy. In addition to the headline
+metrics, you must **infer the paper's actual strategy** and report it:
+
+- `"strategy_name"`: the paper's core strategy as a concise snake_case
+  identifier (e.g. `momentum_breakout`, `rsi_mean_reversion`,
+  `cross_sectional_momentum`). Derive it from the strategy the paper actually
+  backtests, never the `paper__...` placeholder.
+- `"universe"`: the headline backtest's asset universe mapped to one of
+  `sp500`, `sector_etfs`, `treasury_etfs`, `commodity_etfs`, `russell_2000`.
+  If it doesn't clearly map to one of these, set it to null.
+
+If the paper reports no usable performance numbers, still return your best
+`strategy_name` guess (or null) with `"found": false`."""
+
+# Injected when the strategy is already known -- keeps the model from
+# second-guessing a spec-derived / known strategy key.
+_NO_RESOLUTION_BLOCK = """## Strategy Already Known
+
+The `strategy_name` above is already resolved. Leave `"strategy_name"` and
+`"universe"` set to null -- do not change them."""
+
 
 # ─── Result dataclass ─────────────────────────────────────────────────────────
 
@@ -117,10 +153,13 @@ def render_prompt(
     pdf_text: str,
     parameters: Optional[Dict[str, Any]] = None,
     text_chars: int = _PDF_TEXT_CHARS,
+    needs_resolution: bool = False,
 ) -> str:
     template = _load_prompt_template()
+    resolution_block = _RESOLUTION_BLOCK if needs_resolution else _NO_RESOLUTION_BLOCK
     return (
         template
+        .replace("{resolution_block}", resolution_block)
         .replace("{strategy_name}", strategy_name)
         .replace("{source_title}", source_title)
         .replace("{parameters_json}", json.dumps(parameters or {}, indent=2))
@@ -272,6 +311,67 @@ def _claim_notes_to_parameters(notes: Optional[str]) -> Dict[str, Any]:
     return {}
 
 
+def _needs_strategy_resolution(claim: Dict[str, Any]) -> bool:
+    """True when the claim's strategy is a placeholder needing LLM resolution.
+
+    Two independent signals (either is sufficient):
+      1. strategy starts with the 'paper__' placeholder prefix, OR
+      2. the claim's notes JSON carries needs_strategy_resolution: true.
+
+    The prefix is the robust signal: it survives even after a failed extraction
+    overwrites notes, so retries still attempt resolution.
+    """
+    strategy = (claim.get("strategy") or "")
+    if isinstance(strategy, str) and strategy.startswith(_PLACEHOLDER_STRATEGY_PREFIX):
+        return True
+    notes = claim.get("notes")
+    if notes:
+        try:
+            payload = json.loads(notes)
+            if isinstance(payload, dict) and payload.get("needs_strategy_resolution"):
+                return True
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return False
+
+
+def _resolve_strategy_name(raw: Any) -> Optional[str]:
+    """Normalise an LLM-proposed strategy name to a snake_case Atlas key.
+
+    Returns None when the value is empty, still a placeholder, or normalises to
+    nothing -- in which case the caller leaves the existing strategy untouched.
+    """
+    if raw is None:
+        return None
+    s = str(raw).strip().lower()
+    if not s:
+        return None
+    s = re.sub(r"[^a-z0-9]+", "_", s).strip("_")
+    if not s:
+        return None
+    # Never accept a placeholder echo as a "resolved" strategy.
+    if s.startswith(_PLACEHOLDER_STRATEGY_PREFIX):
+        return None
+    return s
+
+
+def _resolve_universe(raw: Any) -> Optional[str]:
+    """Map an LLM-proposed universe to a canonical Atlas universe key, else None."""
+    if raw is None:
+        return None
+    key = str(raw).strip().lower()
+    if not key:
+        return None
+    if key in _VALID_UNIVERSES:
+        return key
+    # Fall back to the spec extractor's paper-language alias table.
+    try:
+        from research.discovery.extractors.spec_to_claims import _normalise_universe
+        return _normalise_universe([str(raw)])
+    except Exception:  # noqa: BLE001 -- alias resolution is best-effort
+        return None
+
+
 def extract_one(
     claim: Dict[str, Any],
     *,
@@ -347,11 +447,13 @@ def extract_one(
                                 reason="empty_pdf_text", extracted=None)
 
     parameters = _claim_notes_to_parameters(claim.get("notes"))
+    needs_resolution = _needs_strategy_resolution(claim)
     prompt = render_prompt(
         strategy_name=strategy,
         source_title=source_title,
         pdf_text=pdf_text,
         parameters=parameters,
+        needs_resolution=needs_resolution,
     )
 
     if call_pi_fn is None:
@@ -397,8 +499,23 @@ def extract_one(
     if confidence not in ("high", "medium", "low"):
         confidence = "medium"
 
-    update_claim_metrics(
-        id=claim_id,
+    # Strategy resolution: only for placeholder claims, and only when the model
+    # actually proposed a usable snake_case name.  Known/spec-derived claims
+    # never pass strategy=/universe=, so their strategy is never mutated even if
+    # the model volunteers a name.
+    resolved_strategy: Optional[str] = None
+    resolved_universe: Optional[str] = None
+    if needs_resolution:
+        resolved_strategy = _resolve_strategy_name(parsed.get("strategy_name"))
+        resolved_universe = _resolve_universe(parsed.get("universe"))
+
+    base_note = _s(parsed.get("notes")) or "extracted"
+    if resolved_strategy:
+        note = f"phase1.5: resolved strategy -> {resolved_strategy}; {base_note}"
+    else:
+        note = f"phase1.5: {base_note}"
+
+    update_kwargs: Dict[str, Any] = dict(
         claimed_sharpe=_f(parsed.get("claimed_sharpe")),
         claimed_solo_sharpe=_f(parsed.get("claimed_solo_sharpe")),
         claimed_max_dd_pct=_f(parsed.get("claimed_max_dd_pct")),
@@ -409,10 +526,22 @@ def extract_one(
         period_start=_s(parsed.get("period_start")),
         period_end=_s(parsed.get("period_end")),
         extraction_confidence=confidence,
-        notes=("phase1.5: " + (_s(parsed.get("notes")) or "extracted"))[:500],
+        notes=note[:500],
     )
+    if resolved_strategy:
+        update_kwargs["strategy"] = resolved_strategy
+        # Only set universe when we resolved one -- never clobber an existing
+        # universe with None (COALESCE would no-op, but be explicit).
+        if resolved_universe:
+            update_kwargs["universe"] = resolved_universe
+
+    # update_claim_metrics fires sync_contradictions for the *effective*
+    # (resolved) strategy and prunes stale placeholder contradictions.
+    update_claim_metrics(id=claim_id, **update_kwargs)
+
+    effective_strategy = resolved_strategy or strategy
     return ExtractionResult(claim_id=claim_id, source_id=source_id,
-                            strategy=strategy, ok=True, skipped=False,
+                            strategy=effective_strategy, ok=True, skipped=False,
                             reason="extracted", extracted=parsed)
 
 
@@ -423,13 +552,24 @@ def extract_pending(
     atlas_root: Path,
     limit: int = 25,
     require_local_pdf: bool = True,
+    include_low_confidence: bool = False,
     call_pi_fn: Optional[Callable[..., str]] = None,
     timeout: int = 600,
 ) -> List[ExtractionResult]:
-    """Process up to `limit` shell claims.  Each call is independent."""
+    """Process up to `limit` shell claims.  Each call is independent.
+
+    By default (include_low_confidence=False) claims whose prior Phase 1.5
+    attempt already failed (notes prefixed 'phase1.5:' + confidence 'low') are
+    skipped so the cron never retries the same not_found claim forever (#395).
+    Pass include_low_confidence=True to deliberately retry them.
+    """
     from db.knowledge import list_shell_claims
 
-    claims = list_shell_claims(require_local_pdf=require_local_pdf, limit=limit)
+    claims = list_shell_claims(
+        require_local_pdf=require_local_pdf,
+        include_low_confidence=include_low_confidence,
+        limit=limit,
+    )
     if not claims:
         return []
 

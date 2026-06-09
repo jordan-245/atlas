@@ -83,10 +83,10 @@ class TestCallPiVisionPathValidation:
 
         monkeypatch.setattr(subprocess, "run", fake_run)
 
-        result = call_pi_vision("prompt", [], model="claude-opus-4-7")
+        result = call_pi_vision("prompt", [], model="claude-opus-4-8")
         assert result == '{"trend": "up"}'
         assert "--model" in captured["cmd"]
-        assert "claude-opus-4-7" in captured["cmd"]
+        assert "claude-opus-4-8" in captured["cmd"]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -123,7 +123,7 @@ class TestCallPiVisionCommandConstruction:
         call_pi_vision(
             "analyse these charts",
             [img1, img2],
-            model="claude-opus-4-7",
+            model="claude-opus-4-8",
             mode="json",
             system_prompt="test-system-prompt",
         )
@@ -136,7 +136,7 @@ class TestCallPiVisionCommandConstruction:
 
         # Model flag
         assert "--model" in cmd
-        assert "claude-opus-4-7" in cmd
+        assert "claude-opus-4-8" in cmd
 
         # System prompt flag
         assert "--system-prompt" in cmd
@@ -357,7 +357,7 @@ class TestOverlayFlagOn:
         cfg = {
             "overlay_vision": {
                 "enabled": True,
-                "model": "claude-opus-4-7",
+                "model": "claude-opus-4-8",
                 "max_images": 3,
                 "timeout_seconds": 30,
             }
@@ -422,7 +422,7 @@ class TestOverlayFlagOn:
         cfg = {
             "overlay_vision": {
                 "enabled": True,
-                "model": "claude-opus-4-7",
+                "model": "claude-opus-4-8",
                 "max_images": 3,
                 "timeout_seconds": 30,
             }
@@ -465,7 +465,7 @@ class TestCallPiWithVision:
             lambda: True,
         )
 
-        result = _call_pi_with_vision("prompt", [], model="claude-opus-4-7", timeout=10)
+        result = _call_pi_with_vision("prompt", [], model="claude-opus-4-8", timeout=10)
         assert result is None
 
     def test_returns_none_on_subprocess_error(self, monkeypatch, tmp_path):
@@ -488,7 +488,7 @@ class TestCallPiWithVision:
         result = _call_pi_with_vision(
             "prompt",
             [("SPY_daily", fake_png)],
-            model="claude-opus-4-7",
+            model="claude-opus-4-8",
             timeout=10,
         )
         assert result is None
@@ -516,7 +516,7 @@ class TestCallPiWithVision:
         result = _call_pi_with_vision(
             "BASE PROMPT",
             [("SPY_daily_1y", fake_png)],
-            model="claude-opus-4-7",
+            model="claude-opus-4-8",
             timeout=10,
         )
 

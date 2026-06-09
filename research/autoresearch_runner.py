@@ -233,6 +233,377 @@ def _brain_history_count(strategy: str, param_name: str) -> int:
     return count
 
 
+def _last_keep_timestamp(strategy: str, param_name: str) -> Optional[datetime]:
+    """Return the most-recent KEEP timestamp for (strategy, param_name).
+
+    Scans ``research/brain/params/{param_name}.md`` for rows whose result
+    column indicates a keep (``✅ kept``).  Used by :func:`build_sweep_plan`
+    to surface *recently-kept / high-impact* parameters ahead of stale
+    high-history parameters.
+
+    Returns:
+        ``datetime`` of the latest keep, or ``None`` if the param was never
+        kept for this strategy (or has no history file).
+    """
+    param_file = (
+        ATLAS_ROOT / "research" / "brain" / "params" / f"{param_name}.md"
+    )
+    if not param_file.exists():
+        return None
+    try:
+        content = param_file.read_text()
+    except OSError:
+        return None
+
+    latest: Optional[datetime] = None
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|") or stripped.startswith("| Date"):
+            continue
+        parts = [p.strip() for p in stripped.split("|")]
+        if len(parts) < 6:
+            continue
+        if parts[2].strip() != strategy:
+            continue
+        result = parts[4].strip().lower()
+        # ✅ kept rows count as keeps; ❌ discard rows do not.
+        if "kept" not in result and "keep" not in result:
+            continue
+        date_str = parts[1].strip()
+        ts: Optional[datetime] = None
+        for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+            try:
+                ts = datetime.strptime(date_str, fmt)
+                break
+            except ValueError:
+                continue
+        if ts is None:
+            continue
+        if latest is None or ts > latest:
+            latest = ts
+    return latest
+
+
+def _priority_param_from_description(
+    description: Optional[str], known_keys: List[str]
+) -> Optional[str]:
+    """Identify the parameter that produced the current best from its description.
+
+    The ``research/best/<strategy>.json`` ``description`` field names the param
+    that produced the current best, e.g.::
+
+        "profit_target_atr_mult: 0 -> 2.2 (manual override DSR: doubles Sharpe)"
+        "autoresearch_runner keep: rsi_period=7"
+
+    The matched param is the most-recently-kept / highest-impact dimension and
+    is prioritised first in the sweep plan so a budget-limited window always
+    re-explores its neighbourhood.
+
+    Args:
+        description: The best-record description string (may be ``None``).
+        known_keys:  Candidate dotted param keys to match against.
+
+    Returns:
+        The earliest-appearing known key followed by ``:`` or ``=``, or
+        ``None`` when no known key is referenced.
+    """
+    if not description:
+        return None
+    import re
+
+    best_key: Optional[str] = None
+    best_pos: Optional[int] = None
+    for key in known_keys:
+        # Match the key as a whole token immediately followed by ':' or '='.
+        # Negative lookbehind on word chars / '.' prevents matching a key that
+        # is a substring of a longer dotted key.
+        m = re.search(rf"(?<![\w.]){re.escape(key)}\s*[:=]", description)
+        if m is not None:
+            pos = m.start()
+            if best_pos is None or pos < best_pos:
+                best_pos = pos
+                best_key = key
+    return best_key
+
+
+# ─── Research-Best vs Live-Active Drift Check (read-only) ──────────────────
+
+# Non-parameter / structural metadata keys ignored when comparing the
+# research-best param block to the live-active strategy config.  These are
+# enable flags, allocation weights, and nested sub-config blocks that are not
+# part of the tuned parameter surface.
+_DRIFT_IGNORE_KEYS = {
+    "enabled",
+    "weight",
+    "earnings_blackout",
+    "volume",
+    "breadth",
+    "relative_strength",
+    "cointegration_filter",
+    "trailing_stop",
+    "deprecated_at",
+    "decommission_reason",
+}
+
+
+def _value_drift(rb_val: Any, act_val: Any, rel_tol: float = 1e-9):
+    """Return ``(drifted: bool, pct_change: Optional[float])`` for two scalars.
+
+    Booleans and strings are compared for exact equality (pct_change ``None``).
+    Numerics use :func:`math.isclose` and report percent change relative to the
+    research-best value.
+    """
+    import math
+
+    if isinstance(rb_val, bool) or isinstance(act_val, bool):
+        return (bool(rb_val) != bool(act_val)), None
+    if isinstance(rb_val, str) or isinstance(act_val, str):
+        return (str(rb_val) != str(act_val)), None
+    try:
+        a = float(rb_val)
+        b = float(act_val)
+    except (TypeError, ValueError):
+        return (rb_val != act_val), None
+    if math.isclose(a, b, rel_tol=rel_tol, abs_tol=1e-9):
+        return False, 0.0
+    denom = abs(a) if a != 0 else (abs(b) if b != 0 else 1.0)
+    pct = round((b - a) / denom * 100.0, 2)
+    return True, pct
+
+
+def compare_research_best_vs_active(
+    strategy: str,
+    market: str = "sp500",
+    active_config: Optional[dict] = None,
+    best_record: Optional[dict] = None,
+    rel_tol: float = 1e-9,
+) -> dict:
+    """Compare research-best params against live-active config params (read-only).
+
+    This is a **diagnostic** surfaced in the autoresearch summary.  It NEVER
+    mutates the live config and NEVER auto-promotes — it only reports whether
+    the research-best record (``research/best/<strategy>.json``) that nightly
+    sweeps optimise around still matches the live config
+    (``config/active/<market>.json``).
+
+    Non-parameter metadata (``enabled``, ``weight``, ``earnings_blackout`` and
+    other nested sub-config blocks, plus underscore-prefixed keys) is ignored.
+
+    Args:
+        strategy:      Strategy name (e.g. ``'momentum_breakout'``).
+        market:        Market / config id (default ``'sp500'``).
+        active_config: Active config dict (loaded if ``None``).
+        best_record:   Research-best record dict (loaded if ``None``).
+        rel_tol:       Relative tolerance for numeric equality.
+
+    Returns:
+        A dict with ``drift_detected``, ``compared_keys``, ``drifted_params``,
+        ``ignored_keys``, availability flags, a ``recommendation`` string, and
+        a ``gate_warning`` (``None`` when aligned).
+    """
+    result = {
+        "strategy": strategy,
+        "market": market,
+        "drift_detected": False,
+        "research_best_available": False,
+        "active_available": False,
+        "compared_keys": [],
+        "drifted_params": [],
+        "ignored_keys": [],
+        "recommendation": "",
+        "gate_warning": None,
+    }
+
+    # ── Research-best params ───────────────────────────────────────
+    if best_record is None:
+        try:
+            from research.loop import load_best
+            best_record = load_best(strategy, market)
+        except Exception:
+            best_record = None
+    rb_params = {}
+    if isinstance(best_record, dict):
+        rb_params = best_record.get("params") or {}
+    if isinstance(rb_params, dict) and rb_params:
+        result["research_best_available"] = True
+
+    # ── Active config params ─────────────────────────────────────
+    if active_config is None:
+        try:
+            from utils.config import get_active_config
+            active_config = get_active_config(market, apply_overrides=False)
+        except Exception:
+            active_config = None
+    active_params = {}
+    if isinstance(active_config, dict):
+        strat_block = (active_config.get("strategies", {}) or {}).get(strategy, {})
+        active_params = strat_block or {}
+    if isinstance(active_params, dict) and active_params:
+        result["active_available"] = True
+
+    if not result["research_best_available"] or not result["active_available"]:
+        result["recommendation"] = (
+            "Drift check unavailable — "
+            f"research_best={'ok' if result['research_best_available'] else 'missing'}, "
+            f"active={'ok' if result['active_available'] else 'missing'}."
+        )
+        return result
+
+    for key, rb_val in rb_params.items():
+        if key in _DRIFT_IGNORE_KEYS or str(key).startswith("_"):
+            result["ignored_keys"].append(key)
+            continue
+        if isinstance(rb_val, dict):
+            # Nested sub-config block — not a scalar tuned param.
+            result["ignored_keys"].append(key)
+            continue
+        if not isinstance(rb_val, (int, float, bool, str)):
+            result["ignored_keys"].append(key)
+            continue
+        if key not in active_params:
+            result["compared_keys"].append(key)
+            result["drifted_params"].append({
+                "param": key,
+                "research_best": rb_val,
+                "active": None,
+                "pct_change": None,
+                "reason": "missing_in_active",
+            })
+            continue
+        act_val = active_params[key]
+        if isinstance(act_val, dict):
+            result["ignored_keys"].append(key)
+            continue
+        result["compared_keys"].append(key)
+        drifted, pct = _value_drift(rb_val, act_val, rel_tol)
+        if drifted:
+            result["drifted_params"].append({
+                "param": key,
+                "research_best": rb_val,
+                "active": act_val,
+                "pct_change": pct,
+            })
+
+    result["drift_detected"] = bool(result["drifted_params"])
+    if result["drift_detected"]:
+        names = ", ".join(str(d["param"]) for d in result["drifted_params"])
+        result["gate_warning"] = (
+            f"research-best vs live-active drift on "
+            f"{len(result['drifted_params'])} param(s): {names}. "
+            "Nightly research is optimising around a research-best record that "
+            "does NOT match the live config."
+        )
+        result["recommendation"] = (
+            "DRIFT — do NOT treat nightly research as a direct live-return signal. "
+            "Reconcile via #389 (OOS + config-promotion gates) before staging any "
+            "candidate. This check performed no config change and no auto-promote."
+        )
+    else:
+        result["recommendation"] = (
+            "ALIGNED — research-best matches live-active on all compared params. "
+            "No reconciliation action required."
+        )
+    return result
+
+
+# ─── Solo-Discard Telemetry ──────────────────────────────────────
+
+
+def build_solo_discard_record(
+    display_name: str,
+    dotted_key: str,
+    candidate_value: Any,
+    solo_metrics: dict,
+    solo_baseline_metrics: Optional[dict],
+    solo_verdict: dict,
+) -> dict:
+    """Build a structured solo-discard telemetry record for post-mortems.
+
+    Captures the solo baseline, the candidate's solo metrics, and the
+    ``keep_or_discard()`` deltas/rationale so a rejected candidate can be
+    reconstructed later without re-running the sweep.  Pure / side-effect free.
+    """
+    solo_metrics = solo_metrics or {}
+    baseline = solo_baseline_metrics or {}
+    return {
+        "experiment": display_name,
+        "param": dotted_key,
+        "candidate_value": candidate_value,
+        "baseline_sharpe": round(float(baseline.get("sharpe", 0) or 0), 4),
+        "solo_sharpe": round(float(solo_metrics.get("sharpe", 0) or 0), 4),
+        "delta_sharpe": solo_verdict.get("delta_sharpe"),
+        "delta_trades": solo_verdict.get("delta_trades"),
+        "delta_dd": solo_verdict.get("delta_dd"),
+        "baseline_trades": int(baseline.get("total_trades", 0) or 0),
+        "solo_trades": int(solo_metrics.get("total_trades", 0) or 0),
+        "rationale": solo_verdict.get("rationale", ""),
+        "runtime_s": solo_metrics.get("runtime_s", 0),
+    }
+
+
+def format_solo_discard_description(display_name: str, record: dict) -> str:
+    """Render a solo-discard record into an enriched ``_append_result`` description.
+
+    The enriched description carries the solo baseline, the candidate Sharpe,
+    the keep/discard deltas, and the rejection rationale so the TSV/SQLite
+    ``discard_solo`` row is self-explanatory for post-mortems.
+    """
+    def _f(key, default=0.0):
+        val = record.get(key, default)
+        return default if val is None else val
+
+    return (
+        f"[solo screen] {display_name} | "
+        f"baseline_sharpe={_f('baseline_sharpe'):.4f} "
+        f"solo_sharpe={_f('solo_sharpe'):.4f} "
+        f"Δsharpe={_f('delta_sharpe'):+.4f} "
+        f"Δtrades={int(_f('delta_trades', 0)):+d} "
+        f"Δdd={_f('delta_dd'):+.2f} | {record.get('rationale', '')}"
+    )
+
+
+def _persist_solo_discards(
+    strategy: str,
+    market: str,
+    solo_baseline_metrics: Optional[dict],
+    discards: List[dict],
+    out_path: Optional[Path] = None,
+) -> Optional[Path]:
+    """Persist solo-discard telemetry to a JSON sidecar for post-mortems.
+
+    Writes ``research/results/solo_discards_<strategy>_<market>.json`` (the
+    latest session) unless *out_path* is supplied.  Returns the written path,
+    or ``None`` when there are no discards.
+    """
+    if not discards:
+        return None
+    baseline = solo_baseline_metrics or {}
+    payload = {
+        "strategy": strategy,
+        "market": market,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "solo_baseline": {
+            "sharpe": round(float(baseline.get("sharpe", 0) or 0), 4),
+            "total_trades": int(baseline.get("total_trades", 0) or 0),
+            "max_drawdown_pct": round(float(baseline.get("max_drawdown_pct", 0) or 0), 2),
+        },
+        "count": len(discards),
+        "discards": discards,
+    }
+    if out_path is None:
+        out_path = (
+            ATLAS_ROOT / "research" / "results"
+            / f"solo_discards_{strategy}_{market}.json"
+        )
+    try:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(payload, indent=2, default=str))
+    except OSError as exc:
+        logger.warning("Failed to persist solo-discard telemetry: %s", exc)
+        return None
+    return out_path
+
+
 # ─── Vectorised Pre-Sort ──────────────────────────────────────────────────────
 
 # Mapping from autoresearch dotted param keys → vectorised sweep grid keys
@@ -391,6 +762,7 @@ def build_sweep_plan(
     strategy: str,
     market: str,
     current_best: dict,
+    best_record: Optional[dict] = None,
 ) -> List[Tuple[str, str, Any]]:
     """Build an ordered list of ``(display_name, dotted_key, candidate_value)`` to try.
 
@@ -400,13 +772,25 @@ def build_sweep_plan(
 
     For boolean parameters: tries the opposite value (if not already discarded).
 
-    Parameters are ordered so those with the most brain history for this strategy
-    come first (to build on known data), followed by unexplored parameters.
+    **Budget-aware parameter ordering (Task #390).**  Parameters are ordered so
+    a budget-limited (e.g. 1h) window reaches high-value dimensions first:
+
+      0. The parameter that produced the current best (parsed from
+         *best_record* ``description``) — its neighbourhood is re-explored first.
+      1. Recently-kept parameters (most-recent brain keep first).
+      2. Unexplored parameters (no brain history under the current best).
+      3. Stale high-history parameters with no recent keep — explored last.
+
+    This replaces the prior "most brain history first" ordering, which buried
+    recently high-impact dimensions (e.g. ``profit_target_atr_mult`` for
+    momentum_breakout) at the end of the plan (Task #386).
 
     Args:
         strategy:     Strategy name (e.g. ``'mean_reversion'``).
         market:       Market ID (unused currently, reserved for future use).
         current_best: Current best parameter dict (may be nested).
+        best_record:  Optional full research-best record; its ``description``
+                      field names the most-recently-kept param to prioritise.
 
     Returns:
         List of ``(display_name, dotted_key, candidate_value)`` tuples in the
@@ -459,11 +843,37 @@ def build_sweep_plan(
         if candidates:
             param_candidates[dotted_key] = candidates
 
-    # Order parameters: most brain history first, then unexplored
-    sorted_keys = sorted(
-        param_candidates.keys(),
-        key=lambda k: -_brain_history_count(strategy, k),
-    )
+    # ── Budget-aware ordering (Task #390) ────────────────────────────────────
+    # Preserve original flatten order as a deterministic tiebreaker.
+    ordered_keys = list(param_candidates.keys())
+    insertion_index = {k: i for i, k in enumerate(ordered_keys)}
+
+    priority_param = None
+    if best_record:
+        priority_param = _priority_param_from_description(
+            best_record.get("description", ""), ordered_keys
+        )
+        if priority_param is not None:
+            logger.info(
+                "Sweep ordering: prioritising '%s' (produced current best).",
+                priority_param,
+            )
+
+    def _order_key(k: str):
+        # Tier 0 — the param that produced the current best (highest value).
+        if priority_param is not None and k == priority_param:
+            return (0, 0.0, insertion_index[k])
+        keep_ts = _last_keep_timestamp(strategy, k)
+        if keep_ts is not None:
+            # Tier 1 — recently kept: most-recent keep first.
+            return (1, -keep_ts.timestamp(), insertion_index[k])
+        if _brain_history_count(strategy, k) == 0:
+            # Tier 2 — unexplored / new under the current best.
+            return (2, 0.0, insertion_index[k])
+        # Tier 3 — stale high-history, no recent keep: explored last.
+        return (3, float(-_brain_history_count(strategy, k)), insertion_index[k])
+
+    sorted_keys = sorted(param_candidates.keys(), key=_order_key)
 
     plan: List[Tuple[str, str, Any]] = []
     for dotted_key in sorted_keys:
@@ -581,7 +991,9 @@ def run_session(
 
     # ── Create session ────────────────────────────────────────────────────────
     logger.info("Initialising ResearchSession(%s, %s) ...", strategy, market)
-    from research.loop import ResearchSession, keep_or_discard, _append_result
+    from research.loop import (
+        ResearchSession, keep_or_discard, _append_result, load_best,
+    )
     from research.lockfile import EvaluationLockViolation
 
     session = ResearchSession(strategy, market, snapshot_id=snapshot_id)
@@ -690,8 +1102,36 @@ def run_session(
 
     # ── Sweep plan ────────────────────────────────────────────────────────────
     current_best_params = dict(session._best_params)
+
+    # Research-best record drives both the read-only drift check and the
+    # budget-aware sweep ordering (Tasks #389 / #390).
+    try:
+        best_record = load_best(strategy, market)
+    except Exception as _bexc:
+        logger.debug("load_best failed (non-fatal): %s", _bexc)
+        best_record = None
+
+    # ── Research-best vs live-active drift check (read-only; never promotes) ────
+    drift: Optional[dict] = None
+    try:
+        drift = compare_research_best_vs_active(
+            strategy, market,
+            active_config=getattr(session, "_config", None),
+            best_record=best_record,
+        )
+    except Exception as _dexc:
+        logger.debug("drift check failed (non-fatal): %s", _dexc)
+        drift = None
+    if drift and drift.get("drift_detected"):
+        logger.warning("[drift] %s", drift.get("gate_warning"))
+        logger.warning("[drift] %s", drift.get("recommendation"))
+    elif drift and drift.get("research_best_available") and drift.get("active_available"):
+        logger.info("[drift] %s", drift.get("recommendation"))
+
     logger.info("Building sweep plan ...")
-    plan = build_sweep_plan(strategy, market, current_best_params)
+    plan = build_sweep_plan(
+        strategy, market, current_best_params, best_record=best_record,
+    )
     logger.info("Sweep plan: %d experiments queued.", len(plan))
 
     # ── Vectorised presort (reorder plan by signal quality) ───────────────
@@ -705,6 +1145,7 @@ def run_session(
     kept = 0           # passed both stages (or combined-only when no fast_screen)
     skipped = 0        # brain history skip
     solo_pass_combined_fail = 0
+    solo_discards: List[dict] = []  # solo-discard telemetry (Task #390)
     consecutive_crashes = 0
     MAX_CONSECUTIVE_CRASHES = 5
     _cur_solo_sharpe: Optional[float] = None  # solo screen Sharpe for current experiment (M2)
@@ -777,12 +1218,26 @@ def run_session(
                     solo_verdict["rationale"],
                     solo_metrics.get("runtime_s", 0),
                 )
-                # Log solo discard to TSV
+                # Solo-discard telemetry (Task #390): capture baseline + deltas
+                # + rationale so post-mortems don't require a re-run.
+                discard_record = build_solo_discard_record(
+                    display_name, dotted_key, candidate_value,
+                    solo_metrics, solo_baseline_metrics, solo_verdict,
+                )
+                solo_discards.append(discard_record)
+                # Log solo discard to TSV/SQLite with an enriched description.
+                # This enriches the caller-supplied description only — it does
+                # NOT change _append_result's signature or implementation.
+                # Pass market= so the SQLite dual-write is attributed to the
+                # correct universe (#392). Without it the row defaulted to
+                # universe='sp500', under-counting non-sp500 sweeps in
+                # _count_rows_added() and corrupting TSV/SQLite consistency.
                 _append_result(
                     strategy, solo_metrics,
                     f"{dotted_key}={candidate_value}",
                     "discard_solo",
-                    f"[solo screen] {display_name}",
+                    format_solo_discard_description(display_name, discard_record),
+                    market=market,
                 )
                 continue
 
@@ -908,10 +1363,19 @@ def run_session(
 
     # ── Final summary ─────────────────────────────────────────────────────────
     runtime_s = time.time() - session_start
+    discard_telemetry_path = _persist_solo_discards(
+        strategy, market, solo_baseline_metrics, solo_discards,
+    )
+    if discard_telemetry_path is not None:
+        logger.info(
+            "[telemetry] %d solo-discard rows persisted → %s",
+            len(solo_discards), discard_telemetry_path,
+        )
     summary = _summarise_and_notify(
         strategy, market, screened, promoted, kept, skipped,
         solo_pass_combined_fail, starting_sharpe, current_sharpe,
         runtime_s, notify, fast_screen,
+        drift=drift, solo_discards=solo_discards,
     )
 
     # ── Auto-promotion sweep ──────────────────────────────────────────────────
@@ -973,6 +1437,8 @@ def _print_summary(
     runtime_s: float,
     fast_screen: bool = True,
     status: str = "complete",
+    drift: Optional[dict] = None,
+    solo_discards: Optional[List[dict]] = None,
 ) -> None:
     """Print an end-of-session summary to stdout."""
     delta = final_sharpe - starting_sharpe
@@ -1001,8 +1467,38 @@ def _print_summary(
         f"  Starting Sharpe: {starting_sharpe:.4f}",
         f"  Final Sharpe   : {final_sharpe:.4f}  ({delta:+.4f})",
         f"  Runtime        : {mins:.1f} min",
-        f"{'='*65}",
     ])
+
+    # ── Solo-discard telemetry (Task #390) ─────────────────────────────
+    if solo_discards:
+        worst = sorted(
+            solo_discards,
+            key=lambda d: (d.get("delta_sharpe") if d.get("delta_sharpe") is not None else 0.0),
+        )[:3]
+        lines.append(f"  Solo discards  : {len(solo_discards)} (top rejections by Δsharpe)")
+        for d in worst:
+            ds = d.get("delta_sharpe")
+            ds_str = f"{ds:+.4f}" if isinstance(ds, (int, float)) else "n/a"
+            lines.append(
+                f"      - {d.get('experiment', '?')}: Δsharpe={ds_str} "
+                f"Δtrades={d.get('delta_trades')} Δdd={d.get('delta_dd')}"
+            )
+
+    # ── Research-best vs live-active drift (Task #389) ──────────────────────
+    if drift:
+        if drift.get("drift_detected"):
+            names = ", ".join(
+                f"{d['param']}({d.get('research_best')}→{d.get('active')})"
+                for d in drift.get("drifted_params", [])
+            )
+            lines.append(f"  ⚠ Config drift  : {names}")
+            lines.append(f"      {drift.get('recommendation', '')}")
+        elif drift.get("research_best_available") and drift.get("active_available"):
+            lines.append("  Config drift   : none (research-best aligned with live-active)")
+        else:
+            lines.append(f"  Config drift   : {drift.get('recommendation', 'unavailable')}")
+
+    lines.append(f"{'='*65}")
     print("\n".join(lines))
 
 
@@ -1020,12 +1516,15 @@ def _summarise_and_notify(
     notify: bool,
     fast_screen: bool = True,
     status: str = "complete",
+    drift: Optional[dict] = None,
+    solo_discards: Optional[List[dict]] = None,
 ) -> dict:
     """Print summary, optionally send Telegram, and return summary dict."""
     _print_summary(
         strategy, market, screened, promoted, kept, skipped,
         solo_pass_combined_fail, starting_sharpe, final_sharpe,
         runtime_s, fast_screen, status,
+        drift=drift, solo_discards=solo_discards,
     )
 
     summary = {
@@ -1037,6 +1536,8 @@ def _summarise_and_notify(
         "kept": kept,
         "skipped": skipped,
         "solo_pass_combined_fail": solo_pass_combined_fail,
+        "solo_discards_count": len(solo_discards) if solo_discards else 0,
+        "solo_discards": solo_discards or [],
         "starting_sharpe": round(starting_sharpe, 4),
         "final_sharpe": round(final_sharpe, 4),
         "delta_sharpe": round(final_sharpe - starting_sharpe, 4),
@@ -1044,6 +1545,8 @@ def _summarise_and_notify(
         "fast_screen": fast_screen,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+    if drift is not None:
+        summary["config_drift"] = drift
 
     if notify:
         delta = final_sharpe - starting_sharpe
@@ -1057,6 +1560,12 @@ def _summarise_and_notify(
         else:
             total_run = promoted + screened
             detail = f"Run: {total_run} | Kept: {kept} | Skipped: {skipped}"
+        drift_line = ""
+        if drift and drift.get("drift_detected"):
+            drift_line = (
+                f"\n⚠ Config drift: {len(drift.get('drifted_params', []))} param(s) "
+                f"differ from live config — reconcile before treating as live signal"
+            )
         msg = (
             f"<b>AutoResearch complete — {strategy} / {market}</b>\n"
             f"Status: {status}\n"
@@ -1064,6 +1573,7 @@ def _summarise_and_notify(
             f"Sharpe: {starting_sharpe:.4f} → {final_sharpe:.4f} "
             f"({delta:+.4f})\n"
             f"Runtime: {mins:.1f} min"
+            f"{drift_line}"
         )
         try:
             from alerting import get_alert_manager

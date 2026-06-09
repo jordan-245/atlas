@@ -165,6 +165,95 @@ class TestUpdateClaimMetricsHook:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# #395 follow-up: strategy resolution rewrites placeholder + prunes stale rows
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestStrategyResolutionHook:
+    def test_resolving_placeholder_moves_contradiction_to_new_strategy(self):
+        # Measured rows exist for the REAL strategy only.
+        upsert_research_best(strategy="momentum_breakout", universe="sp500",
+                             params={}, solo_sharpe=0.4)
+
+        # Source-derived placeholder shell claim.
+        kn.insert_source(id="src-ph", kind="paper", title="P")
+        kn.insert_claim(id="clm-ph", source_id="src-ph",
+                        strategy="paper__src_ph", universe=None)
+        # Placeholder can't match research_best -> no contradiction.
+        assert kn.get_open_contradictions() == []
+
+        # Resolve strategy + universe + metric in one update.
+        kn.update_claim_metrics(
+            id="clm-ph",
+            strategy="momentum_breakout",
+            universe="sp500",
+            claimed_sharpe=1.6,            # |1.6 - 0.4| = 1.2 -> critical
+            extraction_confidence="high",
+        )
+
+        opens = kn.get_open_contradictions()
+        assert len(opens) == 1
+        assert opens[0]["strategy"] == "momentum_breakout"
+        assert opens[0]["severity"] == "critical"
+        # Nothing pinned to the old placeholder strategy.
+        assert kn.get_open_contradictions(strategy="paper__src_ph") == []
+
+    def test_strategy_change_prunes_stale_unresolved_contradiction(self):
+        # Manufacture a stale unresolved contradiction tied to the placeholder
+        # strategy, then resolve the claim and confirm the stale row is gone.
+        kn.insert_source(id="src-st", kind="paper", title="P")
+        kn.insert_claim(id="clm-st", source_id="src-st",
+                        strategy="paper__src_st", universe="sp500",
+                        claimed_sharpe=1.5)
+        with atlas_db_module.get_db() as db:
+            db.execute(
+                """
+                INSERT INTO contradictions
+                    (claim_id, strategy, universe, metric, claimed_value,
+                     measured_value, delta, delta_abs, severity)
+                VALUES ('clm-st', 'paper__src_st', 'sp500', 'sharpe',
+                        1.5, 0.3, -1.2, 1.2, 'critical')
+                """
+            )
+        # Sanity: stale row present.
+        assert len(kn.get_open_contradictions(strategy="paper__src_st")) == 1
+
+        # Resolve the strategy (no matching research_best -> no new row).
+        kn.update_claim_metrics(id="clm-st", strategy="donchian_breakout")
+
+        # Stale placeholder contradiction has been pruned.
+        assert kn.get_open_contradictions(strategy="paper__src_st") == []
+        assert kn.get_open_contradictions(strategy="donchian_breakout") == []
+
+    def test_resolved_contradiction_is_preserved_on_strategy_change(self):
+        # A *resolved* contradiction must survive a strategy change (audit trail).
+        kn.insert_source(id="src-rv", kind="paper", title="P")
+        kn.insert_claim(id="clm-rv", source_id="src-rv",
+                        strategy="paper__src_rv", universe="sp500",
+                        claimed_sharpe=1.5)
+        with atlas_db_module.get_db() as db:
+            db.execute(
+                """
+                INSERT INTO contradictions
+                    (claim_id, strategy, universe, metric, claimed_value,
+                     measured_value, delta, delta_abs, severity,
+                     resolution, resolved_at)
+                VALUES ('clm-rv', 'paper__src_rv', 'sp500', 'sharpe',
+                        1.5, 0.3, -1.2, 1.2, 'critical',
+                        'claim_rejected', datetime('now'))
+                """
+            )
+        kn.update_claim_metrics(id="clm-rv", strategy="rsi_mean_reversion")
+
+        with atlas_db_module.get_db() as db:
+            rows = db.execute(
+                "SELECT strategy, resolution FROM contradictions WHERE claim_id='clm-rv'"
+            ).fetchall()
+        # The resolved row is kept verbatim (not pruned).
+        assert len(rows) == 1
+        assert rows[0]["resolution"] == "claim_rejected"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Defensive: sync failure must not break the parent write
 # ═══════════════════════════════════════════════════════════════════════════════
 

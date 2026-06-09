@@ -55,10 +55,10 @@ def _available_strategy_files() -> set[str]:
 
 
 def _archive_stems() -> set[str]:
-    """Return stems of Python files in scripts/tools/archive/."""
+    """Return stems of Python files anywhere under scripts/tools/archive/."""
     if not ARCHIVE_DIR.exists():
         return set()
-    return {f.stem for f in ARCHIVE_DIR.glob("*.py")}
+    return {f.stem for f in ARCHIVE_DIR.rglob("*.py")}
 
 
 # ── Test 1: Enabled config strategies are importable ─────────────────────────

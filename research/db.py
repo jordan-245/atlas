@@ -11,6 +11,29 @@ from typing import Optional
 logger = logging.getLogger("research.db")
 
 
+def db_status_for(status: str, description: str = "") -> str:
+    """Map a TSV experiment status to its canonical SQLite status string.
+
+    - 'keep'         -> 'kept'
+    - 'discard'      -> 'discarded'
+    - anything else  -> passed through unchanged ('discard_solo', etc.)
+
+    Exception (#392): a baseline row is logged with status='keep' so the TSV
+    parser can recover the pre-sweep Sharpe, but a baseline is NOT a real
+    improvement and must never be counted as a keep/promotion in SQLite
+    summaries. Baseline rows (description == 'baseline') are tagged with a
+    dedicated 'baseline' status so `WHERE status='kept'` accounting queries
+    exclude them at the source.
+    """
+    if status == "keep" and (description or "").strip().lower() == "baseline":
+        return "baseline"
+    if status == "keep":
+        return "kept"
+    if status == "discard":
+        return "discarded"
+    return status
+
+
 def log_experiment(
     strategy: str,
     metrics: dict,
@@ -29,7 +52,8 @@ def log_experiment(
     try:
         from db.atlas_db import get_db
         exp_id = f"ar-{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
-        db_status = "kept" if status == "keep" else "discarded" if status == "discard" else status
+        # Canonical status mapping (#392 baseline-aware). See db_status_for().
+        db_status = db_status_for(status, description)
 
         # Fetch latest regime_state (non-fatal — column may not exist in old DBs)
         regime_state = None

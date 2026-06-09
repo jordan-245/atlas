@@ -105,7 +105,7 @@ def engineer_state() -> AgentState:
         task_id="#378",
         task_title="Restore SaverPots goal semantics",
         task_desc="Wrap classifier around legacy pot model; preserve target-date math.",
-        model="claude-opus-4-7",
+        model="claude-opus-4-8",
         started_at=datetime.now() - timedelta(minutes=4, seconds=32),
         cost=1.32,
     )
@@ -165,7 +165,7 @@ def validation_state() -> AgentState:
         task_id="#377",
         task_title="Validate B4 burn-down + Finance tab",
         task_desc="Replay 24h of paper trades against new burn-down math.",
-        model="claude-opus-4-7",
+        model="claude-opus-4-8",
         started_at=datetime.now() - timedelta(minutes=1, seconds=23),
         cost=0.41,
     )
@@ -192,7 +192,7 @@ def planning_state() -> AgentState:
         task_id="#380",
         task_title="Plan variant-E (treasury) dashboard tab",
         task_desc="Architect 6 new endpoints; map to existing burn-down hooks.",
-        model="claude-opus-4-7",
+        model="claude-opus-4-8",
         started_at=datetime.now() - timedelta(minutes=9, seconds=0),
         cost=0.72,
     )

@@ -7,7 +7,15 @@ Last audit: 2026-04-22
 
 ## Current Gaps
 
-_None as of 2026-04-22._
+- **2026-06-05 — Engine is hard-coded long-only.** `strategies/base.py::Signal.__post_init__`
+  raises unless `direction == "long"` (stops/TPs assume long); no short-side handling exists in
+  `engine/` or `risk/`. Alpaca broker *can* short ETB names ($0 borrow, needs $2k equity) but the
+  internal signal -> plan -> risk -> sizing pipeline cannot represent a short.
+  Impact: blocks any live long-short / market-neutral / short-MR strategy (board #388 lever).
+  Fix: Phase B engine plumbing (Signal short semantics, short sizing/risk, broker short orders,
+  daily ETB re-check) — BLOCKED until the long-short edge passes Phase A research
+  (`research/strategies/cross_sectional_long_short_SPEC.md`) + AUM gates.
+  Monitor: pre-registration `research/brain/hypotheses/equity_long_short.md`; board review 2026-06-19.
 
 ## Recently Resolved
 

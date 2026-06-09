@@ -631,8 +631,11 @@ class TestPlans:
         assert result is None
 
     def test_get_plans_all(self):
-        self._record(date="2026-01-01")
-        self._record(date="2026-01-02")
+        # Use relative dates: record_plan()'s _validate_plan_date guard (P1-6)
+        # rejects hardcoded dates >30d from today to stop test dates leaking
+        # into the prod DB. The assertion only cares about plan count.
+        self._record(date=_date(-1))
+        self._record(date=_date())
         plans = atlas_db_module.get_plans()
         assert len(plans) >= 2
 
@@ -644,10 +647,11 @@ class TestPlans:
         assert updated["status"] == "approved"
 
     def test_get_plans_filter_by_status(self):
-        self._record(date="2026-01-03")
-        plan = atlas_db_module.get_plan("2026-01-03", "sp500")
+        # Relative dates required by the P1-6 plan-date guard (see above).
+        d1 = self._record(date=_date(-1))
+        plan = atlas_db_module.get_plan(d1, "sp500")
         atlas_db_module.update_plan_status(plan["id"], "approved")
-        self._record(date="2026-01-04")
+        self._record(date=_date())
 
         approved = atlas_db_module.get_plans(status="approved")
         assert all(p["status"] == "approved" for p in approved)
@@ -1232,7 +1236,11 @@ class TestEdgeCases:
             atlas_db_module.record_trade_exit(ticker, "mean_reversion", 115.0, "target")
         summary = atlas_db_module.performance_summary()
         assert summary["win_rate"] == pytest.approx(100.0)
-        assert summary["profit_factor"] == float("inf")
+        # All-wins / no-losses is capped at 99.99 (not inf): inf is not valid
+        # JSON and would break dashboard/CLI/journal serialization. The cap is
+        # applied consistently in db/trades.py performance_summary() and
+        # _group_performance().
+        assert summary["profit_factor"] == pytest.approx(99.99)
 
     def test_performance_summary_all_losses(self):
         atlas_db_module.record_trade_entry(

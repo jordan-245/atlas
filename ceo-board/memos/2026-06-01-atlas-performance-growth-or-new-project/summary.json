@@ -1,0 +1,23 @@
+{
+  "id": "2026-06-01-atlas-performance-growth-or-new-project",
+  "title": "Should We Extend Atlas for Higher Returns or Start a New Project?",
+  "date": "2026-06-01",
+  "decision": "conditional",
+  "confidence": "high",
+  "vote_for": 5,
+  "vote_against": 0,
+  "vote_abstain": 0,
+  "recommendation": "Atlas-first hybrid: prioritize Atlas trust gates and gated sizing, while running a small zero-capital research-only prediction-market/NRL spike.",
+  "memo_path": "/root/atlas/ceo-board/memos/2026-06-01-atlas-performance-growth-or-new-project/memo.md",
+  "debate_paths": [
+    "/root/atlas/ceo-board/debates/2026-06-01-atlas-performance-growth-or-new-project/round1",
+    "/root/atlas/ceo-board/debates/2026-06-01-atlas-performance-growth-or-new-project/round2"
+  ],
+  "key_gates": [
+    "#219 regression harness ships by Day 3 or new-project spike pauses",
+    "No live config/approval/exposure changes",
+    "#215 overlay log-only review before live approval changes",
+    "#387 sizing only after harness validation and drawdown-period backtests",
+    "New-project build only if research spike shows clear OOS/market edge"
+  ]
+}

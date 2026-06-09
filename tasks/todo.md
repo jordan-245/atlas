@@ -33,5 +33,27 @@ Keep a periodic incremental sync as a SAFETY NET (old webhook died silently — 
       - month length via calendar.monthrange (not hardcoded 30)
 - [ ] end-to-end verify: make a tiny real txn OR ping; dashboard reflects within seconds
 
-## Review
-(fill after)
+## Review — DONE & VERIFIED
+
+Finance tab is now LIVE. Root cause of "incorrect data": the dashboard only synced Up Bank
+once daily at 06:30, so it was missing ALL of today's transactions (incl a $620 charge);
+monthly spend showed 323.85 when it was actually 987.30. Plus the FX rate was hardcoded at
+0.63 while live is 0.7175 (~14% stale) — overstating net worth by ~$258.
+
+Shipped:
+- POST /api/up/webhook on :8899 (HMAC-verified, public, via the existing tunnel). Registered
+  with Up Bank (id 40f046a5…); Up PING DELIVERED 200; signed TRANSACTION_CREATED fires a
+  coalesced incremental up_sync (~5-9s) -> balances+txns refreshed -> /api/finance cache
+  invalidated. /api/up/webhook/health exposes last event/sync for monitoring.
+- Safety-net incremental sync every 15 min in /etc/cron.d/up-bank (kept daily 06:30 full).
+- Live USD/AUD FX cached in sync_state, read by build_finance_payload (fallback to constant).
+- pace_status now vs the budget line (was vs income -> always "over" pre-payday).
+- month length via calendar.monthrange (was hardcoded 30).
+
+Verified: /api/finance shows up_bank 14,982.49 (today's txns in), FX 0.7175, atlas_aud
+1862.08 (was 2120.70), total 16,844.57. Atlas commit 2f4eff9c. up-bank has no git repo —
+changes saved on disk (live).
+
+Residual (noted, not blocking): early-month projected_total extrapolates a 2-3 day sample
+(one $620 one-off inflates it) — design characteristic, not a bug. Could add a low-confidence
+indicator for the first few days.

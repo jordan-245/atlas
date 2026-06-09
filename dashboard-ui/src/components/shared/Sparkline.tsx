@@ -21,7 +21,11 @@ interface SparklineProps {
 }
 
 export function Sparkline({ data, color, height = 32, strokeWidth = 1.5 }: SparklineProps) {
-  const safeData = data ?? []
+  // Memoise the `data ?? []` fallback so its identity is stable when `data`
+  // is undefined.  Without this, the `data ?? []` expression produces a new
+  // `[]` on every render and breaks the chart-data useMemo's dependency list
+  // (react-hooks/exhaustive-deps).
+  const safeData = useMemo<number[]>(() => data ?? [], [data])
   const isEmpty = safeData.length === 0
 
   const resolvedColor =

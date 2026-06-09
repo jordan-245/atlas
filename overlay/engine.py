@@ -367,7 +367,7 @@ def _call_pi(user_prompt: str) -> Optional[dict]:
 def _call_pi_with_vision(
     user_prompt: str,
     image_labels_and_paths,  # list[tuple[str, Path]]
-    model: str = "claude-opus-4-7",
+    model: str = "claude-opus-4-8",
     timeout: int = 300,
 ) -> Optional[dict]:
     """
@@ -385,7 +385,7 @@ def _call_pi_with_vision(
         Chart images to attach.  Labels are embedded in the augmented prompt
         so the model can reference them by name.
     model : str
-        Vision-capable Claude model (default: claude-opus-4-7).
+        Vision-capable Claude model (default: claude-opus-4-8).
     timeout : int
         Subprocess timeout in seconds (default: 300 — vision calls are slow).
     """
@@ -1024,7 +1024,7 @@ def run_overlay(mode: str = "log_only") -> OverlayDecision:
                 vision_raw = _call_pi_with_vision(
                     user_prompt,
                     labels_and_paths,
-                    model=cfg_vision.get("model", "claude-opus-4-7"),
+                    model=cfg_vision.get("model", "claude-opus-4-8"),
                     timeout=int(cfg_vision.get("timeout_seconds", 300)),
                 )
             # Derive tickers_analysed from image labels (strip suffixes, dedupe)
@@ -1035,13 +1035,18 @@ def run_overlay(mode: str = "log_only") -> OverlayDecision:
             # Always write A/B log, regardless of log_only flag
             _write_vision_ab_log(decision, vision_raw, _vision_universe, _tickers_analysed)
             if vision_raw and isinstance(vision_raw.get("chart_vision_signals"), list):
+                # `log_only` means the vision path must not alter trading action
+                # fields (adjust/sizing/universe/ticker avoids).  Chart signals
+                # are observational metadata, so keep them on the returned and
+                # recorded decision for review/debugging while preserving the
+                # text-only action decision.
+                decision.chart_vision_signals = vision_raw["chart_vision_signals"]
                 if log_only:
                     log.info(
-                        "overlay_vision: log_only=true — vision response recorded "
-                        "to A/B log, NOT merged into decision"
+                        "overlay_vision: log_only=true — vision signals recorded "
+                        "as metadata only; action decision remains text-only"
                     )
                 else:
-                    decision.chart_vision_signals = vision_raw["chart_vision_signals"]
                     log.info(
                         "A/B COMPARE — text-only adjust=%s; vision-augmented signals=%d",
                         decision.adjust,

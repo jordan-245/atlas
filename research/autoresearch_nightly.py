@@ -83,7 +83,50 @@ MIN_ROWS_PER_UNIVERSE = {
     "asx": 10,
 }
 DEFAULT_MIN_ROWS = 10
-MIN_ROWS_PER_STRATEGY = 3  # Floor: 3 rows per enabled strategy per sweep
+MIN_ROWS_PER_STRATEGY = 3  # Absolute floor: at least 3 rows per enabled strategy
+
+# Expected solo-screen rows produced by ONE enabled strategy in a nightly
+# fast-screen sweep, per universe. Calibrated 2026-06-01 against production
+# output: a single sp500 momentum_breakout fast-screen run emits ~38 rows.
+# The silent-failure / degraded floor scales with the number of CURRENTLY
+# enabled strategies (enabled * per_strategy) so a trimmed allow-list is not
+# falsely flagged (a 1-strategy sp500 sweep expects ~25, not a stale 50), while
+# a genuine collapse toward zero still alerts. (#392)
+ROWS_PER_STRATEGY_BY_UNIVERSE = {
+    "sp500": 25,
+    "commodity_etfs": 3,
+    "sector_etfs": 10,
+    "gold_etfs": 3,
+    "treasury_etfs": 5,
+    "defensive_etfs": 5,
+    "crypto": 5,
+    "asx": 5,
+}
+DEFAULT_ROWS_PER_STRATEGY = 3
+
+# DEGRADED guard (#392): every TSV experiment row is mirrored to SQLite via
+# log_experiment, so a healthy sweep has DB rows of the same order as the TSV
+# screened count. The DEGRADED warning only fires when SQLite holds LESS than
+# this fraction of the TSV output it should mirror (a real DB-write degradation).
+# A healthy low-yield run (e.g. 1 active strategy, ~38 screened, 0 keeps) is
+# never flagged because its DB rows track its TSV rows.
+TSV_DB_CONSISTENCY_FRACTION = 0.5
+
+# Exhaustion / rotation guard (#392). When a strategy's recent experiment
+# history shows enough attempts with ZERO real keeps, its parameter space is
+# treated as exhausted and the nightly run emits a clear recommendation to
+# redirect effort toward #387 (volatility-aware / fractional-Kelly sizing) or
+# #388 (validate one additive strategy with OOS + correlation gates) rather than
+# endlessly fine-tuning the same params. This is REPORTING ONLY — it never
+# enables dormant strategies and never promotes/stages a config.
+EXHAUSTION_LOOKBACK = 120          # examine the most recent N non-baseline experiments
+EXHAUSTION_MIN_EXPERIMENTS = 50    # require this much recent signal before flagging
+EXHAUSTION_NEXT_STEPS = (
+    "redirect to #387 (volatility-aware / fractional-Kelly sizing) or #388 "
+    "(validate one additive strategy with OOS + correlation gates) instead of "
+    "further parameter fine-tuning. No strategy is enabled and no config is "
+    "promoted automatically."
+)
 
 
 
@@ -104,6 +147,7 @@ def _parse_session_results(
         "screened": 0,
         "promoted": 0,
         "kept": 0,
+        "baseline": 0,  # baseline rows — the bar to beat, never a real keep (#392)
         "starting_sharpe": 0.0,
         "final_sharpe": 0.0,
     }
@@ -133,24 +177,39 @@ def _parse_session_results(
     if not session_lines:
         return result
 
-    # Count by status column (index 7)
+    # Count by status column (index 7). Baseline rows are recorded with
+    # status='keep'/description='baseline' (and, for SQLite, status='baseline');
+    # they establish the bar to beat and must NEVER be counted as a real keep or
+    # promotion (#392). Track them in a dedicated `baseline` bucket so the
+    # nightly summary can distinguish them from actual kept improvements.
     for parts in session_lines:
         status = parts[7].strip() if len(parts) > 7 else ""
-        if status == "discard_solo":
+        description = parts[8].strip() if len(parts) > 8 else ""
+        is_baseline_row = (
+            status == "baseline"
+            or (status == "keep" and description.lower() == "baseline")
+        )
+        if is_baseline_row:
+            result["baseline"] += 1
+        elif status == "discard_solo":
             result["screened"] += 1
         elif status == "discard":
             result["screened"] += 1
             result["promoted"] += 1
         elif status == "keep":
-            if parts[8].strip() != "baseline":
-                result["screened"] += 1
-                result["promoted"] += 1
-                result["kept"] += 1
+            result["screened"] += 1
+            result["promoted"] += 1
+            result["kept"] += 1
 
-    # Sharpe: baseline is first 'keep' with description 'baseline'
-    # Final Sharpe: last 'keep' that isn't baseline, or baseline if no keeps
+    # Sharpe: baseline is the first baseline row (status='baseline' OR
+    # status='keep'/description='baseline').
+    # Final Sharpe: last real 'keep' that isn't baseline, or baseline if no keeps.
     for parts in session_lines:
-        if len(parts) > 7 and parts[7].strip() == "keep" and parts[8].strip() == "baseline":
+        if len(parts) <= 8:
+            continue
+        _status = parts[7].strip()
+        _desc = parts[8].strip().lower()
+        if _status == "baseline" or (_status == "keep" and _desc == "baseline"):
             try:
                 result["starting_sharpe"] = float(parts[1])
                 result["final_sharpe"] = float(parts[1])
@@ -160,7 +219,7 @@ def _parse_session_results(
 
     # Find the last kept experiment's Sharpe (if any)
     for parts in reversed(session_lines):
-        if len(parts) > 7 and parts[7].strip() == "keep" and parts[8].strip() != "baseline":
+        if len(parts) > 8 and parts[7].strip() == "keep" and parts[8].strip().lower() != "baseline":
             try:
                 result["final_sharpe"] = float(parts[1])
             except ValueError:
@@ -200,24 +259,28 @@ def _count_rows_added(universe: str, session_start_ts: float) -> int:
 
 
 def _resolve_min_rows(universe: str) -> int:
-    """Dynamic silent-failure threshold combining operator floor + per-strategy floor.
+    """Allow-list-aware silent-failure / degraded row floor.
 
-    Threshold = max(operator_floor, enabled_strategies * MIN_ROWS_PER_STRATEGY)
+    Threshold = max(MIN_ROWS_PER_STRATEGY, enabled_strategies * per_strategy)
 
-    - Operator floor: from MIN_ROWS_PER_UNIVERSE dict — hand-calibrated per universe
-      based on typical sweep output. ALWAYS respected as a lower bound — we want
-      to alert if sp500 drops from 100+ to 30 rows, even with 2 strategies enabled.
-    - Dynamic floor: enabled_strategies * 3 — safety net for universes not in the
-      operator dict (so we still alert if a NEW universe is added but forgotten).
+    where ``per_strategy`` comes from :data:`ROWS_PER_STRATEGY_BY_UNIVERSE`
+    (defaulting to :data:`DEFAULT_ROWS_PER_STRATEGY`).
 
-    Returns the LARGER of the two so neither can weaken the other.
+    The floor scales with the number of CURRENTLY enabled strategies so it tracks
+    the active allow-list instead of a stale fixed total (#392). Before this fix
+    sp500 used a flat operator floor of 50 calibrated for a 2-strategy allow-list;
+    once trimmed to a single ``momentum_breakout`` strategy (~38 rows per sweep)
+    every nightly run tripped ``rows_added < 50`` as a false DEGRADED warning.
+    With per-strategy scaling a 1-strategy sp500 sweep expects ~25 rows, so a
+    healthy ~38-row run is no longer flagged, while a 2-strategy sweep still
+    expects ~50 (preserving sensitivity to a real collapse).
 
-    Fail-safe: on any error (missing config, corrupt JSON), falls back to the
-    operator floor or DEFAULT_MIN_ROWS — better to surface a false-positive alert
-    than to silently miss a real silent failure.
+    Fail-safe: on missing config, zero enabled strategies, or any error, falls
+    back to the static :data:`MIN_ROWS_PER_UNIVERSE` floor (or
+    :data:`DEFAULT_MIN_ROWS`) — better to surface a false-positive than to miss a
+    real silent failure.
     """
     try:
-        from pathlib import Path
         import json as _json
         cfg_path = ATLAS_ROOT / "config" / "active" / f"{universe}.json"
         if not cfg_path.exists():
@@ -226,21 +289,154 @@ def _resolve_min_rows(universe: str) -> int:
             cfg = _json.load(f)
         enabled = sum(
             1 for s in cfg.get("strategies", {}).values()
-            if s.get("enabled", False)
+            if isinstance(s, dict) and s.get("enabled", False)
         )
         if enabled == 0:
             # Universe has no enabled strategies; sweep should not run at all.
-            # Use the static ceiling so we still alert if rows ARE produced.
+            # Use the static floor so we still alert if rows ARE produced.
             return MIN_ROWS_PER_UNIVERSE.get(universe, DEFAULT_MIN_ROWS)
-        dynamic_floor = max(3, enabled * MIN_ROWS_PER_STRATEGY)
-        operator_floor = MIN_ROWS_PER_UNIVERSE.get(universe, DEFAULT_MIN_ROWS)
-        return max(operator_floor, dynamic_floor)
+        per_strategy = ROWS_PER_STRATEGY_BY_UNIVERSE.get(
+            universe, DEFAULT_ROWS_PER_STRATEGY
+        )
+        return max(MIN_ROWS_PER_STRATEGY, enabled * per_strategy)
     except Exception:
         _logger.warning(
             "_resolve_min_rows(%s) failed — falling back to static threshold",
             universe, exc_info=True,
         )
         return MIN_ROWS_PER_UNIVERSE.get(universe, DEFAULT_MIN_ROWS)
+
+
+# ─── Exhaustion / Rotation Guard (#392) ──────────────────────────────────────
+
+
+def assess_exhaustion(
+    strategy: str,
+    universe: str,
+    lookback: int = EXHAUSTION_LOOKBACK,
+    min_experiments: int = EXHAUSTION_MIN_EXPERIMENTS,
+) -> Dict:
+    """Assess whether *strategy*/*universe* parameter sweeps look exhausted.
+
+    Reads the most recent ``lookback`` non-baseline rows from the SQLite
+    ``research_experiments`` table and computes:
+
+    - ``recent_experiments`` — number of non-baseline experiments examined,
+    - ``real_keeps``         — experiments that were genuinely kept
+                               (``status='kept'``, baseline rows excluded),
+    - ``consecutive_discards`` — discards since the most recent real keep.
+
+    A strategy is flagged ``exhausted`` when it has accumulated at least
+    ``min_experiments`` recent attempts with ZERO real keeps. The returned
+    ``recommendation`` then points at #387 (sizing) / #388 (additive strategy +
+    OOS). This function NEVER mutates config or strategy state — it only reports.
+
+    Fails safe: any DB error returns ``exhausted=False`` with the error noted.
+    """
+    out: Dict = {
+        "strategy": strategy,
+        "universe": universe,
+        "assessed": True,
+        "exhausted": False,
+        "recent_experiments": 0,
+        "real_keeps": 0,
+        "consecutive_discards": 0,
+        "recommendation": None,
+    }
+    try:
+        from db.atlas_db import get_db
+        with get_db() as db:
+            cur = db.execute(
+                "SELECT status, description FROM research_experiments "
+                "WHERE strategy = ? AND universe = ? "
+                "ORDER BY created_at DESC, id DESC LIMIT ?",
+                (strategy, universe, int(lookback)),
+            )
+            rows = cur.fetchall()
+    except Exception as exc:
+        _logger.warning("assess_exhaustion DB read failed for %s/%s: %s",
+                        strategy, universe, exc)
+        out["assessed"] = False
+        out["error"] = str(exc)
+        return out
+
+    def _is_baseline(status: str, description: str) -> bool:
+        return (
+            (status or "").strip().lower() == "baseline"
+            or (description or "").strip().lower() == "baseline"
+        )
+
+    non_baseline = [
+        (str(r[0] or ""), str(r[1] or ""))
+        for r in rows
+        if not _is_baseline(r[0] if len(r) > 0 else "", r[1] if len(r) > 1 else "")
+    ]
+
+    real_keeps = sum(1 for status, _ in non_baseline if status.strip().lower() == "kept")
+    consecutive_discards = 0
+    for status, _ in non_baseline:  # rows are newest-first
+        if status.strip().lower() == "kept":
+            break
+        consecutive_discards += 1
+
+    out["recent_experiments"] = len(non_baseline)
+    out["real_keeps"] = real_keeps
+    out["consecutive_discards"] = consecutive_discards
+
+    if len(non_baseline) >= min_experiments and real_keeps == 0:
+        out["exhausted"] = True
+        out["recommendation"] = (
+            f"{strategy} parameter space appears exhausted: "
+            f"{len(non_baseline)} recent experiments, 0 real keeps, "
+            f"{consecutive_discards} consecutive discards — {EXHAUSTION_NEXT_STEPS}"
+        )
+    return out
+
+
+def assess_exhaustion_for_strategies(
+    strategies: List[str],
+    universe: str,
+) -> Dict:
+    """Run :func:`assess_exhaustion` for each strategy and aggregate (#392).
+
+    Returns a dict with a per-strategy breakdown plus the list of exhausted
+    strategy names and a combined recommendation string.
+    """
+    per_strategy = [assess_exhaustion(s, universe) for s in strategies]
+    exhausted = [a["strategy"] for a in per_strategy if a.get("exhausted")]
+    recommendations = [a["recommendation"] for a in per_strategy if a.get("recommendation")]
+    return {
+        "universe": universe,
+        "any_exhausted": bool(exhausted),
+        "exhausted_strategies": exhausted,
+        "per_strategy": per_strategy,
+        "recommendation": " | ".join(recommendations) if recommendations else None,
+    }
+
+
+def _print_exhaustion_summary(exhaustion: Dict) -> None:
+    """Print a clear exhaustion/rotation recommendation block to stdout (#392)."""
+    if not exhaustion or not exhaustion.get("any_exhausted"):
+        return
+    _logger.warning(
+        "RESEARCH_EXHAUSTION universe=%s strategies=%s — %s",
+        exhaustion.get("universe"),
+        ",".join(exhaustion.get("exhausted_strategies", [])),
+        EXHAUSTION_NEXT_STEPS,
+    )
+    print(
+        f"\n{'='*65}\n"
+        f"  ⚠ RESEARCH EXHAUSTION GUARD ({exhaustion.get('universe')})\n"
+        f"{'='*65}"
+    )
+    for a in exhaustion.get("per_strategy", []):
+        if a.get("exhausted"):
+            print(
+                f"  {a['strategy']}: {a['recent_experiments']} recent experiments, "
+                f"0 real keeps, {a['consecutive_discards']} consecutive discards"
+            )
+    print(f"  Recommendation: {EXHAUSTION_NEXT_STEPS}")
+    print(f"{'='*65}\n")
 
 
 # ─── Worker Management ───────────────────────────────────────────────────────
@@ -412,7 +608,27 @@ def _filter_enabled_strategies(strategies: List[str], market_or_universe: str) -
     try:
         from utils.config import get_active_config
         cfg = get_active_config(market_or_universe)
+    except FileNotFoundError as exc:
+        # #372 fix — a missing active config means the universe was retired or
+        # was never enabled. Fail CLOSED: return zero strategies so the caller
+        # short-circuits the sweep (no workers spawned, no LLM loop run). The
+        # previous fail-open behaviour caused commodity_etfs sweeps to run with
+        # the global DEFAULT_STRATEGIES against a sp500 fallback config, then
+        # ResearchSession would raise market mismatch in the LLM loop.
+        print(
+            f"[filter] No active config for {market_or_universe} ({exc}) — "
+            "retired/disabled universe, returning [] (no strategies)"
+        )
+        _logger.warning(
+            "_filter_enabled_strategies: active config missing for universe=%s — "
+            "returning no strategies (fail-closed). exc=%s",
+            market_or_universe, exc,
+        )
+        return []
     except Exception as exc:
+        # Transient/unexpected errors (corrupt JSON, override layer failure):
+        # remain fail-open with full strategy list so a one-off glitch does
+        # not silence the entire sweep.
         print(f"[filter] Could not load active config for {market_or_universe}: {exc} — running all strategies")
         return strategies
 
@@ -665,6 +881,7 @@ def run_nightly(
         total_screened = sum(r["screened"] for r in results)
         total_promoted = sum(r["promoted"] for r in results)
         total_kept = sum(r["kept"] for r in results)
+        total_baseline = sum(r.get("baseline", 0) for r in results)
         failures = [r for r in results if r.get("exit_code", 0) != 0]
         mins = runtime_s / 60
 
@@ -694,6 +911,7 @@ def run_nightly(
                 )
         print(
             f"\n  Total: {total_screened} screened, {total_promoted} promoted, {total_kept} kept"
+            f"  (baseline rows excluded: {total_baseline})"
         )
         if failures:
             print(f"  ⚠️  {len(failures)} worker(s) failed")
@@ -718,10 +936,27 @@ def run_nightly(
             "total_screened": total_screened,
             "total_promoted": total_promoted,
             "total_kept": total_kept,
+            "total_baseline": total_baseline,
             "failures": len(failures),
             "runtime_s": round(runtime_s, 1),
             "snapshot_id": snapshot_id,
         }
+
+        # ─── Exhaustion / rotation guard (#392) ──────────────────────────────────
+        # Detect strategies whose parameter space looks exhausted (enough recent
+        # attempts, zero real keeps) and surface a clear recommendation to
+        # redirect effort to #387 (sizing) / #388 (additive strategy + OOS).
+        # Reporting only — never enables strategies or promotes configs.
+        try:
+            exhaustion = assess_exhaustion_for_strategies(
+                [r["strategy"] for r in results if r.get("exit_code", 0) == 0],
+                universe,
+            )
+            result["exhaustion"] = exhaustion
+            _print_exhaustion_summary(exhaustion)
+        except Exception as _eexc:
+            _logger.warning("exhaustion assessment failed (non-fatal): %s", _eexc)
+            result["exhaustion"] = {"assessed": False, "error": str(_eexc)}
 
         # ─── Silent-failure detection ────────────────────────────────────────────
         # Verify rows were actually inserted into research_experiments.
@@ -730,23 +965,22 @@ def run_nightly(
         # ISO-vs-space separator mismatch bug (fixed 2026-05-14 #216).
         rows_added = _count_rows_added(universe, session_start)
         min_rows = _resolve_min_rows(universe)
-        db_silent = rows_added < min_rows  # DB rows below threshold
-
-        # TSV-based cross-check: did workers produce ANY screened rows?
-        # A genuine silent failure means BOTH DB and TSV show no output.
-        # If TSV has rows (total_screened > 0) but DB is low, this is a
-        # DB-write degradation — the sweep ran legitimately, just didn't beat
-        # the threshold.  Treat as "completed_no_keeps", NOT a fatal error.
-        # Root causes for DB-low-but-TSV-ok: (a) discard_solo rows written
-        # to DB with universe='sp500' default instead of the actual universe
-        # (autoresearch_runner.py line ~781 missing market= kwarg), or
-        # (b) log_experiment() silently swallowed an exception.
         tsv_ran = total_screened > 0
 
-        if db_silent and tsv_ran:
-            # Workers ran and wrote TSV rows — DB count is below threshold
-            # due to a known write issue (solo-discard universe mismatch or
-            # similar).  This is a legitimate no-op, not a silent failure.
+        # DB-write degradation cross-check (#392). Every TSV experiment row is
+        # mirrored to SQLite via log_experiment, so a healthy sweep has DB rows
+        # of the same order as the TSV screened count. Compare DB output to the
+        # TSV output it should mirror — NOT to a fixed floor — so the check
+        # self-calibrates to the active allow-list. A trimmed 1-strategy sweep
+        # that legitimately produces ~38 rows is never flagged; only a real
+        # write degradation (TSV rows present, SQLite far below them) is.
+        # Known root causes: (a) discard_solo rows written to DB under the wrong
+        # universe (fixed #392 by passing market=), or (b) log_experiment()
+        # silently swallowing an exception.
+        db_consistency_floor = max(1, int(total_screened * TSV_DB_CONSISTENCY_FRACTION))
+        db_write_degraded = tsv_ran and rows_added < db_consistency_floor
+
+        if db_write_degraded:
             import json as _json_sentinel
             sentinel = {
                 "status": "completed_no_keeps",
@@ -758,11 +992,12 @@ def run_nightly(
                 "min_rows": min_rows,
             }
             _logger.warning(
-                "RESEARCH_NIGHTLY_DEGRADED universe=%s rows_added=%d min_required=%d "
-                "tsv_screened=%d — DB rows below threshold but TSV shows sweep ran. "
-                "Treating as completed_no_keeps (not a genuine silent failure). "
-                "#216 fix: real silent failures require both TSV=0 and DB=0.",
-                universe, rows_added, min_rows, total_screened,
+                "RESEARCH_NIGHTLY_DEGRADED universe=%s rows_added=%d tsv_screened=%d "
+                "db_consistency_floor=%d min_required=%d — TSV shows the sweep ran "
+                "but SQLite holds far fewer rows than it mirrors (probable "
+                "log_experiment write degradation). Treating as completed_no_keeps "
+                "(not a genuine silent failure; that requires TSV=0 AND DB below floor).",
+                universe, rows_added, total_screened, db_consistency_floor, min_rows,
             )
             # Emit sentinel JSON to stdout so run_compute_matrix.py can parse
             print(f"ATLAS_NIGHTLY_STATUS: {_json_sentinel.dumps(sentinel)}")
@@ -777,7 +1012,9 @@ def run_nightly(
                     _logger.warning("end_session failed in completed_no_keeps path", exc_info=True)
             return result
 
-        silent_failure = db_silent  # Only truly silent if BOTH DB=0 and TSV=0
+        # Genuine silent failure: NO output anywhere — the TSV shows no screened
+        # rows AND SQLite is below the allow-list-aware floor. (#392 / #216)
+        silent_failure = (not tsv_ran) and (rows_added < min_rows)
 
         status_str = "SILENT_FAILURE" if silent_failure else "OK"
         _logger.info(
@@ -810,7 +1047,26 @@ def run_nightly(
                     _logger.warning("end_session failed in silent_failure path", exc_info=True)
             return result
 
-        # Normal completion path
+        # Healthy completion. A 0-keep run is a legitimate no-op (the parameter
+        # space may simply be exhausted) — NOT a degraded/silent failure. Emit
+        # the completed_no_keeps sentinel for run_compute_matrix WITHOUT a
+        # DEGRADED warning so a normal low-yield run is not flagged. (#392)
+        if tsv_ran and total_kept == 0:
+            import json as _json_okk
+            print(
+                "ATLAS_NIGHTLY_STATUS: "
+                + _json_okk.dumps({
+                    "status": "completed_no_keeps",
+                    "universe": universe,
+                    "screened": total_screened,
+                    "promoted": total_promoted,
+                    "kept": total_kept,
+                    "rows_added": rows_added,
+                    "min_rows": min_rows,
+                })
+            )
+            result["status"] = "completed_no_keeps"
+
         if session_id is not None:
             end_session(session_id, experiments_run=total_screened,
                         experiments_kept=total_kept, status="completed")

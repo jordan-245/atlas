@@ -306,7 +306,7 @@ def test_dashboard_llm_review() -> None:
                 raw_response = call_pi_vision(
                     VISION_PROMPT,
                     image_paths=[shot_path],
-                    model="claude-opus-4-7",
+                    model="claude-opus-4-8",
                     timeout=120,
                     mode=None,  # free-form response; we parse JSON ourselves
                 )
