@@ -1,9 +1,9 @@
 """live/daily.py — the daily forge->live ops loop (shadow-first).
 
-For each DEPLOYED strategy: produce today's target book -> diff via TargetExecutor (dry_run in shadow) ->
-track-vs-expectation -> record. In shadow: compute + record only ($0). In live (state=='live' AND approved):
-execute, then reconcile (Atlas's existing reconcile/kill-switch run on their own timers). Kill-switch is enforced
-INSIDE TargetExecutor (fail-closed). Human approval gates real-money execution (board 2026-06-09).
+For each DEPLOYED strategy: produce today's target book -> diff via TargetExecutor -> track-vs-expectation ->
+record. **shadow** = the Paper Book: places REAL paper orders on live data (the board's forward-paper gate, $0
+real). **canary/live** = real capital: held (dry) unless human-approved AND invoked in live mode. Kill-switch is
+enforced INSIDE TargetExecutor (fail-closed). Real-money execution stays human-gated (board 2026-06-09).
 
 Run: ``python3 -m live.daily [--mode shadow|live] [--date YYYY-MM-DD]``
 """
@@ -53,8 +53,9 @@ class DailyReport:
 
 def _build_broker(s: DeployedStrategy):
     from brokers.registry import get_live_broker
-    live = s.state == "live" and s.approved
-    cfg = {"trading": {"broker": s.broker, "mode": "live" if live else "paper"}, "market": s.name}
+    # REAL capital only for an approved canary/live strategy; everything else (shadow=Paper Book) is paper.
+    real = s.state in ("canary", "live") and s.approved
+    cfg = {"trading": {"broker": s.broker, "mode": "live" if real else "paper"}, "market": s.name}
     br = get_live_broker(cfg)
     if br is not None and not br.is_connected:
         try:
@@ -96,8 +97,9 @@ def run_strategy(s: DeployedStrategy, asof: str, mode: str = "shadow", broker=No
         weights = s.target_portfolio(asof)
         specs = {k: ContractSpec(**v) for k, v in (s.specs or {}).items()}
         ex = TargetExecutor(broker, specs=specs)
-        # execute for real ONLY when mode=live AND the strategy is live AND human-approved
-        dry = not (mode == "live" and s.state == "live" and s.approved)
+        # shadow = Paper Book: place REAL paper orders on live data (the forward-paper gate).
+        # canary/live = real capital: held (dry) unless human-approved AND invoked in live mode.
+        dry = s.state in ("canary", "live") and (not s.approved or mode != "live")
         rep = ex.rebalance(weights, deployable_equity=(s.capital or None), dry_run=dry)
 
         track = None

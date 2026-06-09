@@ -1,4 +1,6 @@
-"""End-to-end tests for the daily shadow loop (provider -> executor -> track -> record/approval)."""
+"""End-to-end tests for the daily Paper Book loop (provider -> executor -> track -> record/approval)."""
+import json
+
 import live.daily as daily
 from brokers.base import AccountInfo, BrokerAdapter, OrderResult, OrderSide, OrderStatus, OrderType, PositionInfo
 from live.registry import DeployedStrategy, register_provider
@@ -31,15 +33,31 @@ def _no_killswitch(monkeypatch):
     monkeypatch.setattr(ks, "check_all_layers", lambda **k: None)
 
 
-def test_shadow_computes_but_does_not_place(tmp_path, monkeypatch):
-    monkeypatch.setattr(daily, "LIVE_DATA", tmp_path)
+def test_shadow_paper_trades(tmp_path, monkeypatch):
+    """shadow = the Paper Book: places REAL paper orders on live data (not dry)."""
+    monkeypatch.setattr(daily, "LIVE_DATA", tmp_path); _no_killswitch(monkeypatch)
     register_provider("demo_a")(lambda asof: {"AAA": 0.5, "BBB": 0.5})
     s = DeployedStrategy(name="demo", provider="demo_a", state="shadow", capital=10000,
                          expectation={"daily_mean": 0.0008, "daily_std": 0.01, "sharpe": 1.0})
     b = SimBroker(prices={"AAA": 100.0, "BBB": 50.0})
     r = daily.run_strategy(s, "2026-06-09", mode="shadow", broker=b)
-    assert r.error is None and r.dry_run and r.n_orders == 2 and b.orders == []   # computed, NOT placed
+    assert r.error is None and not r.dry_run and r.n_orders == 2 and len(b.orders) == 2   # PLACED (paper)
     assert (tmp_path / "demo" / "runs.jsonl").exists()
+
+
+def test_deploy_pass_registers_paper_and_provider_reads_target(tmp_path, monkeypatch):
+    """deploy_pass() puts a forge PASS into the Paper Book; the file-provider reads its target.json."""
+    import live.providers as prov
+    import live.registry as reg
+    monkeypatch.setattr(prov, "LIVE_DATA", tmp_path)
+    monkeypatch.setattr(reg, "REGISTRY_PATH", tmp_path / "live_strategies.json")
+    s = prov.deploy_pass("vmom_pass", capital=5000, strategy_path="/x/strat.py")
+    assert s.state == "shadow" and s.provider == "vmom_pass" and not s.approved
+    assert [d.name for d in reg.deployed()] == ["vmom_pass"]
+    (tmp_path / "vmom_pass").mkdir(exist_ok=True)
+    (tmp_path / "vmom_pass" / "target.json").write_text(json.dumps({"asof": "2026-06-09", "weights": {"AAA": 0.6}}))
+    assert prov.forge_strategy_provider("vmom_pass")("2026-06-09") == {"AAA": 0.6}
+    assert prov.forge_strategy_provider("missing")("2026-06-09") == {}   # no file -> safe no-op
 
 
 def test_live_unapproved_is_held_and_flagged(tmp_path, monkeypatch):

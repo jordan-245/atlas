@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import { usePortfolioData, useSystemHealth } from '../../api/queries'
+import { usePortfolioData, useSystemHealth, useLiveState } from '../../api/queries'
+import type { LiveDeployed } from '../../api/queries'
 import { Skeleton } from '../layout/Skeleton'
 import { SectionBoundary } from '../layout/SectionBoundary'
 import { SummaryStrip } from './SummaryStrip'
@@ -12,6 +13,48 @@ import { SectionLabel } from '../ui/kit'
 
 function GroupDivider({ label }: { label: string }) {
   return <SectionLabel>{label}</SectionLabel>
+}
+
+const STATE_COLOR: Record<string, string> = {
+  shadow: 'var(--color-text-muted)', canary: 'var(--color-amber)', live: 'var(--color-green)',
+}
+
+// Deployed forge PASSes paper-trading into this book
+function DeployedStrategies({ rows }: { rows: LiveDeployed[] }) {
+  if (!rows.length) {
+    return (
+      <div className="rounded-lg border border-dashed border-[var(--color-border)] px-4 py-5 text-center text-sm text-[var(--color-text-muted)]">
+        No strategies deployed yet. When a strategy clears every forge gate, it <b>auto-deploys here to paper-trade
+        on live data</b> — accruing the forward-paper evidence required before any real capital (board 2026-06-09).
+      </div>
+    )
+  }
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs font-mono">
+        <thead className="text-[var(--color-text-muted)] uppercase tracking-wider text-[10px]">
+          <tr className="border-b border-[var(--color-border)]">
+            <th className="text-left py-2 pr-4">Strategy</th><th className="text-left py-2 pr-4">Stage</th>
+            <th className="text-right py-2 pr-4">Capital</th><th className="text-left py-2 pr-4">Approved</th>
+            <th className="text-right py-2">Exp. Sharpe</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((s) => (
+            <tr key={s.name} className="border-b border-[var(--color-border)]/40">
+              <td className="py-2 pr-4 text-[var(--color-text)]">{s.name}</td>
+              <td className="py-2 pr-4" style={{ color: STATE_COLOR[s.state] ?? 'var(--color-text)' }}>
+                {s.state === 'shadow' ? 'paper' : s.state}
+              </td>
+              <td className="py-2 pr-4 text-right tabular-nums">${s.capital.toLocaleString()}</td>
+              <td className="py-2 pr-4">{s.approved ? '\u2705' : '\u2014'}</td>
+              <td className="py-2 text-right tabular-nums">{s.expectation?.sharpe?.toFixed(2) ?? '\u2014'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
 }
 
 function CollapsibleGroup({ label, defaultOpen = false, children }: { label: string; defaultOpen?: boolean; children: ReactNode }) {
@@ -32,9 +75,16 @@ function CollapsibleGroup({ label, defaultOpen = false, children }: { label: str
 export function PortfolioTab() {
   const portfolio = usePortfolioData()
   const health = useSystemHealth()
+  const live = useLiveState()
 
   return (
     <div className="space-y-4 md:space-y-6 stagger">
+      <div className="animate-in">
+        <SectionBoundary title="Deployed strategies">
+          {live.data ? <DeployedStrategies rows={live.data.deployed} /> : <Skeleton className="h-20" />}
+        </SectionBoundary>
+      </div>
+
       <div className="animate-in">
         <SectionBoundary title="Summary">
           {portfolio.data?.account ? (

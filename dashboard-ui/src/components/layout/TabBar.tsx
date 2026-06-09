@@ -17,7 +17,7 @@ const preloaders: Record<string, () => void> = {
 export function TabBar({ activeTab, onChange }: TabBarProps) {
   const tabs: Array<{ id: TabId; label: string }> = [
     { id: 'forge', label: '🔥 Forge' },
-    { id: 'portfolio', label: 'Portfolio' },
+    { id: 'portfolio', label: 'Paper Book' },
     { id: 'live', label: 'Live' },
     { id: 'midas', label: 'Midas' },
   ]
