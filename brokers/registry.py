@@ -46,6 +46,11 @@ def _register_defaults():
         _BROKER_FACTORIES["alpaca"] = _make_alpaca_broker
     except Exception as e:
         logger.debug(f"alpaca broker not available (install: pip install alpaca-py): {e}")
+    try:
+        from brokers.ib.broker import IBBroker  # noqa: F401
+        _BROKER_FACTORIES["ib"] = _make_ib_broker
+    except Exception as e:
+        logger.debug(f"ib broker not available (install: pip install ib_insync): {e}")
 
 
 def available_brokers() -> list[str]:
@@ -58,7 +63,7 @@ def available_brokers() -> list[str]:
 # Public API
 # ═══════════════════════════════════════════════════════════════
 
-_KNOWN_BROKERS = ("alpaca",)
+_KNOWN_BROKERS = ("alpaca", "ib")
 
 
 def get_broker(market_id: str, config: Dict[str, Any]) -> Optional[BrokerAdapter]:
@@ -184,3 +189,10 @@ def _make_alpaca_broker(
     from brokers.alpaca.broker import AlpacaBroker
     mode = _resolve_mode(config)
     return AlpacaBroker(config, live=live, mode=mode)
+
+
+def _make_ib_broker(
+    market_id: str, config: Dict[str, Any], live: bool = False, **kwargs,
+) -> BrokerAdapter:
+    from brokers.ib.broker import IBBroker
+    return IBBroker(config)
