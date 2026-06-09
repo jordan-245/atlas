@@ -1,161 +1,32 @@
-# Atlas system crontab — restore via `crontab /root/atlas/scripts/atlas.crontab`
-# Updated: 2026-05-15 — migrated non-Atlas projects to /etc/cron.d/<project> fragments
-#          2026-05-01 — restored after Apr 30 23:02 deletion incident
+# Atlas system crontab — canonical: /root/atlas/scripts/atlas.crontab
+# Restore: sudo crontab /root/atlas/scripts/atlas.crontab
 #
-# Per-project cron scheme (2026-05-15):
-#   Non-Atlas project cron entries now live in /etc/cron.d/<project> files.
-#   These survive `crontab -r` (which destroys only the per-user crontab).
-#   This file (atlas.crontab) is canonical for ATLAS entries only.
-#
-#   Current /etc/cron.d/ fragments owned by Pi/Atlas:
-#     /etc/cron.d/nrl-predict     — NRL tipping (refresh/tips/pregame)
-#     /etc/cron.d/up-bank         — Up Bank daily resync
-#
-#   Recovery from `crontab -r`: `sudo crontab /root/atlas/scripts/atlas.crontab`
-#   restores Atlas. /etc/cron.d/ fragments are untouched by crontab -r.
-#
-# Timezone: Australia/Brisbane (AEST). All times below are AEST unless noted.
-#
-# Apply: sudo crontab /root/atlas/scripts/atlas.crontab && sudo crontab -l
-# Verify: journalctl --since "10 min ago" -u cron | grep CMD
-#
-# Reconstruction source: journalctl --since "2026-04-29 00:00" --until "2026-04-30 23:30"
-# Includes entries confirmed in journal but absent from original memo:
-#   execute_approved (23:15/23:20 Mon-Fri), reconcile_ledger (09:30 Tue-Sat),
-#   healthcheck_pipelines (22:00 daily).
-# NOTE: reconcile_shadow is managed by atlas-reconcile-shadow.timer (systemd).
-#   DO NOT add a cron entry — would cause duplicate runs.
-
-# ── Universe coverage policy (audit 2026-05-04) ───────────────────────────────
-# LIVE markets (full cron coverage below): sp500 ONLY (as of 2026-05-07 consolidation #297)
-# CONSOLIDATED (live_enabled=false, crons disabled): sector_etfs, commodity_etfs
-#   — config has trading.mode="live" AND trading.live_enabled=true
-# RESEARCH-ONLY markets (NO live cron — sweep populates SQLite via systemd timers):
-#   - crypto         (mode=paper,    live_enabled=false)
-#   - gold_etfs      (mode=passive,  live_enabled=false)
-#   - treasury_etfs  (mode=passive,  live_enabled=false)
-#   - defensive_etfs (mode=passive,  live_enabled=false)
-# To promote a research-only market to live: set live_enabled=true in its config
-# AND add full cron set (intraday_monitor, sync_protective_orders, execute_approved,
-# reconcile_positions, premarket, postclose, reconcile_ledger). DO NOT add cron
-# without flipping live_enabled first — kill switch will fire.
-
+# 2026-06-09 — STRIPPED TO THE NEW WORLD. "Old Atlas" (the long-only entry+stop swing
+# system) is retired; its entire daily ops flow (premarket plan-gen, execute_approved,
+# sync_protective_orders, intraday_monitor, reconcile_positions/ledger, paper-validation,
+# auto_promote_paper, paper_progress, pipeline_forward_tick, macro/risk, healthz) was deleted
+# with plan.py / live_executor.py. The NEW Atlas runs entirely on systemd timers:
+#   atlas-dashboard, atlas-reconcile-shadow, atlas-live-shadow, atlas-backup,
+#   atlas-risk-precompute, atlas-dashboard-refresh, atlas-sp500-flatten
+# + the forge in /root/hephaestus (hephaestus-forge/lint/bab timers).
+# Health visibility: dashboard (:8899) + systemctl + the portfolio-healthcheck skill.
+# This crontab now holds only general hygiene + the NRL-Predict project.
+# Other non-Atlas projects: /etc/cron.d/{nrl-predict,up-bank}.
 MAILTO=""
 SHELL=/bin/bash
 TZ=Australia/Brisbane
 
-# ── Every 15 min — protective order sync (3 markets) + TP coverage check ──────
-# Audit stagger fix: offset by +1/+2/+3/+4 min from each quarter (:00,:15,:30,:45)
-# so all four tasks no longer collide at the :00 mark (especially 23:00 AEST).
-1,16,31,46 * * * * /usr/bin/flock -n /tmp/sync_protective.lock bash -c 'cd /root/atlas && timeout 5m python3 scripts/sync_protective_orders.py --market sp500 --quiet' >> /root/atlas/logs/sync_protective.log 2>&1
-# CONSOLIDATED-2026-05-07: 2,17,32,47 * * * * /usr/bin/flock -n /tmp/sync_protective_commodity.lock bash -c 'cd /root/atlas && timeout 5m python3 scripts/sync_protective_orders.py --market commodity_etfs --quiet' >> /root/atlas/logs/sync_protective.log 2>&1
-# CONSOLIDATED-2026-05-07: 3,18,33,48 * * * * /usr/bin/flock -n /tmp/sync_protective_sector.lock bash -c 'cd /root/atlas && timeout 5m python3 scripts/sync_protective_orders.py --market sector_etfs --quiet' >> /root/atlas/logs/sync_protective.log 2>&1
-4,19,34,49 * * * * /usr/bin/flock -n /tmp/healthcheck_tp.lock bash -c 'cd /root/atlas && timeout 5m python3 scripts/healthcheck_tp_coverage.py --once --quiet' >> /root/atlas/logs/healthcheck_tp.log 2>&1
-
-# ── Hourly — healthz (offset +5 min from hour; clears compute_daily_risk at :00) ─
-5 * * * * /root/atlas/scripts/healthz_hourly.sh >> /root/atlas/logs/healthz-hourly.log 2>&1
-
-# ── Intraday monitor every 30 min during US RTH ────────────────────────────────
-# 01:30–07:30 AEST = 15:30–21:30 UTC (US regular trading hours overlap)
-30 1-7 * * * /usr/bin/flock -n /tmp/intraday_sp500.lock bash -c 'cd /root/atlas && timeout 25m python3 scripts/intraday_monitor.py -m sp500' >> /root/atlas/logs/intraday_sp500.log 2>&1
-# CONSOLIDATED-2026-05-07: 30 1-7 * * * /usr/bin/flock -n /tmp/intraday_commodity_etfs.lock bash -c 'cd /root/atlas && timeout 25m python3 scripts/intraday_monitor.py -m commodity_etfs' >> /root/atlas/logs/intraday_commodity_etfs.log 2>&1
-# CONSOLIDATED-2026-05-07: 32 1-7 * * * /usr/bin/flock -n /tmp/intraday_sector_etfs.lock bash -c 'cd /root/atlas && timeout 25m python3 scripts/intraday_monitor.py -m sector_etfs' >> /root/atlas/logs/intraday_sector_etfs.log 2>&1
-
-# ── 22:00 AEST daily — pipeline health check ──────────────────────────────────
-0 22 * * * /usr/bin/flock -n /tmp/healthcheck_pipelines.lock bash -c 'cd /root/atlas && timeout 5m python3 scripts/healthcheck_pipelines.py --once --quiet' >> /root/atlas/logs/healthcheck_pipelines.log 2>&1
-
-# ── 23:00 AEST daily — compute_daily_risk (clean lane; stagger above moves others)
-0 23 * * * /usr/bin/flock -n /tmp/compute_daily_risk.lock bash -c 'cd /root/atlas && timeout 10m python3 -m scripts.compute_daily_risk' >> /root/atlas/logs/compute_daily_risk.log 2>&1
-
-# ── 12:00 AEST daily (= 02:00 UTC) — hourly OHLCV backfill (#264) ─────────────────────────────────────
-# Primes data/cache/hourly/<TICKER>.parquet for SP500 + held positions + SPY/QQQ/VIX.
-# Storage budget ~1.7MB; runtime ~5-10 min depending on cache hit rate.
-0 12 * * * /usr/bin/flock -n /tmp/backfill_hourly.lock bash -c 'cd /root/atlas && timeout 20m python3 scripts/backfill_hourly_bars.py' >> /root/atlas/logs/backfill_hourly.log 2>&1
-
-# ── 23:15/23:20 AEST Mon–Fri — execute approved trade plans (15 min before US open)
-15 23 * * 1-5 /usr/bin/flock -n /tmp/execute_approved.lock bash -c 'cd /root/atlas && timeout 10m python3 scripts/execute_approved.py -m sp500' >> /root/atlas/logs/execute_approved.log 2>&1
-# CONSOLIDATED-2026-05-07: 15 23 * * 1-5 /usr/bin/flock -n /tmp/execute_approved_commodity.lock bash -c 'cd /root/atlas && timeout 10m python3 scripts/execute_approved.py -m commodity_etfs' >> /root/atlas/logs/execute_approved.log 2>&1
-# CONSOLIDATED-2026-05-07: 20 23 * * 1-5 /usr/bin/flock -n /tmp/execute_approved_sector.lock bash -c 'cd /root/atlas && timeout 10m python3 scripts/execute_approved.py -m sector_etfs' >> /root/atlas/logs/execute_approved.log 2>&1
-
-# ── Pre-market 19:00 AEST Mon–Fri (= 09:00 UTC Mon–Fri) ─────────────────────
-0 19 * * 1-5 /root/atlas/scripts/pi-cron.sh premarket sp500
-# CONSOLIDATED-2026-05-07: 0 19 * * 1-5 /root/atlas/scripts/pi-cron.sh premarket commodity_etfs
-# CONSOLIDATED-2026-05-07: 0 19 * * 1-5 /root/atlas/scripts/pi-cron.sh premarket sector_etfs
-
-# ── Pre-market rollup 19:45 AEST Mon–Fri — one Telegram message for all 3 markets ─
-# Runs after all 3 premarket pi-agents have had time to finish (~10-25 min each).
-45 19 * * 1-5 /root/atlas/scripts/pi-cron.sh notify-rollup
-
-# ── Post-close 08:00 AEST Tue–Sat (= 22:00 UTC Mon–Fri) ─────────────────────
-0 8 * * 2-6 /root/atlas/scripts/pi-cron.sh postclose sp500
-# Same-bar stop monitor: 08:30 AEST Tue–Sat (30 min after postclose; only needs closed trades)
-30 8 * * 2-6 /usr/bin/flock -n /tmp/monitor_same_bar.lock bash -c 'cd /root/atlas && timeout 3m python3 scripts/monitor_same_bar_stops.py --days 30' >> /root/atlas/logs/monitor_same_bar_stops.log 2>&1
-# CONSOLIDATED-2026-05-07: 0 8 * * 2-6 /root/atlas/scripts/pi-cron.sh postclose commodity_etfs
-# CONSOLIDATED-2026-05-07: 0 8 * * 2-6 /root/atlas/scripts/pi-cron.sh postclose sector_etfs
-
-# ── Reconciliation 09:00 AEST Tue–Sat (staggered 0/+2/+5 min per market) ─────
-0 9 * * 2-6 /usr/bin/flock -n /tmp/reconcile.lock bash -c 'cd /root/atlas && python3 scripts/reconcile_positions.py --market sp500 --quiet' >> /root/atlas/logs/reconciliation.log 2>&1
-# CONSOLIDATED-2026-05-07: 2 9 * * 2-6 /usr/bin/flock -n /tmp/reconcile_commodity.lock bash -c 'cd /root/atlas && python3 scripts/reconcile_positions.py --market commodity_etfs --quiet' >> /root/atlas/logs/reconciliation.log 2>&1
-# CONSOLIDATED-2026-05-07: 5 9 * * 2-6 /usr/bin/flock -n /tmp/reconcile_sector.lock bash -c 'cd /root/atlas && python3 scripts/reconcile_positions.py --market sector_etfs --quiet' >> /root/atlas/logs/reconciliation.log 2>&1
-
-# ── Reconcile ledger 09:30 AEST Tue–Sat ──────────────────────────────────────
-# CONSOLIDATED-2026-05-07 (original ran all 3 markets): 30 9 * * 2-6 /usr/bin/flock -n /tmp/reconcile_ledger.lock bash -c 'cd /root/atlas && for m in sp500 commodity_etfs sector_etfs; do timeout 5m python3 scripts/reconcile_ledger.py --market $m; done' >> /root/atlas/logs/reconcile_ledger.log 2>&1
-30 9 * * 2-6 /usr/bin/flock -n /tmp/reconcile_ledger.lock bash -c 'cd /root/atlas && timeout 5m python3 scripts/reconcile_ledger.py --market sp500' >> /root/atlas/logs/reconcile_ledger.log 2>&1
-
-# ── Daily ops ──────────────────────────────────────────────────────────────────
-# verify_dual_write: 10:00 AEST Tue-Sat (= 00:00 UTC Tue-Sat)
-0 10 * * 2-6 cd /root/atlas && python3 scripts/verify_dual_write.py --source=cron >> /root/atlas/logs/dual_write_check.log 2>&1
-# sync_broker_orders: runs every 4h to keep broker_orders cache fresh + once at 09:25 AEST Tue-Sat
-# (5 min before reconcile_ledger at 09:30) to guarantee P1 fill prices are available.
-# TZ=Australia/Brisbane: 09:25 AEST = 23:25 UTC Mon-Fri; */4 UTC = 00:00/04:00/08:00/12:00/16:00/20:00 daily
-25 9 * * 2-6 /usr/bin/flock -n /tmp/sync_broker_orders.lock bash -c 'cd /root/atlas && timeout 10m python3 scripts/sync_broker_orders.py' >> /root/atlas/logs/sync_broker_orders.log 2>&1
-0 */4 * * * /usr/bin/flock -n /tmp/sync_broker_orders.lock bash -c 'cd /root/atlas && timeout 10m python3 scripts/sync_broker_orders.py --days 7' >> /root/atlas/logs/sync_broker_orders.log 2>&1
-# ── sync_paper_orders: every 5 min during US RTH to catch paper fill-by-LIMIT (#unblock paper validation)
-# US RTH in AEST (UTC+10/11): approx 23:00-07:00 AEST Mon(eve)-Sat(morn)
-# Cron times in UTC (system): */5 23:00-07:59 UTC Mon-Fri (Tue-Sat in UTC calendar)
-*/5 23 * * 1-5 /usr/bin/flock -n /tmp/sync_paper_orders.lock bash -c 'cd /root/atlas && timeout 5m python3 scripts/sync_paper_orders.py --days 7' >> /root/atlas/logs/sync_paper_orders.log 2>&1
-*/5 0-7 * * 2-6 /usr/bin/flock -n /tmp/sync_paper_orders.lock bash -c 'cd /root/atlas && timeout 5m python3 scripts/sync_paper_orders.py --days 7' >> /root/atlas/logs/sync_paper_orders.log 2>&1
-# Off-hours catch-up: once at start of each weekday morning AEST (08:30 AEST = 22:30 UTC Mon-Fri)
-30 22 * * 1-5 /usr/bin/flock -n /tmp/sync_paper_orders.lock bash -c 'cd /root/atlas && timeout 10m python3 scripts/sync_paper_orders.py --days 14' >> /root/atlas/logs/sync_paper_orders.log 2>&1
-# ── Hourly — paper validation health check (alerts if PAPER state has zero trades)
-15 * * * * /usr/bin/flock -n /tmp/healthcheck_paper_executor.lock bash -c 'cd /root/atlas && timeout 3m python3 scripts/healthcheck_paper_executor.py' >> /root/atlas/logs/healthcheck_paper_executor.log 2>&1
-# cleanup research locks + papers TTL: 07:00 AEST daily
-0 7 * * * /root/atlas/scripts/cleanup_research_locks.sh >> /root/atlas/logs/cleanup_research_locks.log 2>&1
-# cleanup stale plans: 17:00 AEST daily (= 07:00 UTC)
-0 17 * * * python3 /root/atlas/scripts/cleanup_stale_plans.py >> /root/atlas/logs/cleanup_stale_plans.log 2>&1
-# ── up-bank — moved to /etc/cron.d/up-bank (2026-05-15) ─────
-# See /etc/cron.d/up-bank for the canonical schedule.
-
-# ── NRL-Predict — moved to /etc/cron.d/nrl-predict (2026-05-15) ─────
-# See /etc/cron.d/nrl-predict for the canonical schedule.
-# /etc/cron.d/ fragments survive `crontab -r` and per-user crontab corruption.
-
-# discovery run: DISABLED 2026-05-06 (audit: 26 runs, 0 specs, 0 adopted — see docs/audits/research-system-audit-2026-05-06.md)
-# 0 6 * * * cd /root/atlas && /usr/bin/python3 research/discovery/run.py >> /root/atlas/research/discovery/logs/cron.log 2>&1
-# macro freshness check: 09:30 AEST daily
-30 9 * * * python3 /root/atlas/scripts/check_macro_freshness.py >> /root/atlas/logs/check_macro_freshness.log 2>&1
-# Live-vs-research Sharpe divergence monitor (per audit 2026-05-06 Rec 4)
-# 06:30 AEST = 20:30 UTC — after all nightly sweeps (last crypto sweep 19:00 UTC = 05:00 AEST)
-30 6 * * * cd /root/atlas && /usr/bin/python3 scripts/check_live_research_divergence.py >> /root/atlas/logs/live_research_divergence.log 2>&1
-
-# ── Weekly ops ─────────────────────────────────────────────────────────────────
-# Sunday 06:00 AEST — weekly maintenance (log rotation, pycache/cache cleanup, SQLite ANALYZE)
+# ── General Atlas hygiene ────────────────────────────────────────────────────
+# sediment cleanup: 14:00 AEST — delete incident snapshots >14d old (outside top-3)
+0 14 * * * /usr/bin/flock -n /tmp/cleanup_sediment.lock bash -c 'cd /root/atlas && timeout 5m python3 scripts/cleanup_sediment.py --apply' >> /root/atlas/logs/cleanup_sediment.log 2>&1
+# doc staleness check: 18:00 AEST — alert if memory/SUMMARY or KNOWLEDGE_INDEX >30d
+0 18 * * * /usr/bin/flock -n /tmp/check_doc_staleness.lock bash -c 'cd /root/atlas && timeout 2m python3 scripts/check_doc_staleness.py' >> /root/atlas/logs/check_doc_staleness.log 2>&1
+# weekly maintenance: Sunday 06:00 AEST
 0 6 * * 0 /usr/bin/flock -n /tmp/weekly_maintenance.lock bash -c 'cd /root/atlas && timeout 30m bash scripts/weekly_maintenance.sh' >> /root/atlas/logs/weekly_maintenance.log 2>&1
 
-# Saturday 09:00 AEST (Fri 23:00 UTC) — weekly strategy health check (sp500)
-# NOTE: heartbeat.json expected_cron="0 23 * * 5" is in UTC; this line is in AEST.
-0 9 * * 6 /root/atlas/scripts/pi-cron.sh health-check sp500
-# Sunday 22:00 AEST (Sun 12:00 UTC) — verify weekly health reports exist
-0 22 * * 0 /usr/bin/flock -n /tmp/verify_health_reports.lock bash -c 'cd /root/atlas && timeout 5m python3 scripts/verify_weekly_health_reports.py' >> /root/atlas/logs/verify_health_reports.log 2>&1
-# Monday 08:00 AEST (Sun 22:00 UTC) — auto-promote PAPER strategies to LIVE
-# (22:00 UTC Sunday = 08:00 AEST Monday with TZ=Australia/Brisbane)
-0 8 * * 1 /root/atlas/scripts/pi-cron.sh auto_promote_paper
-
-# ── Sun 22:00 UTC (Mon 08:00 AEST) — weekly paper-promotion progress digest
-0 22 * * 0 /usr/bin/flock -n /tmp/paper_progress_digest.lock bash -c 'cd /root/atlas && timeout 5m python3 scripts/paper_progress_cli.py --markdown --telegram' >> /root/atlas/logs/paper_progress.log 2>&1
-
-# ── Operational sediment cleanup + doc staleness check ─────────────────────────
-# sediment cleanup: 14:00 AEST daily (= 04:00 UTC) — delete incident snapshots >14d old (outside top-3)
-0 14 * * * /usr/bin/flock -n /tmp/cleanup_sediment.lock bash -c 'cd /root/atlas && timeout 5m python3 scripts/cleanup_sediment.py --apply' >> /root/atlas/logs/cleanup_sediment.log 2>&1
-# doc staleness check: 18:00 AEST daily (= 08:00 UTC) — alert if KNOWLEDGE_INDEX or SUMMARY >30d
-0 18 * * * /usr/bin/flock -n /tmp/check_doc_staleness.lock bash -c 'cd /root/atlas && timeout 2m python3 scripts/check_doc_staleness.py' >> /root/atlas/logs/check_doc_staleness.log 2>&1
+# ── NRL-Predict (separate active project; auto-managed by plan_week.py) ───────
+20 18 * * 4 /root/NRL-Predict/scripts/nrl-cron.sh repredict  # Thursday 2026-06-11 (90min before 2026-06-11 19:50)
+30 18 * * 5 /root/NRL-Predict/scripts/nrl-cron.sh repredict  # Friday 2026-06-12 (90min before 2026-06-12 20:00)
+5 16 * * 6 /root/NRL-Predict/scripts/nrl-cron.sh repredict  # Saturday 2026-06-13 (90min before 2026-06-13 17:35)
+35 14 * * 0 /root/NRL-Predict/scripts/nrl-cron.sh repredict  # Sunday 2026-06-14 (90min before 2026-06-14 16:05)
+5 19 * * 0 /root/NRL-Predict/scripts/nrl-cron.sh refresh  # Post-round refresh: Sunday 19:05 AEST (3h after last KO 16:05)
