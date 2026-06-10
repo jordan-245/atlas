@@ -6,7 +6,7 @@ Single read endpoint GET /api/forge/state. Reads (best-effort, never 500s) from:
   - /root/research-wiki/candidates.md           (scout candidate queue)
   - /root/research-wiki/experiments|sources/    (counts)
   - /root/hephaestus/LOOP_DISABLED              (killswitch state)
-  - systemctl hephaestus-cycle.timer            (next-run / last-trigger)
+  - systemctl hephaestus-forge.timer            (next-run / last-trigger — the LIVE 3-smith pipeline)
 """
 from __future__ import annotations
 
@@ -20,11 +20,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends
 from fastapi.security import HTTPBasicCredentials
 
-try:
-    from services.auth import check_auth
-except Exception:  # pragma: no cover
-    def check_auth():  # type: ignore
-        return None
+from services.auth import check_auth  # hard import: if auth is broken, fail loudly, never serve open
 
 router = APIRouter(prefix="/api/forge", tags=["forge"])
 
@@ -34,7 +30,8 @@ RUN_LOG = HEPH / "agent" / "run_log.jsonl"
 REGISTRY_GLOB = str(WIKI / ".registry" / "*.jsonl")
 CANDIDATES = WIKI / "candidates.md"
 LOOP_DISABLED = HEPH / "LOOP_DISABLED"
-CYCLE_LOG = Path("/tmp/heph_cycle.log")
+# /tmp/heph_forge.log is a symlink to the current dated log under hephaestus/logs/
+CYCLE_LOG = Path("/tmp/heph_forge.log")
 
 
 def _read_jsonl(path: Path) -> list[dict]:
@@ -64,11 +61,11 @@ def _clip(v, n=400):
 def _systemctl_status() -> dict:
     info = {"enabled": False, "next_run_str": None, "last_trigger_str": None}
     try:
-        en = subprocess.run(["systemctl", "is-enabled", "hephaestus-cycle.timer"],
+        en = subprocess.run(["systemctl", "is-enabled", "hephaestus-forge.timer"],
                             capture_output=True, text=True, timeout=4)
         info["enabled"] = en.stdout.strip() == "enabled"
         show = subprocess.run(
-            ["systemctl", "show", "hephaestus-cycle.timer",
+            ["systemctl", "show", "hephaestus-forge.timer",
              "-p", "NextElapseUSecRealtime", "-p", "LastTriggerUSec"],
             capture_output=True, text=True, timeout=4).stdout
         for ln in show.splitlines():
