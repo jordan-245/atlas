@@ -33,6 +33,19 @@ from services.auth import check_auth
 router = APIRouter(tags=["chat"])
 logger = logging.getLogger("chat_server.chat_sessions")
 
+
+def default_chat_model(tier: str = "frontier", failsafe: str = "claude-opus-4-8") -> str:
+    """Default chat model from the central policy (/root/.pi/model-policy.json).
+
+    Read per-call (cheap) so policy changes apply without a service restart.
+    Failsafe is a $0-Max model — never accidentally paid.
+    """
+    try:
+        with open("/root/.pi/model-policy.json") as fh:
+            return json.load(fh)["tiers"][tier]
+    except Exception:
+        return failsafe
+
 # ── Chat module availability ───────────────────────────────────────────────────
 try:
     from services.chat_db import (
@@ -114,7 +127,7 @@ async def chat_create_session_endpoint(
 ) -> JSONResponse:
     """POST /api/chat/sessions — create a new chat session.
 
-    Body (JSON): {"name": "optional name", "model": "claude-sonnet-4-6"}
+    Body (JSON): {"name": "optional name", "model": "<model id>"} (default: central policy)
     """
     _require_chat()
     try:
@@ -123,7 +136,7 @@ async def chat_create_session_endpoint(
         logger.debug("Could not parse request body: %s", e)
         body = {}
     name = body.get("name")
-    model = body.get("model", "claude-opus-4-8")
+    model = body.get("model") or default_chat_model()
     session = _chat_create_session(name=name, model=model)
     return JSONResponse(session)
 

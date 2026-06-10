@@ -9,7 +9,7 @@ Protocol (client → server):
   {"type": "send",        "content": "...", "session_id": "uuid|null"}
   {"type": "history",    "session_id": "uuid", "limit": 50, "before_id": null}
   {"type": "cancel",     "session_id": "uuid"}
-  {"type": "new_session", "name": "optional", "model": "claude-sonnet-4-6"}
+  {"type": "new_session", "name": "optional", "model": "<model id>"}  (default: central policy)
   {"type": "status",     "session_id": "uuid"}
 
 Notes:
@@ -27,7 +27,7 @@ import time
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 # Import shared token state — REST endpoint issues tokens, WS validates them
-from services.api.chat_sessions import _ws_tokens
+from services.api.chat_sessions import _ws_tokens, default_chat_model
 from services.auth import _get_credentials  # was missing (pre-existing bug, fixed here)
 
 router = APIRouter()
@@ -74,7 +74,7 @@ async def websocket_chat(ws: WebSocket) -> None:  # noqa: C901
     {"type": "send",        "content": "...", "session_id": "uuid|null"}
     {"type": "history",    "session_id": "uuid", "limit": 50, "before_id": null}
     {"type": "cancel",     "session_id": "uuid"}
-    {"type": "new_session", "name": "optional", "model": "claude-sonnet-4-6"}
+    {"type": "new_session", "name": "optional", "model": "<model id>"}  (default: central policy)
     {"type": "status",     "session_id": "uuid"}
 
     Protocol (server → client) — see PiEvent.to_dict() for streaming events.
@@ -167,9 +167,9 @@ async def websocket_chat(ws: WebSocket) -> None:  # noqa: C901
                 if session_id not in _pi_sessions:
                     sess_rec = _chat_get_session(session_id)
                     model = (
-                        sess_rec.get("model", "claude-sonnet-4-6")
+                        sess_rec.get("model") or default_chat_model()
                         if sess_rec
-                        else "claude-sonnet-4-6"
+                        else default_chat_model()
                     )
                     _pi_sessions[session_id] = PiSessionManager(
                         session_id, model=model, use_teams=use_teams
@@ -235,7 +235,7 @@ async def websocket_chat(ws: WebSocket) -> None:  # noqa: C901
             # ---- new_session: create a fresh conversation -----------------
             elif msg_type == "new_session":
                 name = data.get("name")
-                model = data.get("model", "claude-sonnet-4-6")
+                model = data.get("model") or default_chat_model()
                 sess = _chat_create_session(name=name, model=model)
                 await ws.send_json({"type": "session_created", "session": sess})
 
