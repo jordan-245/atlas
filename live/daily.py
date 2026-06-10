@@ -100,7 +100,23 @@ def run_strategy(s: DeployedStrategy, asof: str, mode: str = "shadow", broker=No
         # shadow = Paper Book: place REAL paper orders on live data (the forward-paper gate).
         # canary/live = real capital: held (dry) unless human-approved AND invoked in live mode.
         dry = s.state in ("canary", "live") and (not s.approved or mode != "live")
-        rep = ex.rebalance(weights, deployable_equity=(s.capital or None), dry_run=dry)
+        # VIRTUAL SUB-BOOK (shadow only): N strategies share one paper account, so each diffs against
+        # its OWN book — never the account's blended positions (live/virtual_book.py). Canary/live
+        # strategies run on dedicated real accounts and keep diffing against true account positions.
+        book = None
+        if s.state == "shadow":
+            from live.virtual_book import VirtualBook
+            book = VirtualBook(s.name, capital_base=(s.capital or 0.0))
+        rep = ex.rebalance(weights, deployable_equity=(s.capital or None), dry_run=dry,
+                           current_qty=(book.current_qty() if book is not None else None))
+        if book is not None and not rep.dry_run and not rep.blocked:
+            # Apply this strategy's OWN successful fills to its book at the reference price.
+            filled = {(getattr(r, "ticker", None), getattr(r, "side", None))
+                      for r in rep.results if getattr(r, "success", False)}
+            for o in rep.orders:
+                if (o.ticker, o.side) in filled:
+                    book.apply_fill(o.ticker, o.side.value, o.qty, o.ref_price, ex._spec(o.ticker).multiplier)
+            book.save()
 
         track = None
         if s.expectation:

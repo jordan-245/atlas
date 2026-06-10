@@ -129,7 +129,10 @@ class TargetExecutor:
 
     def rebalance(self, target_weights: dict, *, prices: Optional[dict] = None,
                   deployable_equity: Optional[float] = None, dry_run: bool = True,
-                  check_kill_switch: bool = True) -> RebalanceReport:
+                  check_kill_switch: bool = True, current_qty: Optional[dict] = None) -> RebalanceReport:
+        """current_qty: positions to diff against. Default = the broker account's positions (single-
+        strategy accounts). Multi-strategy shared accounts MUST pass their own virtual book's positions
+        (live/virtual_book.py) or strategies will liquidate each other's holdings."""
         td = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
         blocked = None
@@ -149,7 +152,8 @@ class TargetExecutor:
             except Exception:
                 deployable_equity = 0.0
 
-        current_qty = self._current_qty()
+        if current_qty is None:
+            current_qty = self._current_qty()
         px = self._resolve_prices(set(target_weights) | set(current_qty), prices)
         target_qty, orders = self.compute_orders(target_weights, px, deployable_equity, current_qty)
         turnover = sum(o.qty * o.ref_price * self._spec(o.ticker).multiplier for o in orders)

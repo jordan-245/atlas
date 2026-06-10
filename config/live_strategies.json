@@ -1,0 +1,16 @@
+[
+  {
+    "name": "val_mom_trend_smallcap",
+    "provider": "val_mom_trend_smallcap",
+    "state": "shadow",
+    "broker": "alpaca",
+    "capital": 14500.0,
+    "approved": false,
+    "specs": {},
+    "expectation": {
+      "daily_mean": 0.00037654,
+      "daily_std": 0.00961749,
+      "sharpe": 0.622
+    }
+  }
+]
