@@ -88,6 +88,17 @@ export function buildEquityChartData(data: DashboardData): EquityChartData {
 // ---------------------------------------------------------------------------
 // Live pipeline (forge->live shadow loop) — /api/live
 // ---------------------------------------------------------------------------
+export interface LiveBookStats {
+  book_equity?: number | null
+  cash?: number | null
+  n_positions?: number | null
+  capital_base?: number | null
+  cum_return?: number | null
+  last_return?: number | null
+  days_tracked: number
+  realized_sharpe?: number | null
+  equity_curve: { date?: string; equity?: number }[]
+}
 export interface LiveDeployed {
   name: string
   provider: string
@@ -96,6 +107,15 @@ export interface LiveDeployed {
   capital: number
   approved: boolean
   expectation?: Record<string, number>
+  book?: LiveBookStats
+}
+export interface LivePortfolio {
+  n_strategies: number
+  n_tracked: number
+  total_equity: number
+  total_capital_base: number
+  total_pnl: number
+  total_return?: number | null
 }
 export interface LiveDailyResult {
   name: string
@@ -111,6 +131,7 @@ export interface LiveDailyResult {
 }
 export interface LiveState {
   deployed: LiveDeployed[]
+  portfolio?: LivePortfolio | null
   daily: { date: string; mode: string; results: LiveDailyResult[] } | null
   kill_switch: { blocked: boolean; reason?: string | null; layer?: string | null }
 }

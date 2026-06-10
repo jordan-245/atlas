@@ -1,5 +1,5 @@
 import { useLiveState } from '../../api/queries'
-import type { LiveDeployed, LiveDailyResult } from '../../api/queries'
+import type { LiveDeployed, LiveDailyResult, LivePortfolio } from '../../api/queries'
 import { Skeleton } from '../layout/Skeleton'
 import { SectionBoundary } from '../layout/SectionBoundary'
 
@@ -28,6 +28,55 @@ function KillSwitchBanner({ blocked, reason, layer }: { blocked: boolean; reason
   )
 }
 
+function pnlColor(v?: number | null): string {
+  if (v == null) return 'var(--color-text-muted)'
+  return v >= 0 ? 'var(--color-green)' : 'var(--color-red)'
+}
+
+function fmtPct(v?: number | null): string {
+  if (v == null) return '—'
+  return `${v >= 0 ? '+' : ''}${(v * 100).toFixed(2)}%`
+}
+
+function Sparkline({ curve, base }: { curve: { equity?: number }[]; base?: number | null }) {
+  const pts = curve.map((c) => c.equity).filter((e): e is number => e != null)
+  if (pts.length < 2) return <span className="text-[10px] text-[var(--color-text-muted)]">—</span>
+  const w = 96
+  const h = 24
+  const min = Math.min(...pts)
+  const max = Math.max(...pts)
+  const span = max - min || 1
+  const path = pts
+    .map((p, i) => `${i === 0 ? 'M' : 'L'}${((i / (pts.length - 1)) * w).toFixed(1)},${(h - ((p - min) / span) * h).toFixed(1)}`)
+    .join(' ')
+  const up = base != null ? pts[pts.length - 1] >= base : pts[pts.length - 1] >= pts[0]
+  return (
+    <svg width={w} height={h} className="inline-block align-middle">
+      <path d={path} fill="none" stroke={up ? 'var(--color-green)' : 'var(--color-red)'} strokeWidth="1.5" />
+    </svg>
+  )
+}
+
+function PortfolioHeader({ p }: { p: LivePortfolio }) {
+  const items: [string, string, string][] = [
+    ['Book Equity', `$${p.total_equity.toLocaleString()}`, 'var(--color-text)'],
+    ['Capital Base', `$${p.total_capital_base.toLocaleString()}`, 'var(--color-text-muted)'],
+    ['P&L', `${p.total_pnl >= 0 ? '+' : ''}$${p.total_pnl.toLocaleString()}`, pnlColor(p.total_pnl)],
+    ['Return', fmtPct(p.total_return), pnlColor(p.total_return)],
+    ['Strategies', `${p.n_tracked}/${p.n_strategies} tracked`, 'var(--color-text-muted)'],
+  ]
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      {items.map(([label, value, color]) => (
+        <div key={label} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+          <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">{label}</div>
+          <div className="text-sm font-mono font-semibold tabular-nums" style={{ color }}>{value}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function DeployedTable({ rows }: { rows: LiveDeployed[] }) {
   if (!rows.length) {
     return (
@@ -44,23 +93,48 @@ function DeployedTable({ rows }: { rows: LiveDeployed[] }) {
           <tr className="border-b border-[var(--color-border)]">
             <th className="text-left py-2 pr-4">Strategy</th>
             <th className="text-left py-2 pr-4">State</th>
-            <th className="text-left py-2 pr-4">Broker</th>
-            <th className="text-right py-2 pr-4">Capital</th>
-            <th className="text-left py-2 pr-4">Approved</th>
-            <th className="text-right py-2">Exp. Sharpe</th>
+            <th className="text-right py-2 pr-4">Equity</th>
+            <th className="text-right py-2 pr-4">Cum Ret</th>
+            <th className="text-right py-2 pr-4">Last Day</th>
+            <th className="text-right py-2 pr-4">Days</th>
+            <th className="text-right py-2 pr-4">Pos</th>
+            <th className="text-right py-2 pr-4">Sharpe R/E</th>
+            <th className="text-left py-2 pr-4">Curve</th>
+            <th className="text-left py-2">Appr</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((s) => (
-            <tr key={s.name} className="border-b border-[var(--color-border)]/40">
-              <td className="py-2 pr-4 text-[var(--color-text)]">{s.name}</td>
-              <td className="py-2 pr-4" style={{ color: STATE_COLOR[s.state] ?? 'var(--color-text)' }}>{s.state}</td>
-              <td className="py-2 pr-4 text-[var(--color-text-muted)]">{s.broker}</td>
-              <td className="py-2 pr-4 text-right tabular-nums">${s.capital.toLocaleString()}</td>
-              <td className="py-2 pr-4">{s.approved ? '✅' : '—'}</td>
-              <td className="py-2 text-right tabular-nums">{s.expectation?.sharpe?.toFixed(2) ?? '—'}</td>
-            </tr>
-          ))}
+          {rows.map((s) => {
+            const b = s.book
+            return (
+              <tr key={s.name} className="border-b border-[var(--color-border)]/40">
+                <td className="py-2 pr-4 text-[var(--color-text)]">
+                  {s.name}
+                  <span className="ml-2 text-[10px]" style={{ color: STATE_COLOR[s.state] ?? 'var(--color-text-muted)' }}>
+                    {s.state}/{s.broker}
+                  </span>
+                </td>
+                <td className="py-2 pr-4" style={{ color: STATE_COLOR[s.state] ?? 'var(--color-text)' }}>{s.state}</td>
+                <td className="py-2 pr-4 text-right tabular-nums">
+                  {b?.book_equity != null ? `$${b.book_equity.toLocaleString()}` : `$${s.capital.toLocaleString()}`}
+                </td>
+                <td className="py-2 pr-4 text-right tabular-nums" style={{ color: pnlColor(b?.cum_return) }}>
+                  {fmtPct(b?.cum_return)}
+                </td>
+                <td className="py-2 pr-4 text-right tabular-nums" style={{ color: pnlColor(b?.last_return) }}>
+                  {fmtPct(b?.last_return)}
+                </td>
+                <td className="py-2 pr-4 text-right tabular-nums text-[var(--color-text-muted)]">{b?.days_tracked ?? 0}</td>
+                <td className="py-2 pr-4 text-right tabular-nums text-[var(--color-text-muted)]">{b?.n_positions ?? '—'}</td>
+                <td className="py-2 pr-4 text-right tabular-nums">
+                  {b?.realized_sharpe != null ? b.realized_sharpe.toFixed(2) : '—'}
+                  <span className="text-[var(--color-text-muted)]"> / {s.expectation?.sharpe?.toFixed(2) ?? '—'}</span>
+                </td>
+                <td className="py-2 pr-4"><Sparkline curve={b?.equity_curve ?? []} base={b?.capital_base} /></td>
+                <td className="py-2">{s.approved ? '✅' : '—'}</td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>
@@ -99,6 +173,13 @@ export function LiveTab() {
       <div className="animate-in">
         <KillSwitchBanner {...data.kill_switch} />
       </div>
+      {data.portfolio && (
+        <div className="animate-in">
+          <SectionBoundary title="Paper Portfolio">
+            <PortfolioHeader p={data.portfolio} />
+          </SectionBoundary>
+        </div>
+      )}
       <div className="animate-in">
         <SectionBoundary title="Deployed Strategies">
           <DeployedTable rows={data.deployed} />
