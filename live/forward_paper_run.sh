@@ -6,6 +6,6 @@ set -uo pipefail
 LOG=/root/atlas/data/live/forward_paper.log
 echo "=== forward-paper cycle $(date -Is) ===" >> "$LOG"
 cd /root/atlas      && python3 -m live.record_returns          >> "$LOG" 2>&1 || echo "record_returns FAILED" >> "$LOG"
-cd /root/hephaestus && python3 live/deploy.py refresh          >> "$LOG" 2>&1 || echo "weight refresh FAILED" >> "$LOG"
+cd /root/crucible && python3 live/deploy.py refresh          >> "$LOG" 2>&1 || echo "weight refresh FAILED" >> "$LOG"
 cd /root/atlas      && python3 -m live.daily --mode shadow      >> "$LOG" 2>&1 || echo "daily shadow FAILED" >> "$LOG"
 echo "=== done $(date -Is) ===" >> "$LOG"
