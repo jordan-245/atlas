@@ -1,21 +1,21 @@
-# Atlas trading system - pinned dependencies
-# IMPORTANT: Always install with: pip install --break-system-packages -r requirements.txt
-# Never run bare `pip install numpy` or `pip install --upgrade scipy` alone.
-# numpy and scipy MUST be upgraded together to avoid ABI incompatibility.
+# Atlas execution platform — pinned dependencies
+# Install: pip install --break-system-packages -r requirements.txt
+# numpy and scipy-free since the research stack moved to Crucible.
 
-# Core scientific stack (keep these in sync!)
+# Data
 numpy==2.4.2
-scipy==1.17.1
 pandas==3.0.1
-
-# Market data
-yfinance==1.2.0
+pyarrow>=16.0          # parquet cache reads (dashboard builder)
 
 # Brokers
 alpaca-py==0.43.2
+ib_insync>=0.9.86      # IB micro-futures adapter (BOREAS, ~2026-08-28)
+
+# Dashboard backend
+fastapi>=0.110
+uvicorn>=0.29
+websockets>=12.0
 
 # Utilities
 requests==2.32.5
-beautifulsoup4>=4.12.0
-mplfinance==0.12.10b0
-croniter>=2.0.0
+pandas_market_calendars>=4.0   # NYSE session calendar (kernel.market_hours)

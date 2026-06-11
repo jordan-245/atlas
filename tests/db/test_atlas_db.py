@@ -71,25 +71,24 @@ def _date(offset_days: int = 0) -> str:
 
 class TestInitDb:
     def test_init_db_creates_tables(self, db_file):
-        """All 16 tables plus schema_version are created."""
+        """All live tables plus schema_version are created."""
         expected_tables = {
+            "schema_version",
             "ohlcv",
-            "macro_indicators",
             "regime_history",
-            "signals",
             "trades",
-            "plans",
+            "paper_trades",
+            "paper_position_protective_orders",
             "equity_curve",
-            "portfolio_snapshots",
-            "overlay_decisions",
-            "ceasefire_factors",
-            "ceasefire_history",
-            "news_intel",
-            "research_experiments",
-            "research_best",
+            "equity_history",
+            "market_equity_history",
             "heartbeats",
             "system_log",
-            "schema_version",
+            "telegram_messages",
+            "errors",
+            "config_overrides",
+            "config_override_audit",
+            "signal_ev",
         }
         with atlas_db_module.get_db() as conn:
             rows = conn.execute(

@@ -176,8 +176,6 @@ def system_health(_auth: HTTPBasicCredentials = Depends(check_auth)):
 
                 row = db.execute("SELECT MAX(date) as last_date FROM equity_curve").fetchone()
                 data_freshness["equity_last_date"] = row["last_date"] if row else None
-                row = db.execute("SELECT COUNT(*) as cnt FROM overlay_decisions").fetchone()
-                data_freshness["overlay_decisions_count"] = row["cnt"] if row else 0
 
             # R-03: weekend-aware freshness badge — compare ohlcv_last_date
             # against the last completed NYSE trading session (not wall-clock today)
