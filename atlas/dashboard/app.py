@@ -169,7 +169,6 @@ app.include_router(_dashboard_router)
 app.include_router(_chat_sessions_router)
 app.include_router(_ws_chat_router)
 # Note: lifecycle endpoints live exclusively in services/api/lifecycle.py.
-# An orphan strategy_lifecycle.py was deleted 2026-05-14 (commit edfe6efa).
 # Future routers MUST be mounted here via app.include_router() and live under
 # services/api/ (or services/ws/ for WebSocket routers).
 app.include_router(_forge_router)

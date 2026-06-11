@@ -571,7 +571,7 @@ def record_paper_trade_exit(
     all against the `paper_trades` table.
 
     ``paper_account_id`` is accepted for interface symmetry with
-    :func:`record_paper_trade_entry` (callers in brokers/live_executor.py pass it).
+    :func:`record_paper_trade_entry`.
     Matching is already unique by (ticker, strategy, status='open') for the single
     paper account, so it is recorded at entry and not needed to disambiguate the exit;
     accepting it here fixes the TypeError that was crashing the reconcile path.
