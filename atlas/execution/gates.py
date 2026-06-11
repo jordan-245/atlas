@@ -61,13 +61,23 @@ def _safe(v) -> Optional[float]:
 
 def slippage_gate(fills: list, *, bar_bps: float = SLIPPAGE_BAR_BPS,
                   lookback_days: int = LOOKBACK_DAYS, today: Optional[date] = None) -> dict:
-    """G6 — median signed slippage (bps, + = adverse) over filled orders in the window."""
+    """G6 — median signed slippage (bps, + = adverse) over filled orders in the window.
+
+    The day-1 book build is EXCLUDED (canonical methodology, crucible
+    forward/evidence.py _g6): establishing the whole book at once is a one-off
+    cost, not the steady-state daily rebalance the gate measures. Build day =
+    the earliest fill date across ALL fills (not just the window), so the
+    exclusion stays correct even after the build day ages out of the lookback."""
     out = {"median_bps": None, "p75_bps": None, "worst_bps": None, "n_fills": 0,
-           "lookback_days": lookback_days, "bar_bps": bar_bps, "pass": None}
+           "lookback_days": lookback_days, "bar_bps": bar_bps, "pass": None,
+           "build_day_excluded": None}
     try:
         cut = _cutoff(lookback_days, today)
+        build_day = min((str(f["date"]) for f in fills if f.get("date")), default=None)
+        out["build_day_excluded"] = build_day
         vals = [float(f["slippage_bps"]) for f in fills
-                if f.get("slippage_bps") is not None and str(f.get("date", "")) >= cut]
+                if f.get("slippage_bps") is not None and str(f.get("date", "")) >= cut
+                and str(f.get("date", "")) != build_day]
         if not vals:
             return out
         out["n_fills"] = len(vals)

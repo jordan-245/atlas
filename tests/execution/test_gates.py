@@ -29,9 +29,12 @@ def _run(d: str, orders, **kw):
 
 # ── G6 slippage ──────────────────────────────────────────────────────────────
 
+BUILD = _fill("2026-06-01", 999.0)  # day-1 book build — always excluded from G6
+
+
 class TestSlippageGate:
     def test_median_and_fail_above_bar(self):
-        fills = [_fill("2026-06-10", v) for v in (10.0, 25.6, 40.0)]
+        fills = [BUILD] + [_fill("2026-06-10", v) for v in (10.0, 25.6, 40.0)]
         g = gates.slippage_gate(fills, today=TODAY)
         assert g["median_bps"] == 25.6
         assert g["worst_bps"] == 40.0
@@ -40,20 +43,39 @@ class TestSlippageGate:
         assert g["pass"] is False
 
     def test_pass_below_bar(self):
-        fills = [_fill("2026-06-10", v) for v in (2.0, 8.0, 15.9)]
+        fills = [BUILD] + [_fill("2026-06-10", v) for v in (2.0, 8.0, 15.9)]
         g = gates.slippage_gate(fills, today=TODAY)
         assert g["pass"] is True
 
+    def test_build_day_excluded(self):
+        # canonical methodology (crucible evidence._g6): the day-1 book build is a
+        # one-off establishment cost, not the steady-state rebalance the gate measures
+        fills = [_fill("2026-06-09", 172.8), _fill("2026-06-09", 1795.0),
+                 _fill("2026-06-10", 5.0), _fill("2026-06-11", 7.0)]
+        g = gates.slippage_gate(fills, today=TODAY)
+        assert g["build_day_excluded"] == "2026-06-09"
+        assert g["n_fills"] == 2
+        assert g["median_bps"] == 6.0
+        assert g["pass"] is True
+
+    def test_single_day_history_is_accruing(self):
+        # only the build day exists -> zero steady-state evidence, not a verdict
+        fills = [_fill("2026-06-10", v) for v in (10.0, 25.6, 40.0)]
+        g = gates.slippage_gate(fills, today=TODAY)
+        assert g["n_fills"] == 0
+        assert g["pass"] is None
+
     def test_null_slippage_excluded(self):
-        fills = [_fill("2026-06-10", 12.0), _fill("2026-06-10", None)]
+        fills = [BUILD, _fill("2026-06-10", 12.0), _fill("2026-06-10", None)]
         g = gates.slippage_gate(fills, today=TODAY)
         assert g["n_fills"] == 1
 
     def test_lookback_excludes_old_fills(self):
-        fills = [_fill("2026-01-01", 500.0), _fill("2026-06-10", 5.0)]
+        # 2026-01-01 is both the build day AND outside the 60d window; either way out
+        fills = [_fill("2026-01-01", 500.0), _fill("2026-06-09", 6.0), _fill("2026-06-10", 5.0)]
         g = gates.slippage_gate(fills, today=TODAY)
-        assert g["n_fills"] == 1
-        assert g["median_bps"] == 5.0
+        assert g["n_fills"] == 2
+        assert g["median_bps"] == 5.5
         assert g["pass"] is True
 
     def test_empty_is_accruing(self):
@@ -61,11 +83,12 @@ class TestSlippageGate:
         assert g["n_fills"] == 0
         assert g["median_bps"] is None
         assert g["pass"] is None
+        assert g["build_day_excluded"] is None
 
     def test_p75_needs_four_fills(self):
-        g3 = gates.slippage_gate([_fill("2026-06-10", v) for v in (1, 2, 3)], today=TODAY)
+        g3 = gates.slippage_gate([BUILD] + [_fill("2026-06-10", v) for v in (1, 2, 3)], today=TODAY)
         assert g3["p75_bps"] is None
-        g4 = gates.slippage_gate([_fill("2026-06-10", v) for v in (1, 2, 3, 4)], today=TODAY)
+        g4 = gates.slippage_gate([BUILD] + [_fill("2026-06-10", v) for v in (1, 2, 3, 4)], today=TODAY)
         assert g4["p75_bps"] is not None
 
 
@@ -156,7 +179,9 @@ class TestEvaluateGates:
 
     def test_composed_from_files(self, tmp_path):
         d = tmp_path / "strat_a"
-        self._write(d, "fills.jsonl", [_fill("2026-06-10", 5.0), _fill("2026-06-10", 7.0)])
+        self._write(d, "fills.jsonl",
+                    [_fill("2026-06-01", 999.0),  # build day (excluded from G6)
+                     _fill("2026-06-10", 5.0), _fill("2026-06-10", 7.0)])
         self._write(d, "runs.jsonl", [_run("2026-06-10", [{"ok": True}] * 4)])
         self._write(d, "returns.jsonl",
                     [{"date": f"2026-05-{i:02d}", "ret": 0.001, "equity": 10000 + i} for i in range(1, 26)])
@@ -176,13 +201,15 @@ class TestEvaluateGates:
     def test_malformed_lines_skipped(self, tmp_path):
         d = tmp_path / "strat_b"
         d.mkdir()
-        (d / "fills.jsonl").write_text('{"date": "2026-06-10", "slippage_bps": 4.0}\nNOT JSON\n')
+        (d / "fills.jsonl").write_text('{"date": "2026-06-01", "slippage_bps": 999.0}\n'
+                                       '{"date": "2026-06-10", "slippage_bps": 4.0}\nNOT JSON\n')
         g = gates.evaluate_gates("strat_b", None, base=tmp_path)
         assert g["slippage"]["n_fills"] == 1
 
     def test_any_false_fails_overall(self, tmp_path):
         d = tmp_path / "strat_c"
-        self._write(d, "fills.jsonl", [_fill("2026-06-10", 99.0)] * 3)  # median way over bar
+        self._write(d, "fills.jsonl",
+                    [_fill("2026-06-01", 1.0)] + [_fill("2026-06-10", 99.0)] * 3)  # median way over bar
         g = gates.evaluate_gates("strat_c", None, base=tmp_path)
         assert g["slippage"]["pass"] is False
         assert g["pass"] is False

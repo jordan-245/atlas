@@ -35,11 +35,13 @@ def _seed_strategy(tmp_path, name="strat_x"):
     }]))
     d = tmp_path / name
     d.mkdir()
+    # first fill row = day-1 book build (excluded from G6 by canonical methodology)
     (d / "fills.jsonl").write_text("\n".join(json.dumps(
-        {"date": "2026-06-10", "ticker": "AAA", "side": "BUY", "qty": 5,
+        {"date": day, "ticker": "AAA", "side": "BUY", "qty": 5,
          "decision_px": 100.0, "fill_px": 100.05, "filled_qty": 5,
          "status": "filled", "slippage_bps": bps, "order_id": f"o{i}"})
-        for i, bps in enumerate((4.0, 6.0, 9.0))) + "\n")
+        for i, (day, bps) in enumerate((("2026-06-01", 999.0), ("2026-06-10", 4.0),
+                                        ("2026-06-10", 6.0), ("2026-06-10", 9.0)))) + "\n")
     (d / "runs.jsonl").write_text(json.dumps(
         {"date": "2026-06-10", "state": "shadow", "dry_run": False, "n_orders": 3,
          "turnover": 500.0, "blocked": None, "track": "insufficient",
