@@ -8,9 +8,6 @@ from pathlib import Path
 ATLAS_ROOT = Path(__file__).resolve().parent.parent
 ALLOWED = {
     ATLAS_ROOT / "utils" / "pi_subprocess.py",
-    # job_server.py uses shell-pipeline construction — grandfathered because
-    # it already has explicit --system-prompt inline. Re-audit if this fails.
-    ATLAS_ROOT / "services" / "job_server.py",
     # pi_session.py uses asyncio.create_subprocess_exec (async streaming) —
     # a different execution model that cannot use call_pi directly.
     # --system-prompt is present inline; equivalent routing guarantee.
@@ -25,8 +22,8 @@ def test_no_raw_pi_subprocess():
     for py in ATLAS_ROOT.rglob("*.py"):
         if py.resolve() in {p.resolve() for p in ALLOWED}:
             continue
-        s = str(py)
-        if "/tests/" in s or "/test_" in py.name or "__pycache__" in s:
+        parts = py.parts
+        if "tests" in parts or "__pycache__" in parts or py.name.startswith("test_"):
             continue
         try:
             text = py.read_text()

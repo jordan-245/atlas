@@ -122,7 +122,6 @@ def system_health(_auth: HTTPBasicCredentials = Depends(check_auth)):
         services: dict = {}
         for svc in (
             "atlas-dashboard",
-            "atlas-telegram-bot",
             "atlas-dashboard-refresh",
         ):
             info = _systemctl_status(svc)

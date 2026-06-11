@@ -158,7 +158,6 @@ SUPERCOACH_API=$(check_service "supercoach-api")
 
 ATLAS_DASHBOARD=$(check_service "atlas-dashboard")
 ATLAS_REFRESH=$(check_service "atlas-dashboard-refresh")
-ATLAS_TELEGRAM=$(check_service "atlas-telegram-bot")
 
 DATA_FRESH=$(check_data_freshness)
 DISK=$(check_disk_usage)
@@ -175,7 +174,7 @@ MESSAGE="🏥 <b>System Health Report</b>
 📅 ${TIMESTAMP}
 
 <b>Atlas SP500</b>
-${ATLAS_DASHBOARD} dashboard | ${ATLAS_REFRESH} refresh | ${ATLAS_TELEGRAM} telegram-bot
+${ATLAS_DASHBOARD} dashboard | ${ATLAS_REFRESH} refresh
 💰 Equity: ${SP500_EQUITY}
 
 <b>SuperCoach</b>

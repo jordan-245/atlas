@@ -140,7 +140,6 @@ class TestSystemctlStatus:
 
 _DEFAULT_OUTPUTS = {
     "atlas-dashboard": "simple\nsuccess\nactive\n",
-    "atlas-telegram-bot": "simple\nsuccess\nactive\n",
     "atlas-dashboard-refresh": "oneshot\nsuccess\ninactive\n",
 }
 

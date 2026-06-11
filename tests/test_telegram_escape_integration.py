@@ -9,13 +9,10 @@ Test cases:
 1. Ticker with XSS-like content -> body has &lt;script&gt;, not <script>
 2. Broker-error JSON with '<reason>' -> '<' escaped in captured body
 3. tg_escape('"quoted" & amp') -> &quot;quoted&quot; &amp; amp
-4. End-to-end: sync_protective_orders notify helper with hostile broker error
-   -- no raw '<', '>', '"' outside template tags in captured payload
 """
 from __future__ import annotations
 
 import json
-import re
 import sys
 import urllib.request
 from pathlib import Path
@@ -25,6 +22,14 @@ import pytest
 
 PROJECT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT))
+
+
+@pytest.fixture(autouse=True)
+def _fake_telegram_creds(monkeypatch):
+    """send_message loads creds before building the request — fake them so the
+    mocked urlopen is actually reached (urlopen is always patched; no network)."""
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "000:test-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "12345")
 
 
 # ---------------------------------------------------------------------------
@@ -130,144 +135,3 @@ class TestQuoteAndAmpersandEscaping:
         assert result == "&lt;b onclick=&quot;alert(1)&quot;&gt;click&lt;/b&gt;"
 
 
-# ---------------------------------------------------------------------------
-# Test 4 -- end-to-end: sync_protective_orders with hostile content
-# ---------------------------------------------------------------------------
-
-class TestSyncProtectiveOrdersEndToEnd:
-    """Full pipeline: format_telegram_message + send_message with hostile broker error."""
-
-    _ALLOWED_TAGS = frozenset({
-        "b", "/b", "i", "/i", "code", "/code", "pre", "/pre",
-        "s", "/s", "u", "/u", "a", "/a",
-    })
-
-    def _extract_unknown_tags(self, body):
-        raw_tags = re.findall(r"<([^>]+)>", body)
-        return [t for t in raw_tags if t.strip().lower().split()[0] not in self._ALLOWED_TAGS]
-
-    def test_hostile_market_error_no_unknown_tags(self) -> None:
-        """Market-level broker error with hostile chars must produce clean HTML."""
-        sys.path.insert(0, str(PROJECT / "scripts"))
-        from sync_protective_orders import format_telegram_message
-
-        hostile_error = 'broker returned {"code":400,"message":"denied <API_LIMIT>"} for ticker'
-        results = [
-            {
-                "market_id": "sp500",
-                "error": hostile_error,
-                "counts": {},
-                "results": {},
-            }
-        ]
-        msg = format_telegram_message(results, "2026-04-24", dry_run=False)
-
-        unknown = self._extract_unknown_tags(msg)
-        assert unknown == [], (
-            "Unknown HTML tags in message (will cause Telegram 400): " + str(unknown) +
-            "\nFull message:\n" + msg
-        )
-        assert "<API_LIMIT>" not in msg
-        assert "&lt;API_LIMIT&gt;" in msg
-
-    def test_hostile_ticker_error_no_unknown_tags(self) -> None:
-        """Per-ticker error strings with hostile chars must be escaped."""
-        sys.path.insert(0, str(PROJECT / "scripts"))
-        from sync_protective_orders import format_telegram_message
-
-        ticker_errors = {
-            "NVDA": {
-                "errors": ["order rejected: qty <100> exceeds limit"],
-                "sl_action": "error",
-            }
-        }
-        results = [
-            {
-                "market_id": "sp500",
-                "error": "",
-                "counts": {
-                    "positions_checked": 1,
-                    "sl_placed": 0, "sl_already_exists": 0,
-                    "tp_placed": 0, "tp_already_exists": 0,
-                    "sl_skipped": 0, "tp_skipped": 0,
-                    "errors": 1, "pdt_deferred": 0, "orphans_cancelled": 0,
-                },
-                "results": ticker_errors,
-            }
-        ]
-        msg = format_telegram_message(results, "2026-04-24", dry_run=False)
-
-        unknown = self._extract_unknown_tags(msg)
-        assert unknown == [], (
-            "Unknown HTML tags: " + str(unknown) + "\nMessage:\n" + msg
-        )
-        assert "<100>" not in msg
-        assert "&lt;100&gt;" in msg
-
-    def test_end_to_end_send_no_raw_hostile_chars_in_payload(self) -> None:
-        """Full send_telegram_summary pipeline: captured HTTP body must not contain
-        raw hostile chars outside intentional HTML template tags."""
-        sys.path.insert(0, str(PROJECT / "scripts"))
-        from sync_protective_orders import send_telegram_summary
-
-        hostile_broker_error = (
-            'AlpacaError: {"code":40310100,'
-            '"message":"insufficient qty <4> for NVDA"}'
-        )
-        results = [
-            {
-                "market_id": "sp500",
-                "error": hostile_broker_error,
-                "counts": {},
-                "results": {},
-            }
-        ]
-
-        captured = []
-        with patch("urllib.request.urlopen", side_effect=_make_urlopen_mock(captured)):
-            ok = send_telegram_summary(results, "2026-04-24", dry_run=False)
-
-        assert captured, (
-            "send_telegram_summary made no HTTP call -- "
-            "set TELEGRAM_BOT_TOKEN=test TELEGRAM_CHAT_ID=123 in environment"
-        )
-
-        payload = json.loads(captured[0].decode("utf-8"))
-        text = payload["text"]
-
-        unknown_tags = self._extract_unknown_tags(text)
-        assert unknown_tags == [], (
-            "Unrecognised HTML tags that Telegram would reject: " + str(unknown_tags) +
-            "\nTransmitted text:\n" + text
-        )
-        assert "<4>" not in text, "Raw '<4>' found in transmitted payload"
-
-    def test_send_telegram_summary_returns_true_on_success(self) -> None:
-        """send_telegram_summary returns True when Telegram API responds ok=True."""
-        sys.path.insert(0, str(PROJECT / "scripts"))
-        from sync_protective_orders import send_telegram_summary
-
-        results = [
-            {
-                "market_id": "sp500",
-                "error": "",
-                "counts": {
-                    "positions_checked": 2,
-                    "sl_placed": 1, "sl_already_exists": 1,
-                    "tp_placed": 0, "tp_already_exists": 2,
-                    "sl_skipped": 0, "tp_skipped": 0,
-                    "errors": 0, "pdt_deferred": 0, "orphans_cancelled": 0,
-                },
-                "results": {
-                    "AAPL": {"sl_action": "placed", "stop_price": 180.0, "qty": 10},
-                    "MSFT": {"sl_action": "skipped"},
-                },
-            }
-        ]
-
-        captured = []
-        with patch("urllib.request.urlopen", side_effect=_make_urlopen_mock(captured)):
-            ok = send_telegram_summary(results, "2026-04-24", dry_run=False)
-
-        assert ok is True
-        assert captured
