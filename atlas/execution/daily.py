@@ -81,10 +81,19 @@ def _realized_returns(name: str) -> list:
 def _record_run(s: DeployedStrategy, asof: str, report, track) -> None:
     d = LIVE_DATA / s.name
     d.mkdir(parents=True, exist_ok=True)
+    # join broker results back onto orders by (ticker, side): order_id enables next-day
+    # fill reconciliation (record_fills.py -> slippage/broker-error go-live gates G6/G7);
+    # ok=False rows feed the broker-error rate.
+    res = {(getattr(r, "ticker", None), getattr(r, "side", None)): r for r in report.results}
+    def _o(o):
+        r = res.get((o.ticker, o.side))
+        return {"ticker": o.ticker, "side": o.side.value, "qty": o.qty, "px": o.ref_price,
+                "order_id": (getattr(r, "order_id", "") or "") if r else "",
+                "ok": bool(getattr(r, "success", False)) if r else None}
     rec = {"date": asof, "state": s.state, "dry_run": report.dry_run, "n_orders": report.n_orders,
            "turnover": round(report.turnover_notional, 2), "blocked": report.blocked,
            "track": (track.status if track else None),
-           "orders": [{"ticker": o.ticker, "side": o.side.value, "qty": o.qty, "px": o.ref_price} for o in report.orders]}
+           "orders": [_o(o) for o in report.orders]}
     with (d / "runs.jsonl").open("a") as fh:
         fh.write(json.dumps(rec) + "\n")
 
