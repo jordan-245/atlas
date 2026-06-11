@@ -588,8 +588,10 @@ def get_alpaca_data_client() -> Optional[AlpacaMarketData]:
             return _singleton if _singleton.is_available else None
         try:
             from atlas.kernel.secrets import get_secret
-            key = get_secret("ALPACA_API_KEY")
-            secret = get_secret("ALPACA_SECRET_KEY")
+            # Paper keys serve the data API / corporate-actions identically (verified
+            # 2026-06-11); live keys parked until the go-live gate (security audit).
+            key = get_secret("ALPACA_PAPER_API_KEY") or get_secret("ALPACA_API_KEY")
+            secret = get_secret("ALPACA_PAPER_SECRET_KEY") or get_secret("ALPACA_SECRET_KEY")
             if not key or not secret:
                 return None
             _singleton = AlpacaMarketData(api_key=key, api_secret=secret)
@@ -616,14 +618,16 @@ def _get_trade_client():
         try:
             from alpaca.trading.client import TradingClient
             from atlas.kernel.secrets import get_secret
-            key = get_secret("ALPACA_API_KEY")
-            secret = get_secret("ALPACA_SECRET_KEY")
+            # Paper keys serve the data API / corporate-actions identically (verified
+            # 2026-06-11); live keys parked until the go-live gate (security audit).
+            key = get_secret("ALPACA_PAPER_API_KEY") or get_secret("ALPACA_API_KEY")
+            secret = get_secret("ALPACA_PAPER_SECRET_KEY") or get_secret("ALPACA_SECRET_KEY")
             if not key or not secret:
                 return None
             _trade_singleton = TradingClient(
                 api_key=key,
                 secret_key=secret,
-                paper=False,
+                paper=True,
             )
             return _trade_singleton
         except Exception:

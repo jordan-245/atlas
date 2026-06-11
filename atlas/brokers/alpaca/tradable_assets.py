@@ -52,8 +52,10 @@ def _fetch_from_alpaca() -> set[str]:
         from alpaca.trading.enums import AssetClass, AssetStatus
         from atlas.kernel.secrets import get_secret
 
-        api_key = get_secret("ALPACA_API_KEY", prompt=False)
-        api_secret = get_secret("ALPACA_SECRET_KEY", prompt=False)
+        # Paper keys serve the asset list identically (verified 2026-06-11); live keys
+        # are parked off the automation path until the live go-live gate (security audit).
+        api_key = get_secret("ALPACA_PAPER_API_KEY", prompt=False) or get_secret("ALPACA_API_KEY", prompt=False)
+        api_secret = get_secret("ALPACA_PAPER_SECRET_KEY", prompt=False) or get_secret("ALPACA_SECRET_KEY", prompt=False)
         if not api_key or not api_secret:
             logger.warning("Alpaca credentials not available — cannot fetch asset list")
             return set()
@@ -61,7 +63,7 @@ def _fetch_from_alpaca() -> set[str]:
         client = TradingClient(
             api_key=api_key,
             secret_key=api_secret,
-            paper=False,
+            paper=True,
         )
         req = GetAssetsRequest(
             asset_class=AssetClass.US_EQUITY,
