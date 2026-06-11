@@ -91,15 +91,6 @@ def check_infra(project: Path) -> list:
 
     # No broker gateway check needed (Alpaca uses REST API directly)
 
-    # Telegram bot service
-    try:
-        r = subprocess.run(["systemctl", "is-active", "atlas-telegram-bot"], capture_output=True, text=True, timeout=5)
-        active = r.stdout.strip() == "active"
-        v, m = _check(active, fail_msg="atlas-telegram-bot service is not running")
-        results.append({"check": "telegram_bot", "verdict": v, "message": m or "Service active"})
-    except Exception as e:
-        results.append({"check": "telegram_bot", "verdict": "warn", "message": f"Could not check: {e}"})
-
     # Dashboard service
     try:
         r = subprocess.run(["systemctl", "is-active", "atlas-dashboard"], capture_output=True, text=True, timeout=5)

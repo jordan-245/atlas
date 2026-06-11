@@ -92,8 +92,6 @@ function DataFreshnessList({ data }: { data: HealthDataFreshness }) {
   const items: { label: string; value: string }[] = []
   if (data.ohlcv_last_date) items.push({ label: 'OHLCV last', value: data.ohlcv_last_date })
   if (data.equity_last_date) items.push({ label: 'Equity last', value: data.equity_last_date })
-  if (data.overlay_decisions_count != null)
-    items.push({ label: 'Overlay decisions', value: String(data.overlay_decisions_count) })
   if (items.length === 0) return <EmptyState message="No data" className="py-4" />
   return (
     <div className="space-y-2">
