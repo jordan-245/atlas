@@ -110,7 +110,11 @@ def wiki(tmp_path, monkeypatch):
 
     premia = tmp_path / "premia"
     premia.mkdir()
-    (premia / "carry.md").write_text("# Carry\nstatus: NEAR-MISS (crypto)\n")
+    (premia / "carry.md").write_text(
+        "---\npremium: carry\nstatus: NEAR-MISS (crypto)\ntail: pro-cyclical\n"
+        "pairs_with: [[premia/trend]]\n---\n# Carry\nPaid for bearing roll-down risk.\n")
+    (premia / "credit.md").write_text(
+        "# Credit\n**Status: REAL but MODEST — confirmed** (smith-2). Prose continues.\n")
 
     run_log = tmp_path / "run_log.jsonl"
     run_log.write_text("\n".join([
@@ -210,6 +214,32 @@ def test_never_raises_on_missing_everything(tmp_path, monkeypatch):
     wiki_map._CACHE["data"] = None
     d = wiki_map._build()
     assert d["nodes"] == [] and d["edges"] == [] and d["stats"]["experiments"] == 0
+
+
+def test_premia_cards(wiki):
+    d = wiki_map._build()
+    cards = {p["id"]: p for p in d["premia"]}
+    assert cards["carry"]["status"] == "NEAR-MISS (crypto)"
+    assert cards["carry"]["tail"] == "pro-cyclical"
+    assert cards["carry"]["pairs_with"] == "trend"
+    assert cards["carry"]["summary"] and "roll-down" in cards["carry"]["summary"]
+    # bold-prose status must stop at the closing ** marker
+    assert cards["credit"]["status"] == "REAL but MODEST — confirmed"
+
+
+def test_wiki_page_endpoint_path_safety(wiki):
+    from fastapi import HTTPException
+    # call the route function directly (the auth dependency is not invoked this way)
+    out = wiki_map.wiki_page("experiments", "carry_y", _auth=None)
+    assert "Crypto carry standalone" in out
+    for bad in [("experiments", "../secrets"), ("..", "x"), ("experiments", "a/b"),
+                ("nope", "carry_y"), ("experiments", "")]:
+        with pytest.raises(HTTPException) as ei:
+            wiki_map.wiki_page(bad[0], bad[1], _auth=None)
+        assert ei.value.status_code in (400, 404)
+    with pytest.raises(HTTPException) as ei:
+        wiki_map.wiki_page("experiments", "does_not_exist", _auth=None)
+    assert ei.value.status_code == 404
 
 
 def test_status_normalization():

@@ -11,9 +11,10 @@
  */
 import { useMemo, useState } from 'react'
 import { useResearchMap } from '../../api/forge-queries'
-import type { MapEdge, MapNode, MapNodeStatus, ResearchMapData } from '../../api/map-types'
+import type { EliteCell, MapEdge, MapNode, MapNodeStatus, PremiumCard, ResearchMapData } from '../../api/map-types'
 import { Skeleton } from '../layout/Skeleton'
 import { C, Card, fmtMetric } from './shared'
+import { WikiMarkdown } from './WikiMarkdown'
 
 // ── palette ──────────────────────────────────────────────────────────────────
 const NODE_COLOR: Record<MapNodeStatus, string> = {
@@ -89,6 +90,7 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 function NodeDrawer({ node, onClose }: { node: MapNode; onClose: () => void }) {
   const m = node.metrics ?? {}
+  const [showPage, setShowPage] = useState(false)
   return (
     <Card brackets className="p-4 space-y-3 text-sm">
       <div className="flex items-start justify-between gap-2">
@@ -126,18 +128,149 @@ function NodeDrawer({ node, onClose }: { node: MapNode; onClose: () => void }) {
         </div>
       )}
 
-      {node.prereg && (
+      {node.prereg && !showPage && (
         <div>
           <div className="text-[10px] uppercase tracking-widest text-[var(--color-text-muted)] mb-1">Pre-registration</div>
           <p className="text-xs text-[var(--color-text-muted)] leading-relaxed whitespace-pre-wrap">{node.prereg}</p>
         </div>
       )}
       {node.page && (
-        <div className="text-[11px] text-[var(--color-text-muted)]">
-          wiki: <code className="text-xs">experiments/{node.page}.md</code>
+        <div className="flex items-center gap-3 text-[11px] text-[var(--color-text-muted)]">
+          <button onClick={() => setShowPage((v) => !v)}
+            className="px-2.5 py-1 rounded-full font-bold tracking-wide border border-[var(--color-border)] hover:text-[var(--color-text)] transition-colors">
+            {showPage ? '\u25B4 hide wiki page' : '\u25BE full wiki page'}
+          </button>
+          <code className="text-xs">experiments/{node.page}.md</code>
+        </div>
+      )}
+      {node.page && showPage && (
+        <div className="max-h-[28rem] overflow-y-auto rounded-lg border border-[var(--color-border)] p-4">
+          <WikiMarkdown section="experiments" page={node.page} />
         </div>
       )}
     </Card>
+  )
+}
+
+// ── elite grid ── the MAP-Elites pool rendered literally: family × universe cells ─
+function EliteGrid({ cells, onSelect }: { cells: EliteCell[]; onSelect: (id: string) => void }) {
+  const parsed = cells.map((c) => {
+    const [family = '?', universe = '?', turnover = '?'] = (c.cell ?? '').split('|')
+    return { ...c, family, universe, turnover }
+  })
+  const families = [...new Set(parsed.map((c) => c.family))].sort()
+  const universes = [...new Set(parsed.map((c) => c.universe))].sort()
+  // the true elite cell is family × universe × TURNOVER-band — a family×universe
+  // grid square can therefore hold SEVERAL occupants (e.g. two Amihud champions
+  // in different turnover bands). Stack them; never silently drop one.
+  const byKey = new Map<string, typeof parsed>()
+  for (const c of parsed) {
+    const key = `${c.family}|${c.universe}`
+    if (!byKey.has(key)) byKey.set(key, [])
+    byKey.get(key)!.push(c)
+  }
+  for (const v of byKey.values()) v.sort((a, b) => (b.fitness ?? 0) - (a.fitness ?? 0))
+  return (
+    <Card className="p-4">
+      <div className="flex items-baseline justify-between mb-3">
+        <div className="text-[11px] uppercase tracking-widest text-[var(--color-text-muted)]">
+          Elite pool — MAP-Elites grid (best per family × universe, fitness = DSR)
+        </div>
+        <div className="text-[10px] text-[var(--color-text-muted)]">{cells.length} occupied / 24 cap</div>
+      </div>
+      <div className="grid gap-1.5" style={{ gridTemplateColumns: `auto repeat(${universes.length}, minmax(9rem, 1fr))` }}>
+        <div />
+        {universes.map((u) => (
+          <div key={u} className="text-[10px] uppercase tracking-wide text-[var(--color-text-muted)] text-center pb-1">{u}</div>
+        ))}
+        {families.map((f) => (
+          [
+            <div key={`${f}-label`} className="text-[10px] uppercase tracking-wide text-[var(--color-text-muted)] pr-2 self-center text-right">{f}</div>,
+            ...universes.map((u) => {
+              const cs = byKey.get(`${f}|${u}`)
+              if (!cs) {
+                return <div key={`${f}|${u}`} className="rounded-lg border border-dashed border-[var(--color-border)] min-h-16 opacity-40" />
+              }
+              return (
+                <div key={`${f}|${u}`} className="space-y-1.5">
+                  {cs.map((c, i) => (
+                    <button key={i}
+                      onClick={() => c.strategy_id && onSelect(c.strategy_id)}
+                      className="w-full rounded-lg border text-left p-2 min-h-16 transition-colors hover:border-[#c084fc]"
+                      style={{ borderColor: 'rgba(168,85,247,0.45)', background: 'rgba(168,85,247,0.07)' }}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold" style={{ color: '#c084fc' }}>★ {c.fitness != null ? c.fitness.toFixed(3) : '—'}</span>
+                        <span className="text-[9px] text-[var(--color-text-muted)]">{c.turnover !== 'unknown' ? `${c.turnover} t/o` : ''}</span>
+                      </div>
+                      <div className="text-[10px] leading-snug text-[var(--color-text-muted)] mt-1 line-clamp-3">{c.title}</div>
+                    </button>
+                  ))}
+                </div>
+              )
+            }),
+          ]
+        ))}
+      </div>
+      <div className="text-[10px] text-[var(--color-text-muted)] mt-3">
+        These are the parents the refine / orthogonal / crossover arms breed from. A new result only
+        displaces its own cell's occupant — diversity is structural.
+      </div>
+    </Card>
+  )
+}
+
+// ── premia ribbon ── the strategic concept layer above individual experiments ─
+function premiumColor(status: string | null): string {
+  const s = (status ?? '').toUpperCase()
+  if (s.startsWith('VALIDATED') || s.startsWith('REAL')) return C.gold
+  if (s.includes('NEAR-MISS')) return C.ember
+  if (s.startsWith('FAIL') || s.includes('DEAD')) return '#f87171'
+  if (s.includes('UNTESTED')) return C.indigo
+  return C.iron
+}
+
+function PremiaRibbon({ premia, onExpand, expanded }: {
+  premia: PremiumCard[]; onExpand: (id: string | null) => void; expanded: string | null
+}) {
+  const card = expanded ? premia.find((p) => p.id === expanded) : null
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+        {premia.map((p) => {
+          const col = premiumColor(p.status)
+          const isOpen = p.id === expanded
+          return (
+            <button key={p.id} onClick={() => onExpand(isOpen ? null : p.id)}
+              className="rounded-lg border p-2 text-left transition-colors"
+              style={{
+                borderColor: isOpen ? col : 'var(--color-border)',
+                background: isOpen ? `${col}10` : 'var(--color-surface)',
+              }}>
+              <div className="text-[11px] font-bold capitalize truncate">{p.id.replace('_', ' ')}</div>
+              <div className="text-[9px] font-bold tracking-wide truncate" style={{ color: col }} title={p.status ?? undefined}>
+                {p.status ?? '—'}
+              </div>
+            </button>
+          )
+        })}
+      </div>
+      {card && (
+        <Card className="p-4 space-y-2 text-sm">
+          <div className="flex items-start justify-between">
+            <div>
+              <span className="font-bold capitalize">{card.label}</span>
+              <span className="ml-2 text-[10px] font-bold" style={{ color: premiumColor(card.status) }}>{card.status}</span>
+            </div>
+            <button onClick={() => onExpand(null)} className="text-[var(--color-text-muted)] hover:text-[var(--color-text)] text-lg leading-none px-1" aria-label="close">×</button>
+          </div>
+          {card.tail && <div className="text-[11px] text-[var(--color-text-muted)]"><span className="uppercase tracking-wide text-[9px]">tail · </span>{card.tail}</div>}
+          {card.pairs_with && <div className="text-[11px] text-[var(--color-text-muted)]"><span className="uppercase tracking-wide text-[9px]">pairs with · </span>{card.pairs_with}</div>}
+          <div className="max-h-80 overflow-y-auto rounded-lg border border-[var(--color-border)] p-4">
+            <WikiMarkdown section="premia" page={card.id} />
+          </div>
+        </Card>
+      )}
+    </div>
   )
 }
 
@@ -151,6 +284,7 @@ export function ResearchMap() {
   const [statusFilter, setStatusFilter] = useState<Set<MapNodeStatus>>(new Set())
   const [search, setSearch] = useState('')
   const [focusLineage, setFocusLineage] = useState(false)
+  const [expandedPremium, setExpandedPremium] = useState<string | null>(null)
 
   const data = q.data
   const lay = useMemo(() => (data ? layout(data) : null), [data])
@@ -373,6 +507,21 @@ export function ResearchMap() {
 
       {/* ── detail drawer ── */}
       {selectedNode && <NodeDrawer node={selectedNode} onClose={() => { setSelected(null); setFocusLineage(false) }} />}
+
+      {/* ── premia ribbon — the concept layer ── */}
+      {data.premia?.length > 0 && (
+        <div>
+          <div className="text-[11px] uppercase tracking-widest text-[var(--color-text-muted)] mb-2 px-1">
+            Premia — the concept layer (click to read the wiki page)
+          </div>
+          <PremiaRibbon premia={data.premia} expanded={expandedPremium} onExpand={setExpandedPremium} />
+        </div>
+      )}
+
+      {/* ── elite grid — the gene pool the exploit arms breed from ── */}
+      {data.elite_grid?.length > 0 && (
+        <EliteGrid cells={data.elite_grid} onSelect={(id) => { setSelected(id); setFocusLineage(false) }} />
+      )}
     </div>
   )
 }

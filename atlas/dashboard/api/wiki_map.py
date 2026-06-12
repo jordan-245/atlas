@@ -24,7 +24,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import PlainTextResponse
 from fastapi.security import HTTPBasicCredentials
 
 from atlas.dashboard.auth import check_auth
@@ -392,15 +393,39 @@ def _build() -> dict:
 
     all_nodes = nodes + ghosts
 
-    # lanes ordered by activity, with premium concept-page status attached
+    # premium concept pages — the strategic layer above experiments (ribbon cards)
+    premia_cards = []
     premia_status = {}
-    for p in PREMIA.glob("*.md"):
+    for p in sorted(PREMIA.glob("*.md")):
         try:
-            first = p.read_text(errors="replace")[:600]
-            sm = re.search(r"status[:*\s]+([^\n|]+)", first, re.I)
-            premia_status[p.stem] = (sm.group(1).strip()[:80] if sm else None)
+            text = p.read_text(errors="replace")
         except Exception:
-            pass
+            continue
+        fm: dict = {}
+        m = _FM_RE.match(text)
+        if m:
+            for ln in m.group(1).splitlines():
+                kv = _KV_RE.match(ln.strip())
+                if kv:
+                    fm[kv.group(1)] = kv.group(2).strip()
+        body = text[m.end():] if m else text
+        status = fm.get("status")
+        if not status:  # some pages (credit.md) carry status in bold prose instead
+            sm = re.search(r"status[:*\s]+([^\n|]+)", body[:600], re.I)
+            status = sm.group(1).split("**")[0].strip("* ") if sm else None
+        # first prose paragraph after the H1 = card summary
+        pm = re.search(r"^#\s+.+?\n+(.+?)(?:\n\n|\n#|\Z)", body, re.S | re.M)
+        summary = re.sub(r"\[\[(.+?)\]\]", r"\1", pm.group(1)).strip()[:280] if pm else None
+        premia_status[p.stem] = (status or "")[:80] or None
+        premia_cards.append({
+            "id": p.stem,
+            "label": fm.get("premium", p.stem)[:60],
+            "status": (status or "")[:110] or None,
+            "tail": fm.get("tail", "")[:140] or None,
+            "pairs_with": re.sub(r"\[\[premia/(.+?)\]\]", r"\1", fm.get("pairs_with", ""))[:120] or None,
+            "summary": summary,
+            "lane": lane_of(p.stem, fm.get("premium", "")),
+        })
     lane_counts: dict[str, dict] = {}
     for n in all_nodes:
         lc = lane_counts.setdefault(n["lane"], {"total": 0, "fail": 0, "near_miss": 0,
@@ -436,6 +461,7 @@ def _build() -> dict:
         "nodes": all_nodes,
         "edges": edges,
         "elite_grid": elite_grid,
+        "premia": premia_cards,
     }
 
 
@@ -448,6 +474,26 @@ def forge_map(_auth: HTTPBasicCredentials = Depends(check_auth)) -> dict:
         data = _build()
     except Exception as e:  # never 500 — the map is an observability surface
         data = {"generated_at": datetime.now().isoformat(), "error": f"{type(e).__name__}: {e}",
-                "stats": {}, "lanes": [], "nodes": [], "edges": [], "elite_grid": []}
+                "stats": {}, "lanes": [], "nodes": [], "edges": [], "elite_grid": [], "premia": []}
     _CACHE["ts"], _CACHE["data"] = now, data
     return _CACHE["data"]
+
+
+# Wiki page fetch — raw markdown, rendered client-side (sanitized there).
+# Path-safety: section whitelist + stem must resolve INSIDE the section dir.
+_WIKI_SECTIONS = {"experiments", "premia", "markets", "patterns", "methodology", "decisions"}
+_STEM_RE = re.compile(r"^[A-Za-z0-9._-]{1,120}$")
+
+
+@router.get("/wiki-page", response_class=PlainTextResponse)
+def wiki_page(section: str, page: str,
+              _auth: HTTPBasicCredentials = Depends(check_auth)) -> str:
+    if section not in _WIKI_SECTIONS or not _STEM_RE.match(page) or ".." in page:
+        raise HTTPException(status_code=400, detail="bad section/page")
+    path = (WIKI / section / f"{page}.md").resolve()
+    if not str(path).startswith(str((WIKI / section).resolve()) + "/"):
+        raise HTTPException(status_code=400, detail="bad path")
+    try:
+        return path.read_text(errors="replace")[:200_000]
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="page not found")

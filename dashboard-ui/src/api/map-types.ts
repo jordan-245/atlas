@@ -76,6 +76,16 @@ export interface MapStats {
   explicit_edges: number
 }
 
+export interface PremiumCard {
+  id: string
+  label: string
+  status: string | null
+  tail: string | null
+  pairs_with: string | null
+  summary: string | null
+  lane: string
+}
+
 export interface ResearchMapData {
   generated_at: string
   error?: string
@@ -84,4 +94,5 @@ export interface ResearchMapData {
   nodes: MapNode[]
   edges: MapEdge[]
   elite_grid: EliteCell[]
+  premia: PremiumCard[]
 }
