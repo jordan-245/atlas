@@ -1,0 +1,41 @@
+# IB Gateway (paper) — headless, IBC-driven, for the Atlas `ib` broker adapter.
+# See tasks/IB_MICRO_ADAPTER_PLAN.md (Phase A) and README.md in this directory.
+#
+# Version PINNED (auto-restart regressions are Gateway+IBC version-pair specific —
+# e.g. IBC 3.21.0 + GW 10.34.1c broke restart). 10.37.1r = "10.37 latest" maintenance
+# line, older + more soak time than 10.4x. Bump deliberately, never `latest`.
+#
+# Secrets come from .env (gitignored) — copy .env.example and fill in.
+name: atlas-ib
+services:
+  ib-gateway:
+    image: ghcr.io/gnzsnz/ib-gateway:10.37.1r
+    restart: always
+    environment:
+      TWS_USERID: ${TWS_USERID}
+      TWS_PASSWORD: ${TWS_PASSWORD}
+      TRADING_MODE: paper
+      # paper creds never trigger IB-Key 2FA; if a 2FA prompt EVER appears something
+      # is misconfigured (live creds?) — exit rather than hang:
+      TWOFA_TIMEOUT_ACTION: exit
+      READ_ONLY_API: "no"
+      # IB forces a daily session boundary; restart in the quiet pre-open window
+      # (05:00 ET = after overnight Globex maintenance, before any OPG submission)
+      AUTO_RESTART_TIME: "05:00 AM"
+      EXISTING_SESSION_DETECTED_ACTION: primary
+      ALLOW_BLIND_TRADING: "no"
+      TIME_ZONE: America/New_York
+      VNC_SERVER_PASSWORD: ${VNC_SERVER_PASSWORD:-}
+    ports:
+      # container 4004 = paper API socket -> host 4002 (loopback ONLY; never expose)
+      - "127.0.0.1:4002:4004"
+      # VNC for eyeball debugging of the Gateway UI (loopback only)
+      - "127.0.0.1:5900:5900"
+    healthcheck:
+      # the API socket accepting TCP = gateway up + logged in (IBC blocks the port
+      # until authentication completes)
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/4004 && exec 3<&- 3>&-"]
+      interval: 60s
+      timeout: 5s
+      retries: 5
+      start_period: 180s

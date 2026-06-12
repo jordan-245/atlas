@@ -1,0 +1,6 @@
+[Unit]
+Description=Atlas IB Gateway watchdog (single check)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /root/atlas/ops/ib-gateway/watchdog.py

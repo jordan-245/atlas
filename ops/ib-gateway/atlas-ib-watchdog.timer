@@ -1,0 +1,9 @@
+[Unit]
+Description=Atlas IB Gateway watchdog (every 10 min)
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=10min
+
+[Install]
+WantedBy=timers.target
