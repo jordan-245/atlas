@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 from atlas.kernel.paths import CONFIG_DIR, PROJECT_ROOT
+from atlas.kernel.lockfile import atomic_write_json, live_lock
 
 
 REGISTRY_PATH = PROJECT_ROOT / "config" / "live_strategies.json"
@@ -63,8 +64,8 @@ def load() -> list[DeployedStrategy]:
 
 
 def save(strategies: list[DeployedStrategy]) -> None:
-    REGISTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    REGISTRY_PATH.write_text(json.dumps([asdict(s) for s in strategies], indent=2))
+    # Atomic: readers (daily loop, dashboards, crucible refresh) never see a torn file.
+    atomic_write_json(REGISTRY_PATH, [asdict(s) for s in strategies])
 
 
 def deployed(state: Optional[str] = None) -> list[DeployedStrategy]:
@@ -73,21 +74,26 @@ def deployed(state: Optional[str] = None) -> list[DeployedStrategy]:
 
 
 # ── lifecycle mutations (human-gated; board 2026-06-09) ───────────────────────
+# Every read-modify-write holds the data/live lock (review 2026-06-12: registry has
+# writers in two repos — deploy_pass here, lifecycle.py in crucible — previously
+# synchronized by cron timing alone).
 def upsert(strategy: DeployedStrategy) -> None:
-    items = [s for s in load() if s.name != strategy.name] + [strategy]
-    save(items)
+    with live_lock():
+        items = [s for s in load() if s.name != strategy.name] + [strategy]
+        save(items)
 
 
 def update(name: str, **changes) -> bool:
-    items, found = load(), False
-    for s in items:
-        if s.name == name:
-            for k, v in changes.items():
-                setattr(s, k, v)
-            found = True
-    if found:
-        save(items)
-    return found
+    with live_lock():
+        items, found = load(), False
+        for s in items:
+            if s.name == name:
+                for k, v in changes.items():
+                    setattr(s, k, v)
+                found = True
+        if found:
+            save(items)
+        return found
 
 
 def approve(name: str) -> bool:

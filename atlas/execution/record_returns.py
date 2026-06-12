@@ -74,7 +74,8 @@ def record_one(s, asof: str) -> dict:
         out["ret"] = rec["ret"]
     else:
         out["baseline"] = True
-    state_f.write_text(json.dumps({"equity": round(eq, 2), "date": asof}, indent=2))
+    from atlas.kernel.lockfile import atomic_write_json
+    atomic_write_json(state_f, {"equity": round(eq, 2), "date": asof})
     return out
 
 

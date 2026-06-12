@@ -73,10 +73,9 @@ class VirtualBook:
         return float(total)
 
     def save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(
-            {"cash": round(self.cash, 2), "positions": self.positions,
-             "capital_base": self.capital_base}, indent=2))
+        from atlas.kernel.lockfile import atomic_write_json
+        atomic_write_json(self.path, {"cash": round(self.cash, 2), "positions": self.positions,
+                                      "capital_base": self.capital_base})
 
     def __repr__(self) -> str:
         return f"VirtualBook({self.name}: {len(self.positions)} positions, cash ${self.cash:,.0f})"
