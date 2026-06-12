@@ -61,9 +61,24 @@ and the BOREAS signal → `target.json` → executor path has never run with fut
 ### Phase C — BOREAS book wiring
 7. Futures-aware target path: BOREAS carry+trend emits target weights over micro
    symbols; executor must round to INTEGER contracts at multiplier-adjusted notional
-   (vs fractional-ish equity sizing) and respect per-contract margin. Slippage/G6
-   expectations need futures cost model (half-spread + commission ≈ $0.25-0.75/side
-   on micros), not equity bps.
+   (vs fractional-ish equity sizing) and respect per-contract margin.
+
+   **G6 FUTURES COST MODEL (pre-registered 2026-06-12, before implementation):**
+   The equity G6 bar (16 bps of price = 2× the 8 bps modeled equity cost) is the wrong
+   ruler for futures — 16 bps adverse on MES ≈ 40 ticks, catastrophic yet "passing".
+   Futures slippage is measured in TICKS and DOLLARS per contract:
+   - *Per-fill metrics* (recorded alongside slippage_bps): `slippage_ticks` =
+     signed-adverse (fill − decision)/tick_size; `slippage_usd` = signed-adverse
+     ticks × tick_value × qty.
+   - *Modeled cost per side* = half-spread (= 1 tick for liquid micros; touch-fill
+     assumption for small market orders) + commission ($0.85/contract all-in,
+     conservative vs IBKR's ~$0.57–0.87 micro all-in).
+   - *Bar* = 2× modeled, same multiple as equities: median adverse slippage ≤
+     (2 ticks + commission-equivalent ticks), evaluated per symbol in tick space.
+   - *Source of truth*: tick_size/commission live in the MICRO_FUTURES table (broker
+     layer, next to multiplier — one table, no drift).
+   - These numbers are FROZEN before any IB fill exists; loosening them after fills
+     arrive = the exact post-hoc rationalization G6 exists to prevent.
 8. Shadow-deploy the BOREAS book on IB paper ≥2 weeks BEFORE 08-28 so fills/recon
    evidence exists when the verdict arrives (mirrors the val_mom shadow pattern —
    and avoids repeating the capital/tif deploy bugs of 2026-06-12 under deadline).

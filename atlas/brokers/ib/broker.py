@@ -15,18 +15,40 @@ from atlas.brokers.base import (AccountInfo, BrokerAdapter, DealInfo, OrderResul
 
 logger = logging.getLogger("atlas.broker.ib")
 
-# Micro-futures contract table: symbol -> (exchange, currency, multiplier $/point).
+# Micro-futures contract table: symbol -> exchange/currency/multiplier ($/point)/tick_size (points).
+# tick_value ($/tick) = tick_size * multiplier. ONE table for execution AND the G6 futures
+# cost model (tasks/IB_MICRO_ADAPTER_PLAN.md — pre-registered 2026-06-12): no drift.
 MICRO_FUTURES = {
-    "MES": {"exchange": "CME", "currency": "USD", "multiplier": 5.0},     # Micro E-mini S&P 500
-    "MNQ": {"exchange": "CME", "currency": "USD", "multiplier": 2.0},     # Micro E-mini Nasdaq-100
-    "M2K": {"exchange": "CME", "currency": "USD", "multiplier": 5.0},     # Micro E-mini Russell 2000
-    "MYM": {"exchange": "CBOT", "currency": "USD", "multiplier": 0.5},    # Micro E-mini Dow
-    "MGC": {"exchange": "COMEX", "currency": "USD", "multiplier": 10.0},  # Micro Gold
-    "SIL": {"exchange": "COMEX", "currency": "USD", "multiplier": 1000.0},  # Micro Silver
-    "MCL": {"exchange": "NYMEX", "currency": "USD", "multiplier": 100.0},   # Micro WTI Crude
-    "M6E": {"exchange": "CME", "currency": "USD", "multiplier": 12500.0},   # Micro EUR/USD
-    "MBT": {"exchange": "CME", "currency": "USD", "multiplier": 0.1},     # Micro Bitcoin
+    "MES": {"exchange": "CME", "currency": "USD", "multiplier": 5.0, "tick_size": 0.25},      # Micro E-mini S&P 500 ($1.25/tick)
+    "MNQ": {"exchange": "CME", "currency": "USD", "multiplier": 2.0, "tick_size": 0.25},      # Micro E-mini Nasdaq-100 ($0.50)
+    "M2K": {"exchange": "CME", "currency": "USD", "multiplier": 5.0, "tick_size": 0.10},      # Micro E-mini Russell 2000 ($0.50)
+    "MYM": {"exchange": "CBOT", "currency": "USD", "multiplier": 0.5, "tick_size": 1.0},      # Micro E-mini Dow ($0.50)
+    "MGC": {"exchange": "COMEX", "currency": "USD", "multiplier": 10.0, "tick_size": 0.10},   # Micro Gold ($1.00)
+    "SIL": {"exchange": "COMEX", "currency": "USD", "multiplier": 1000.0, "tick_size": 0.005},  # Micro Silver ($5.00)
+    "MCL": {"exchange": "NYMEX", "currency": "USD", "multiplier": 100.0, "tick_size": 0.01},    # Micro WTI Crude ($1.00)
+    "M6E": {"exchange": "CME", "currency": "USD", "multiplier": 12500.0, "tick_size": 0.0001},  # Micro EUR/USD ($1.25)
+    "MBT": {"exchange": "CME", "currency": "USD", "multiplier": 0.1, "tick_size": 5.0},       # Micro Bitcoin ($0.50)
 }
+
+# FROZEN G6 cost model (pre-reg 2026-06-12): modeled cost/side = 1-tick half-spread +
+# $0.85/contract all-in commission (conservative vs IBKR's ~$0.57-0.87 micro all-in).
+COMMISSION_PER_SIDE_USD = 0.85
+
+
+def futures_cost_spec(ticker: str) -> Optional[dict]:
+    """Tick economics + the FROZEN G6 bar for one symbol (None for non-futures).
+
+    bar_ticks = 2 x 1-tick modeled half-spread + commission expressed in ticks
+    (commission is real cost but never appears in the fill price, so it enters the
+    bar, not the measurement).
+    """
+    s = MICRO_FUTURES.get((ticker or "").upper())
+    if not s or "tick_size" not in s:
+        return None
+    tick_value = s["tick_size"] * s["multiplier"]
+    return {"tick_size": s["tick_size"], "tick_value": tick_value,
+            "commission_per_side": COMMISSION_PER_SIDE_USD,
+            "bar_ticks": round(2.0 + COMMISSION_PER_SIDE_USD / tick_value, 2)}
 
 
 class IBBroker(BrokerAdapter):

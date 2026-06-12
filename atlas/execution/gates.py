@@ -91,6 +91,48 @@ def slippage_gate(fills: list, *, bar_bps: float = SLIPPAGE_BAR_BPS,
     return out
 
 
+def futures_slippage_gate(fills: list, *, lookback_days: int = LOOKBACK_DAYS,
+                          today: Optional[date] = None) -> dict:
+    """G6 (futures) — per-symbol median adverse slippage in TICKS vs the frozen bar.
+
+    Pre-registered 2026-06-12 (tasks/IB_MICRO_ADAPTER_PLAN.md): the equity bps bar is
+    the wrong ruler for futures (16 bps of MES ≈ 40 ticks). Bar per symbol =
+    2-tick spread allowance + commission expressed in ticks (futures_cost_spec —
+    same frozen table the executor trades from). Same day-1 build exclusion as the
+    equity gate. Symbols PASS only if every traded symbol passes (tri-state).
+    """
+    out = {"per_symbol": {}, "n_fills": 0, "lookback_days": lookback_days,
+           "pass": None, "build_day_excluded": None}
+    try:
+        from atlas.brokers.ib.broker import futures_cost_spec
+        cut = _cutoff(lookback_days, today)
+        build_day = min((str(f["date"]) for f in fills if f.get("date")), default=None)
+        out["build_day_excluded"] = build_day
+        by_sym: dict = {}
+        for f in fills:
+            if (f.get("slippage_ticks") is None or str(f.get("date", "")) < cut
+                    or str(f.get("date", "")) == build_day):
+                continue
+            by_sym.setdefault(str(f.get("ticker", "")).upper(), []).append(float(f["slippage_ticks"]))
+        verdicts = []
+        for sym, vals in sorted(by_sym.items()):
+            spec = futures_cost_spec(sym)
+            if not spec:
+                continue
+            med = round(statistics.median(vals), 2)
+            ok = med <= spec["bar_ticks"]
+            out["per_symbol"][sym] = {"median_ticks": med, "bar_ticks": spec["bar_ticks"],
+                                      "worst_ticks": round(max(vals), 2), "n_fills": len(vals),
+                                      "pass": ok}
+            out["n_fills"] += len(vals)
+            verdicts.append(ok)
+        if verdicts:
+            out["pass"] = all(verdicts)
+    except Exception as e:
+        logger.warning("gates: futures_slippage_gate failed: %s", e)
+    return out
+
+
 def _classify_broker_error(err: str) -> str:
     """Coarse class for a broker rejection (err = lowercased order-row 'err' field).
 
@@ -207,8 +249,15 @@ def evaluate_gates(name: str, expectation: Optional[dict] = None, *,
             v = _safe(r.get("ret"))
             if v is not None:
                 realized.append(v)
+        # futures fills carry slippage_ticks (record_fills) -> judge G6 in tick space
+        # (pre-reg 2026-06-12); bps stays as the diagnostic. Mixed books: any tick data
+        # routes to the futures gate (a futures book judged in bps would false-pass).
+        has_ticks = any(f.get("slippage_ticks") is not None for f in fills)
+        slip = (futures_slippage_gate(fills, lookback_days=lookback_days) if has_ticks
+                else slippage_gate(fills, lookback_days=lookback_days))
+        slip["ruler"] = "ticks" if has_ticks else "bps"
         out = {
-            "slippage": slippage_gate(fills, lookback_days=lookback_days),
+            "slippage": slip,
             "broker_errors": broker_error_gate(runs, lookback_days=lookback_days),
             "track": track_gate(realized, expectation),
         }

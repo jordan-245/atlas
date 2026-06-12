@@ -263,3 +263,73 @@ class TestBrokerErrorClassification:
         }
         for err, want in cases.items():
             assert gates._classify_broker_error(err) == want, err
+
+
+# ── G6 futures (tick-space) slippage — pre-reg 2026-06-12 ────────────────────
+
+
+def _ffill(d, ticker, ticks):
+    return {"date": d, "ticker": ticker, "side": "BUY", "qty": 1,
+            "slippage_bps": 1.0, "slippage_ticks": ticks, "status": "FILLED"}
+
+
+class TestFuturesSlippageGate:
+    def test_frozen_bar_values(self):
+        from atlas.brokers.ib.broker import futures_cost_spec
+        mes = futures_cost_spec("MES")            # $1.25/tick -> 2 + 0.85/1.25 = 2.68
+        assert mes["tick_value"] == 1.25 and mes["bar_ticks"] == 2.68
+        mnq = futures_cost_spec("MNQ")            # $0.50/tick -> 2 + 1.7 = 3.7
+        assert mnq["bar_ticks"] == 3.7
+        assert futures_cost_spec("AAPL") is None  # equities have no tick spec
+
+    def test_pass_and_fail_per_symbol(self):
+        fills = [_ffill("2026-06-01", "MES", 99.0),                     # build day — excluded
+                 _ffill("2026-06-10", "MES", 1.0), _ffill("2026-06-10", "MES", 2.0),
+                 _ffill("2026-06-10", "MNQ", 5.0), _ffill("2026-06-10", "MNQ", 6.0)]
+        g = gates.futures_slippage_gate(fills, today=TODAY)
+        assert g["per_symbol"]["MES"]["pass"] is True     # median 1.5 <= 2.68
+        assert g["per_symbol"]["MNQ"]["pass"] is False    # median 5.5 > 3.7
+        assert g["pass"] is False                          # any symbol failing fails G6
+        assert g["build_day_excluded"] == "2026-06-01"
+
+    def test_all_symbols_pass(self):
+        fills = [_ffill("2026-06-01", "MES", 99.0),
+                 _ffill("2026-06-10", "MES", 1.0), _ffill("2026-06-11", "MES", 2.0)]
+        g = gates.futures_slippage_gate(fills, today=TODAY)
+        assert g["pass"] is True and g["n_fills"] == 2
+
+    def test_empty_is_accruing(self):
+        assert gates.futures_slippage_gate([], today=TODAY)["pass"] is None
+
+    def test_evaluate_gates_routes_by_ruler(self, tmp_path):
+        import json as _j
+        d = tmp_path / "futbook"; d.mkdir()
+        rows = [_ffill("2026-06-01", "MES", 99.0)] + [_ffill("2026-06-10", "MES", 1.0)] * 3
+        (d / "fills.jsonl").write_text("\n".join(_j.dumps(r) for r in rows) + "\n")
+        (d / "runs.jsonl").write_text("")
+        out = gates.evaluate_gates("futbook", None, base=tmp_path)
+        assert out["slippage"]["ruler"] == "ticks"
+        assert out["slippage"]["per_symbol"]["MES"]["pass"] is True
+
+    def test_equity_book_keeps_bps_ruler(self, tmp_path):
+        import json as _j
+        d = tmp_path / "eqbook"; d.mkdir()
+        rows = [{"date": "2026-06-10", "ticker": "AAA", "side": "BUY", "qty": 1,
+                 "slippage_bps": 5.0, "status": "FILLED"}] * 3
+        (d / "fills.jsonl").write_text("\n".join(_j.dumps(r) for r in rows) + "\n")
+        (d / "runs.jsonl").write_text("")
+        out = gates.evaluate_gates("eqbook", None, base=tmp_path)
+        assert out["slippage"]["ruler"] == "bps"
+
+
+class TestFuturesFillRecording:
+    def test_futures_slippage_fields(self):
+        from atlas.execution.record_fills import _futures_slippage
+        # MES BUY: decision 5000.00, fill 5000.50 = +2 ticks adverse, 2 contracts
+        r = _futures_slippage("MES", "BUY", 5000.00, 5000.50, 2)
+        assert r["slippage_ticks"] == 2.0 and r["slippage_usd"] == 5.0   # 2t x $1.25 x 2
+        # SELL favorable: fill above decision = negative (favorable) for a sell? No:
+        # SELL received MORE -> favorable -> negative adverse ticks
+        r2 = _futures_slippage("MES", "SELL", 5000.00, 5000.50, 1)
+        assert r2["slippage_ticks"] == -2.0
+        assert _futures_slippage("AAPL", "BUY", 100.0, 100.1, 1) == {}   # equities untouched

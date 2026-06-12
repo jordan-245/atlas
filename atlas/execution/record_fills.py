@@ -47,6 +47,24 @@ def _slippage_bps(side: str, decision_px: float, fill_px: float) -> float:
     return raw if side == "BUY" else -raw
 
 
+def _futures_slippage(ticker: str, side: str, decision_px: float, fill_px: float, qty: int) -> dict:
+    """Tick/dollar slippage for futures fills (G6 futures cost model, pre-reg 2026-06-12).
+
+    Returns {} for non-futures symbols — equity fills keep their bps-only records.
+    """
+    try:
+        from atlas.brokers.ib.broker import futures_cost_spec
+        spec = futures_cost_spec(ticker)
+    except Exception:
+        return {}
+    if not spec or not decision_px or not fill_px:
+        return {}
+    raw = (fill_px - decision_px) / spec["tick_size"]
+    ticks = raw if side == "BUY" else -raw           # signed; + = adverse
+    return {"slippage_ticks": round(ticks, 2),
+            "slippage_usd": round(ticks * spec["tick_value"] * abs(int(qty or 0)), 2)}
+
+
 def reconcile_book(name: str, broker) -> int:
     d = LIVE_DATA / name
     runs = _jsonl(d / "runs.jsonl")[-LOOKBACK_DAYS * 3:]
@@ -79,6 +97,8 @@ def reconcile_book(name: str, broker) -> int:
                    "slippage_bps": round(_slippage_bps(o["side"], o.get("px") or 0.0, fill_px), 2)
                                    if fill_px else None,
                    "order_id": o["order_id"]}
+            if fill_px:
+                rec.update(_futures_slippage(o["ticker"], o["side"], o.get("px") or 0.0, fill_px, o.get("qty")))
             fh.write(json.dumps(rec) + "\n")
             n += 1
     return n
