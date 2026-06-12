@@ -45,59 +45,32 @@ _CACHE_TTL = 60.0
 
 
 # ---------------------------------------------------------------- family lanes
-# Port of crucible agent/families.py bucketing (kept in sync by tests there) —
-# collapses the ~50 raw family strings into ~15 clean swimlanes.
-_LOW_RISK = ("betting-against", "bab", "low-beta", "low beta", "low-vol", "low vol",
-             "low volatility", "leverage-aversion", "defensive")
-_LANE_PAIRS = [
-    ("illiquidity", ("amihud", "illiquidity", "illiquid", "liquidity premium",
-                     "liquidity risk", "liquidity_premium", "liquidity_provision", "liquidity")),
-    ("carry", ("carry", "funding rate", "funding-carry", "roll yield")),
-    ("event", ("pead", "post-earnings", "post_earnings", "earnings-surprise", "earnings surprise",
-               "sue", "drift", "event", "announcement", "fomc", "auction", "dividend",
-               "index_flow", "recon", "deletion")),
-    ("skew", ("skew", "lottery", "idiosyncratic vol", "max return", "higher_moment")),
-    ("quality", ("quality", "profitability", "gross profit", "accrual")),
-    ("reversal", ("reversal", "mean-reversion", "mean reversion", "short-term reversal")),
-    ("vrp", ("vrp", "volatility_risk", "volatility risk", "short-vol", "variance")),
-    ("trend", ("trend", "tsmom", "time-series momentum", "time series momentum", "managed futures")),
-    ("value_momentum", ("value_momentum", "value+momentum", "valmom", "val_mom", "value mom")),
-    ("momentum", ("momentum", "12-1")),
-    ("value", ("value", "book-to", "earnings yield", "b/m")),
-    ("size", ("size premium", "small-cap premium", "smb")),
-    ("seasonal", ("seasonal", "calendar", "turn-of-month", "month-of-year")),
-    ("credit", ("credit", "default spread", "duration")),
-    ("share_issuance", ("issuance", "repurchas", "buyback")),
-    ("sports", ("pitcher", "sports", "mlb", "nrl")),
-]
-
-LANE_LABELS = {
-    "illiquidity": "Illiquidity", "carry": "Carry", "event": "Event / Announcement",
-    "skew": "Skew / Lottery", "quality": "Quality / Accruals", "reversal": "Reversal",
-    "vrp": "Volatility Risk Premium", "trend": "Trend / TSMOM",
-    "value_momentum": "Value × Momentum", "momentum": "Momentum", "value": "Value",
-    "size": "Size", "seasonal": "Seasonality", "credit": "Credit",
-    "share_issuance": "Share Issuance", "sports": "Sports", "low_risk": "Low-Risk / BAB",
-    "multi": "Multi-Premium Books", "other": "Other",
-}
+# #35 inversion (2026-06-13): the lane classifier lives in crucible agent/families.py
+# (the ONE owner of family semantics). Crucible publishes stem/id -> lane assignments in
+# forge_state.json; we look them up there. The tiny fallback below covers items that
+# appeared after the last artifact write (artifact refreshes nightly + post-triage).
+_FORGE_STATE = Path("/root/research-wiki/.dashboard/forge_state.json")
 
 
-def lane_of(family: str, title: str = "") -> str:
-    t = f"{family} {title}".lower()
-    if any(k in t for k in _LOW_RISK):
-        return "low_risk"
-    has_val = any(k in t for k in ("value", "book-to", "book to", "earnings yield", "b/m", "btm"))
-    has_mom = "momentum" in t or "12-1" in t or "12_1" in t
-    if has_val and has_mom:
-        return "value_momentum"
-    if "combo" in t or "two-premium" in t or "two premium" in t or "book" in t and "trend" in t:
-        # multi-premium blended books (carry×trend etc.) get their own lane —
-        # they relate to several premia and would otherwise pollute single lanes
-        if sum(1 for _, kws in _LANE_PAIRS if any(k in t for k in kws)) >= 2:
-            return "multi"
-    for name, kws in _LANE_PAIRS:
-        if any(k in t for k in kws):
-            return name
+def _artifact_lanes() -> tuple[dict, dict]:
+    """(lanes: stem/id -> lane, lane_labels) from crucible's artifact; empty on any problem."""
+    try:
+        s = json.loads(_FORGE_STATE.read_text(encoding="utf-8"))
+        if s.get("schema_version") == 1:
+            return s.get("lanes", {}), s.get("lane_labels", {})
+    except (OSError, json.JSONDecodeError):
+        pass
+    return {}, {}
+
+
+LANES, LANE_LABELS = _artifact_lanes()
+
+
+def lane_of(family: str, title: str = "", stem: str = "") -> str:
+    """Artifact lookup by stem/id; 'other' if crucible hasn't classified it yet.
+    NO local keyword classification — that hand-port diverged once already."""
+    if stem and stem in LANES:
+        return LANES[stem]
     return "other"
 
 
@@ -196,7 +169,7 @@ def _parse_experiment(path: Path) -> dict | None:
         "status": _norm_status(raw_status),
         "status_raw": raw_status[:120],
         "family": family,
-        "lane": lane_of(family, title),
+        "lane": lane_of(family, title, stem=path.stem),
         "markets": markets[:4],
         "date": fm.get("date"),
         "project": fm.get("project"),
@@ -369,7 +342,7 @@ def _build() -> dict:
             "page": None,
             "title": title[:200],
             "status": "queued" if q.get("status") == "queued" else "claimed",
-            "family": "", "lane": lane_of("", title),
+            "family": "", "lane": lane_of("", title, stem=str(q.get("id") or "")),
             "markets": [str(prop.get("market", ""))[:60]] if prop.get("market") else [],
             "date": None, "ts": None, "project": "crucible",
             "metrics": {}, "tier": None, "dsr": None, "bar_at_test": None,
@@ -424,7 +397,7 @@ def _build() -> dict:
             "tail": fm.get("tail", "")[:140] or None,
             "pairs_with": re.sub(r"\[\[premia/(.+?)\]\]", r"\1", fm.get("pairs_with", ""))[:120] or None,
             "summary": summary,
-            "lane": lane_of(p.stem, fm.get("premium", "")),
+            "lane": lane_of(p.stem, fm.get("premium", ""), stem=p.stem),
         })
     lane_counts: dict[str, dict] = {}
     for n in all_nodes:

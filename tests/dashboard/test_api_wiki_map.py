@@ -138,6 +138,12 @@ def wiki(tmp_path, monkeypatch):
     monkeypatch.setattr(wiki_map, "ELITE", el / "pool.jsonl")
     monkeypatch.setattr(wiki_map, "PREMIA", premia)
     monkeypatch.setattr(wiki_map, "RUN_LOG", run_log)
+    # #35 inversion: lanes come from crucible's forge_state.json artifact, keyed by stem/id
+    monkeypatch.setattr(wiki_map, "LANES", {
+        "amihud_x_v3": "illiquidity", "amihud_x_v2": "illiquidity", "carry_y": "carry",
+        "q2": "illiquidity",  # queued ghost, keyed by queue id
+        "dup-a": "other", "dup_id": "other",
+    })
     wiki_map._CACHE["data"] = None
     return tmp_path
 
@@ -254,10 +260,19 @@ def test_status_normalization():
     assert f("ARCHIVED (48 real edges found, not deployed)") == "closed"
 
 
-def test_lane_bucketing():
-    f = wiki_map.lane_of
-    assert f("illiquidity_premium", "Amihud tranched") == "illiquidity"
-    assert f("equity_value_momentum", "Value x Momentum small-cap") == "value_momentum"
-    assert f("defensive", "Betting-Against-Beta") == "low_risk"
-    assert f("crypto_carry_trend_combo", "Funding carry x trend two-premium book") == "multi"
-    assert f("macro_announcement_premium", "Pre-FOMC duration") == "event"
+def test_lane_artifact_lookup(monkeypatch):
+    """#35: lane_of is an artifact LOOKUP (crucible owns classification) — no local keywords."""
+    monkeypatch.setattr(wiki_map, "LANES", {"amihud_x_v3": "illiquidity"})
+    assert wiki_map.lane_of("anything", "anything", stem="amihud_x_v3") == "illiquidity"
+    assert wiki_map.lane_of("illiquidity_premium", "Amihud tranched", stem="unknown") == "other"
+    assert wiki_map.lane_of("x", "y") == "other"
+
+
+def test_real_artifact_lanes_agree_with_crucible_classifier():
+    """Contract check against the REAL artifact: if crucible's families.py and the
+    artifact drift, this fails (run only when the artifact exists on this host)."""
+    import pytest as _pytest
+    lanes, labels = wiki_map._artifact_lanes()
+    if not lanes:
+        _pytest.skip("no forge_state.json on this host")
+    assert set(lanes.values()) <= set(labels), "every assigned lane must have a label"
