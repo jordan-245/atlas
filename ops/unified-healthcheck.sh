@@ -42,21 +42,32 @@ count_active_timers() {
 
 
 check_data_freshness() {
-    # Post-refactor (2026-06-11): the live data artery is the forward book's
-    # returns.jsonl, not the retired snapshots dir.
-    local rj="/root/atlas/data/live/val_mom_trend_smallcap/returns.jsonl"
-    if [[ ! -f "$rj" ]]; then
-        echo "❌ no returns.jsonl"
+    # Registry-driven (#36, 2026-06-13): check EVERY deployed book's returns.jsonl,
+    # not a hardcoded name — a stale second book was previously invisible here.
+    local reg="/root/atlas/config/live_strategies.json"
+    if [[ ! -f "$reg" ]]; then
+        echo "❌ no registry"
         return
     fi
-    local file_date=$(stat -c %Y "$rj")
-    local now=$(date +%s)
-    local age_hours=$(( (now - file_date) / 3600 ))
-    # 4 calendar days covers weekend + one missed run; beyond that the daily cycle is dead
-    if [[ $age_hours -lt 96 ]]; then
-        echo "✅ ${age_hours}h ago"
+    local now=$(date +%s) worst=0 n=0 stale=""
+    for name in $(jq -r '.[].name' "$reg" 2>/dev/null); do
+        local rj="/root/atlas/data/live/${name}/returns.jsonl"
+        if [[ ! -f "$rj" ]]; then
+            stale="${stale}${name}:missing "
+            continue
+        fi
+        n=$((n+1))
+        local age_hours=$(( (now - $(stat -c %Y "$rj")) / 3600 ))
+        [[ $age_hours -gt $worst ]] && worst=$age_hours
+        # 4 calendar days covers weekend + one missed run; beyond that the daily cycle is dead
+        [[ $age_hours -ge 96 ]] && stale="${stale}${name}:${age_hours}h "
+    done
+    if [[ -n "$stale" ]]; then
+        echo "❌ $stale"
+    elif [[ $n -gt 0 ]]; then
+        echo "✅ ${n} books, oldest ${worst}h"
     else
-        echo "❌ ${age_hours}h ago"
+        echo "❌ registry empty"
     fi
 }
 
@@ -133,19 +144,20 @@ check_nrl_cron() {
 }
 
 get_atlas_equity() {
-    # Post-refactor: live forward book state (the retired swing book's
-    # portfolio_snapshots.jsonl is frozen history).
-    local eq_state="/root/atlas/data/live/val_mom_trend_smallcap/equity_state.json"
-    local eq="N/A"
-    if [[ -f "$eq_state" ]]; then
-        eq=$(jq -r '.equity // "N/A"' "$eq_state" 2>/dev/null || echo "N/A")
-        if [[ "$eq" != "N/A" ]] && [[ "$eq" =~ ^[0-9.]+$ ]]; then
-            eq=$(printf '$%.0f' "$eq")
-        else
-            eq="N/A"
+    # Registry-driven (#36): sum equity across every deployed book.
+    local reg="/root/atlas/config/live_strategies.json"
+    local total=0 found=0
+    for name in $(jq -r '.[].name' "$reg" 2>/dev/null); do
+        local eq_state="/root/atlas/data/live/${name}/equity_state.json"
+        if [[ -f "$eq_state" ]]; then
+            local eq=$(jq -r '.equity // 0' "$eq_state" 2>/dev/null || echo 0)
+            if [[ "$eq" =~ ^[0-9.]+$ ]]; then
+                total=$(echo "$total + $eq" | bc)
+                found=1
+            fi
         fi
-    fi
-    echo "${eq}"
+    done
+    [[ $found -eq 1 ]] && printf '$%.0f' "$total" || echo "N/A"
 }
 
 # Collect all status checks

@@ -1,15 +1,20 @@
 # Atlas system crontab — canonical: /root/atlas/scripts/atlas.crontab
 # Restore: sudo crontab /root/atlas/scripts/atlas.crontab
 #
-# 2026-06-11 — Atlas hygiene jobs moved to systemd timers
-# (atlas-sediment-cleanup.timer, atlas-weekly-maintenance.timer; see
-# systemd/install.sh). This crontab now holds ONLY the NRL-Predict project,
-# pending its move to /etc/cron.d/nrl-predict.
+# 2026-06-13 (#36 re-homing) — this crontab holds:
+#   1. Atlas hygiene jobs (sediment cleanup, doc staleness, weekly maintenance)
+#   2. NRL-Predict pregame entries — AUTO-MANAGED by /root/NRL-Predict/scripts/plan_week.py
+#      (rewrites them every Monday; atlas does NOT own them, they merely share the root
+#      crontab because plan_week.py's update mechanism targets `crontab -l`).
+# Everything else runs on systemd timers (atlas-*, crucible-*).
 MAILTO=""
 SHELL=/bin/bash
 TZ=Australia/Brisbane
 
-# ── NRL-Predict (separate active project; auto-managed by plan_week.py) ───────
+0 14 * * * /usr/bin/flock -n /tmp/cleanup_sediment.lock bash -c 'cd /root/atlas && timeout 5m python3 scripts/cleanup_sediment.py --apply' >> /root/atlas/logs/cleanup_sediment.log 2>&1
+0 18 * * * /usr/bin/flock -n /tmp/check_doc_staleness.lock bash -c 'cd /root/atlas && timeout 2m python3 scripts/check_doc_staleness.py' >> /root/atlas/logs/check_doc_staleness.log 2>&1
+0 6 * * 0 /usr/bin/flock -n /tmp/weekly_maintenance.lock bash -c 'cd /root/atlas && timeout 30m bash scripts/weekly_maintenance.sh' >> /root/atlas/logs/weekly_maintenance.log 2>&1
+
 20 18 * * 4 /root/NRL-Predict/scripts/nrl-cron.sh repredict  # Thursday 2026-06-11 (90min before 2026-06-11 19:50)
 30 18 * * 5 /root/NRL-Predict/scripts/nrl-cron.sh repredict  # Friday 2026-06-12 (90min before 2026-06-12 20:00)
 5 16 * * 6 /root/NRL-Predict/scripts/nrl-cron.sh repredict  # Saturday 2026-06-13 (90min before 2026-06-13 17:35)

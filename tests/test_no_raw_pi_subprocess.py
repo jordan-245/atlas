@@ -1,16 +1,15 @@
-"""Fails if any non-test, non-helper file calls pi/claude CLI as a raw subprocess
-instead of going through atlas.kernel.pi_subprocess. This prevents re-introduction of
-calls that bypass the Claude Max OAuth routing guard.
+"""Fails if any non-test, non-helper file calls pi/claude CLI as a raw subprocess.
+pi_subprocess.py was removed 2026-06-13 (#36 fossil purge — zero importers); the RULE
+survives it: any pi/claude subprocess MUST include --system-prompt (Claude Max OAuth
+routing, /root/AGENTS.md). pi_session.py carries the flag inline and is allowlisted.
 """
 import re
 from pathlib import Path
 
 ATLAS_ROOT = Path(__file__).resolve().parent.parent
 ALLOWED = {
-    ATLAS_ROOT / "atlas" / "kernel" / "pi_subprocess.py",
-    # pi_session.py uses asyncio.create_subprocess_exec (async streaming) —
-    # a different execution model that cannot use call_pi directly.
-    # --system-prompt is present inline; equivalent routing guarantee.
+    # pi_session.py uses asyncio.create_subprocess_exec (async streaming);
+    # --system-prompt is present inline — the routing guarantee the rule protects.
     ATLAS_ROOT / "atlas" / "dashboard" / "chat" / "pi_session.py",
 }
 
@@ -33,5 +32,5 @@ def test_no_raw_pi_subprocess():
             offenders.append(str(py.relative_to(ATLAS_ROOT)))
     assert not offenders, (
         f"Found raw pi/claude subprocess calls outside atlas.kernel.pi_subprocess in: "
-        f"{offenders}. Use call_pi() / call_pi_exec() from atlas.kernel.pi_subprocess instead."
+        f"{offenders}. Any pi/claude subprocess MUST pass --system-prompt (Max OAuth routing — see /root/AGENTS.md)."
     )

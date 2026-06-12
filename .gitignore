@@ -85,3 +85,5 @@ ops/ib-gateway/.env
 
 # Databento purchased raw pulls (53MB parquets — archived locally, re-pullable via script)
 data/databento/*.parquet
+research/
+config/pending_promotions.json
