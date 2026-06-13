@@ -42,6 +42,10 @@ PATTERNS: list[tuple[str, str]] = [
     ("db_pre", "data/atlas.db.pre-*"),
     ("json_bak", "data/*.json.bak.*"),
     ("json_pre", "data/*.json.pre-*"),
+    # 2026-06-13: data/backups/ accumulated 42×105MB atlas.db copies (4.1GB) from a
+    # dead daily job — nothing pruned them because no pattern watched the dir.
+    ("db_snapshots", "data/backups/atlas.db.*"),
+    ("misc_backups", "data/backups/*.csv"),
 ]
 
 # Preserve this many most-recent files per pattern group regardless of age

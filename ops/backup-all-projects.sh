@@ -81,7 +81,11 @@ fi
 
 # Apply retention policy: keep 7 daily, 4 weekly, 3 monthly
 log "Applying retention policy..."
+# --group-by host,tags (2026-06-13): default grouping includes the PATH SET, and the
+# systemd-unit glob changes it whenever a unit is added/removed — each variant became
+# its own retention group, so 75 snapshots survived a keep-~14 policy.
 restic -r "$RESTIC_REPOSITORY" forget \
+    --group-by host,tags \
     --keep-daily 7 \
     --keep-weekly 4 \
     --keep-monthly 3 \
