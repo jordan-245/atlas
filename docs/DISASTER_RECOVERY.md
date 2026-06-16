@@ -6,6 +6,15 @@
 **Criticality:** P0 — Trading System Continuity  
 **Last DR Drill:** 2026-04-17 (restic snapshot e74810d5 → /tmp/atlas-restore-test; see `docs/DR_DRILLS.md`)
 
+> ⚠️ **PARTIALLY STALE — predates the 2026-06 "old Atlas is no more" refactor.** The backup/restore
+> *mechanics* below (restic, `atlas.db` `PRAGMA integrity_check`, config restore) remain valid, but the
+> **service inventory, market/account details, emergency contacts, and any scenario step that names a
+> specific unit are out of date** — they describe the retired swing-era system (commodity-ETF trading,
+> the Telegram command bot, the `atlas-director`/`discovery`/`research-window`/`heartbeat-watchdog`
+> timers, all retired). For the **current** live surface, the authoritative sources are
+> `systemd/README.md`, `docs/OPERATIONS.md`, and `memory/SUMMARY.md`. The unit-specific recovery steps
+> still need an operator pass before the next real incident.
+
 ---
 
 ## Table of Contents
@@ -27,11 +36,11 @@
 ## System Overview
 
 ### Architecture Summary
-- **Primary Market:** Commodity ETFs (live trading via Alpaca)
-- **Secondary Market:** SP500 (live trading via Alpaca)
-- **Deployment:** Single Raspberry Pi server (`root@pi`)
-- **Trading Mode:** Daily (market-on-open execution)
-- **AUM as of 2026-04-16:** $4,997.13 tracked equity / $5,325.23 broker equity; 4 open positions (FCX, GLD, SLV, UNG) — commodity_etfs universe
+- **Live surface (post-2026-06 refactor):** the forward-paper *shadow* system — `atlas-live-shadow.timer` runs `ops/forward-paper.sh` (record_returns → crucible weight refresh → `atlas.execution.daily --mode shadow`) on a shared Alpaca **paper** account (`PAPER_BOOK_INCEPTION` 2026-06-09). Real capital is human-gated (`registry approve` + `--mode live`).
+- **Universe:** SP500 (`config/active/sp500.json`). The earlier commodity-ETF swing system was retired.
+- **Deployment:** single Linux server (`root@`).
+- **Trading Mode:** daily, Alpaca market-on-open (OPG) window.
+- **AUM / open positions:** not pinned here (the old figures were swing-era stale) — read live from `python -m atlas.execution.registry state` and the per-book `data/live/<name>/`.
 
 ### Core Components
 ```
