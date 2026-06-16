@@ -145,6 +145,7 @@ def reconcile_book(name: str, broker) -> int:
     open_map = _fetch_open_map([o["ticker"] for _, o in pending], [dt for dt, _ in pending])
 
     n = 0
+    book_fills = []   # (ticker, side, filled_qty, fill_px) to apply to the virtual book AFTER the ledger write
     with (d / "fills.jsonl").open("a") as fh:
         for date, o in pending:
             try:
@@ -154,9 +155,10 @@ def reconcile_book(name: str, broker) -> int:
                 continue
             status = getattr(getattr(res, "status", None), "value", None) or str(getattr(res, "status", "?"))
             fill_px = float(getattr(res, "fill_price", 0.0) or 0.0)
+            filled_qty = int(getattr(res, "filled_qty", 0) or 0)
             rec = {"date": date, "ticker": o["ticker"], "side": o["side"], "qty": o["qty"],
                    "decision_px": o.get("px"), "fill_px": fill_px or None,
-                   "filled_qty": int(getattr(res, "filled_qty", 0) or 0),
+                   "filled_qty": filled_qty,
                    "status": status,
                    "slippage_bps": round(_slippage_bps(o["side"], o.get("px") or 0.0, fill_px), 2)
                                    if fill_px else None,
@@ -166,6 +168,18 @@ def reconcile_book(name: str, broker) -> int:
                 rec.update(_futures_slippage(o["ticker"], o["side"], o.get("px") or 0.0, fill_px, o.get("qty")))
             fh.write(json.dumps(rec) + "\n")
             n += 1
+            # book-from-fills: the virtual book is updated from the ACTUAL reconciled fill (qty + price),
+            # never on order acceptance. Each order_id is reconciled exactly once (skipped via `done`),
+            # so applying here is idempotent. Ledger written FIRST; a crash before book.save() undercounts
+            # by one cycle (caught by reconcile_books, recoverable) rather than double-counting.
+            if filled_qty > 0 and fill_px:
+                book_fills.append((o["ticker"], o["side"], filled_qty, fill_px))
+    if book_fills:
+        from atlas.execution.virtual_book import VirtualBook
+        book = VirtualBook(name)
+        for tk, side, fq, px in book_fills:
+            book.apply_fill(tk, side, fq, px)   # multiplier=1 (equity books; futures keep the tick model)
+        book.save()
     return n
 
 

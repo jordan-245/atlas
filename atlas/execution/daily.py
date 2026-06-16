@@ -194,14 +194,12 @@ def run_strategy(s: DeployedStrategy, asof: str, mode: str = "shadow", broker=No
             book = VirtualBook(s.name, capital_base=(s.capital or 0.0))
         rep = ex.rebalance(weights, deployable_equity=(s.capital or None), dry_run=dry,
                            current_qty=(book.current_qty() if book is not None else None))
-        if book is not None and not rep.dry_run and not rep.blocked:
-            # Apply this strategy's OWN successful fills to its book at the reference price.
-            filled = {(getattr(r, "ticker", None), getattr(r, "side", None))
-                      for r in rep.results if getattr(r, "success", False)}
-            for o in rep.orders:
-                if (o.ticker, o.side) in filled:
-                    book.apply_fill(o.ticker, o.side.value, o.qty, o.ref_price, ex._spec(o.ticker).multiplier)
-            book.save()
+        # The book is deliberately NOT updated here. Recording fills on order ACCEPTANCE (result.success)
+        # at the requested qty/ref price silently corrupted it: the shadow loop runs in the Alpaca OPG
+        # window, so the real fill — or non-fill (HTB shorts, halts, no-open) — lands ~14h later at the
+        # open. The book is instead updated from RECONCILED ACTUAL fills by record_fills (book-from-fills),
+        # which runs BEFORE the next rebalance; _record_run persists each order_id to runs.jsonl for that
+        # reconciliation. (2026-06-16 — tasks/VIRTUAL_BOOK_FILL_RECONCILIATION.md; guard: reconcile_books.py)
 
         track = None
         if s.expectation:
