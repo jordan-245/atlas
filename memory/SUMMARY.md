@@ -19,15 +19,15 @@ book.json,equity_state.json`; runs `scripts/sharadar_download.py`; shares `data/
 - `atlas-dashboard.service` — uvicorn `atlas.dashboard.app:app` :8899 (auth fail-closed).
 - `atlas-live-shadow.timer` Mon–Fri 22:00 UTC → `ops/forward-paper.sh` (record_returns →
   crucible refresh → `atlas.execution.daily --mode shadow`). ConditionPathExists=!data/HALT.
-- Timers: backup, unified-healthcheck, weekly-maintenance, sediment-cleanup,
-  sp500-flatten (transitional). `systemd/install.sh` durably retires removed units.
+- Timers: backup, unified-healthcheck, weekly-maintenance, sediment-cleanup.
+  `systemd/install.sh` durably retires removed units.
 - Telegram COMMAND BOT IS RETIRED. Outbound notify = `atlas.kernel.notify`. Human controls:
   `python -m atlas.execution.kill_switch halt|resume|status`,
   `python -m atlas.execution.registry approve|state`.
 
 ## Lessons that survived the deletion
-- Kill switch is enforced INSIDE TargetExecutor (fail-closed) + at systemd. L4 currently reads
-  the stale `equity_history` table → fail-open no-data; follow-up: re-point at the live books.
+- Kill switch is enforced INSIDE TargetExecutor (fail-closed) + at systemd. L4 reads each live
+  book's `data/live/<name>/returns.jsonl` (re-pointed 2026-06-11 from the retired equity_history table).
 - Virtual sub-books: N strategies share one paper account; each diffs against its OWN book —
   never the blended account positions.
 - Honest Paper Book: equity curve filtered to PAPER_BOOK_INCEPTION (2026-06-09); no borrowed
@@ -43,4 +43,3 @@ book.json,equity_state.json`; runs `scripts/sharadar_download.py`; shares `data/
 - BOREAS carry+trend on IB micro-futures gated on the 2026-08-28 verdict (board 2026-06-09);
   seams ready (`boreas_carry_trend` stub, ContractSpec, brokers/ib{,_web}).
 - pi-package extensions partially stale (catalog flags them); refresh when chat workflows settle.
-- Delete sp500-flatten units + script once the retired account is confirmed flat.

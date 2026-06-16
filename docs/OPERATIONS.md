@@ -12,7 +12,6 @@
 | `unified-healthcheck.timer` | every 6 h | `ops/unified-healthcheck.sh` (Telegram report) |
 | `atlas-weekly-maintenance.timer` | Sun 06:00 AEST | `ops/weekly-maintenance.sh` |
 | `atlas-sediment-cleanup.timer` | daily 14:00 AEST | `ops/cleanup_sediment.py --apply` |
-| `atlas-sp500-flatten.timer` | Mon–Fri 14:45 UTC | transitional — delete once the retired account is flat |
 
 `install.sh` also **durably retires** removed units (telegram-bot, dashboard-refresh, and the
 17 swing-era families) on every run — a reinstall can never re-enable them.
@@ -69,7 +68,6 @@ systemctl list-timers --all | grep -E "atlas|unified" > /tmp/pre-deploy-units.tx
 systemctl cat atlas-live-shadow.service 2>/dev/null   # host-local edits? note them
 systemctl cat atlas-dashboard-refresh.service 2>/dev/null  # host-local unit — being retired
 crontab -l > /tmp/pre-deploy-crontab.txt
-journalctl -u atlas-sp500-flatten -n 5                 # is the retired account flat yet?
 ```
 
 **Deploy:**
@@ -106,7 +104,5 @@ systemctl enable --now atlas-telegram-bot && systemctl restart atlas-dashboard
 `data/`, `config/`, and `~/.atlas-secrets.json` are never touched by deploy or rollback.
 
 **Post-deploy follow-ups:**
-- Delete `atlas-sp500-flatten.{service,timer}` + `ops/flatten_sp500.py` once the account is flat.
-- Re-point kill-switch L4 at `data/live/*/equity_state.json` (currently fail-open: stale table).
 - If `data/live/demo/` exists on the host (old test pollution), remove it.
 - `npx gitnexus analyze` to rebuild the code index for the new tree.

@@ -49,6 +49,7 @@ RETIRED_UNITS=(
     atlas-sandbox-9strats
     atlas-silent-failure-watchdog
     atlas-universe-rebuild
+    atlas-sp500-flatten           # 2026-06: flatten script deleted as a stale-target hazard; orphaned units retired
 )
 
 retired_changed=0
@@ -134,7 +135,6 @@ TIMERS_TO_ENABLE=(
     unified-healthcheck.timer
     atlas-weekly-maintenance.timer
     atlas-sediment-cleanup.timer
-    atlas-sp500-flatten.timer    # transitional — delete once the retired SP500 paper account is flat
 )
 
 for unit in "${SERVICES_TO_ENABLE[@]}" "${TIMERS_TO_ENABLE[@]}"; do

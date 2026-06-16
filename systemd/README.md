@@ -13,7 +13,6 @@ enables the active schedule.
 | `unified-healthcheck.{service,timer}` | every 6 h | cross-project health → Telegram |
 | `atlas-weekly-maintenance.{service,timer}` | Sun 06:00 AEST | log rotation, cache purge, DB ANALYZE |
 | `atlas-sediment-cleanup.{service,timer}` | daily 14:00 AEST | prune aged backup/incident files |
-| `atlas-sp500-flatten.{service,timer}` | Mon–Fri 14:45 UTC | **transitional** — flattens the retired SP500 paper account; delete once flat |
 
 `atlas.conf.template` seeds `/etc/atlas/atlas.conf` (shared EnvironmentFile).
 
