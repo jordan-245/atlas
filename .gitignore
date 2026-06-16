@@ -87,3 +87,14 @@ ops/ib-gateway/.env
 data/databento/*.parquet
 research/
 config/pending_promotions.json
+
+# ── Runtime artifacts (regenerable; keep on disk, out of git) ────
+# Parity with scripts/git-hooks/check_no_runtime_artifacts.py — these were
+# over-committed by the 2026-06-11 "Track remaining workspace state" commit
+# and slipped past the hook (which only scans STAGED files).
+config/.oos_cache/
+data/compute_matrix/
+data/plan_notifications_buffer/
+data/contaminated_backtests/
+data/*_comparison_*.json
+backups-pre-batch-*.txt
