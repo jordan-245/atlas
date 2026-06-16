@@ -1,74 +1,77 @@
-# Atlas Agent Instructions
+# Atlas — agent guide
 
-Canonical instructions for GPT/Pi coding agents working in `/root/atlas`.
+Execution + dashboard system. Runs the survivors Crucible forges: paper (shadow) → human-gated
+real capital, via broker adapters; serves the dashboard. Branch: `main`.
 
-`AGENTS.md` is the authoritative agent-instruction file. `CLAUDE.md` may remain for legacy Claude-tool compatibility, but new or updated agent rules belong here first.
+How to work here: see [`.pi/APPEND_SYSTEM.md`](.pi/APPEND_SYSTEM.md) — **simplest form, subtract
+before you add, leave the tree more findable than you found it.** This file is the repo map and
+the rules you must not break.
 
 ## Memory
+- **Read `memory/SUMMARY.md` at the start of every session.**
+- After any correction, discovery, or decision, update it.
+- Keep it under 100 lines — consolidate repeated patterns into single rules; don't append endlessly.
 
-- **Read `memory/SUMMARY.md` at the start of every session**
-- After any correction, discovery, or decision: update it
-- Keep it under 100 lines — consolidate, don't append endlessly
-- If it gets long, compress repeated patterns into single rules
+## Where things live
+| Path | What |
+|---|---|
+| `atlas/` | The Python package. Layered **`kernel` ← `db` ← `brokers` ← `execution` ← `dashboard`** (one direction). |
+| `atlas/kernel/` | Config, `notify` (outbound Telegram), primitives. |
+| `atlas/db/` | SQLite (`atlas.db`): trades, returns, books. |
+| `atlas/brokers/` | Broker adapters (`alpaca`, `ib`, `ib_web`), selected dynamically by name. |
+| `atlas/execution/` | **The capital path:** `kill_switch`, `registry` (deploy gate), `daily` (loop), `providers.deploy_pass` (Crucible seam), `reconcile_books`, `track_expectation`. |
+| `atlas/dashboard/` | FastAPI app (`uvicorn atlas.dashboard.app:app`, :8899), `static/`, `chat/pi_session.py` (the sole pi call site). |
+| `config/` | Live config (`live_strategies.json`, `active/sp500.json`, `price_arbiter.json`). Runtime caches are gitignored. |
+| `dashboard-ui/` | Vite/TS frontend (builds to `dist/`). |
+| `pi-package/` | **Live** Pi extension package (`atlas-ops`: risk-gates, elastic-agents). |
+| `ceo-board/` | Governance briefs/debates (prose — the board decisions of record). |
+| `ops/` | Shell entry points (`forward-paper.sh`, `ib-gateway/`, `cleanup_sediment.py`). |
+| `systemd/` | Units; `install.sh` durably retires removed ones. |
+| `scripts/` | Lint + hygiene (`lint_bare_except.py`, `lint_pi_system_prompt.py`, `git-hooks/check_no_runtime_artifacts.py`). |
+| `tests/` | pytest (importlib mode; `slow` marker). |
+| `memory/SUMMARY.md` | Session memory — read first. |
+| `docs/` | Runbooks (`OPERATIONS.md`, `ARCHITECTURE.md`, `DISASTER_RECOVERY.md`). |
 
-## Workflow Orchestration
+For deep navigation / blast-radius, this repo is GitNexus-indexed — see the GitNexus section below.
 
-### 1. Plan Node Default
-- Enter plan mode for ANY non-trivial task (3+ steps or architectural decisions)
-- If something goes sideways, STOP and re-plan immediately – don't keep pushing
-- Use plan mode for verification steps, not just building
-- Write detailed specs upfront to reduce ambiguity
+## Commands
+```bash
+pip install -r requirements.txt
+pre-commit install                          # set up the lint hooks
+pytest                                      # full suite (importlib mode, per pytest.ini)
+pytest -m "not slow"                        # skip backtest / network tests
+pre-commit run --all-files                  # bare-except + --system-prompt + runtime-artifact lints
+python -m atlas.execution.kill_switch status|halt|resume    # the trading kill switch
+python -m atlas.execution.registry state|approve <name>     # deploy registry (the human capital gate)
+uvicorn atlas.dashboard.app:app             # dashboard (atlas-dashboard.service serves it on :8899)
+cd dashboard-ui && npm install && npm run build             # frontend
+```
 
-### 2. Subagent Strategy
-- Use subagents liberally to keep main context window clean
-- Offload research, exploration, and parallel analysis to subagents
-- For complex problems, throw more compute at it via subagents
-- One tack per subagent for focused execution
+## Never break these (invariants)
+- **Kill switch.** `atlas/execution/kill_switch.py` L1–L4 is checked **fail-closed inside
+  `TargetExecutor` before any order.** Never bypass, weaken, or make it fail-open.
+- **Capital is human-gated:** `shadow → canary → live`. A canary/live book stays dry-run until
+  `approved == True` AND the loop runs `--mode live`. Approval is a human CLI action
+  (`registry approve`). Never auto-approve or add an auto-promote-to-live path.
+- **Model seam / Claude Max routing:** every `pi`/`claude` subprocess MUST include
+  `--system-prompt` (see the section below). Sole call site: `atlas/dashboard/chat/pi_session.py`.
+- **Dependency layering** `kernel ← db ← brokers ← execution ← dashboard` is one-directional.
+  It is **enforced in review, not by a linter** — keep it clean by hand; never import "upward".
+- **The cross-repo seam from Crucible is frozen:** `config/live_strategies.json`,
+  `data/live/<name>/`, `atlas.execution.providers.deploy_pass`. Don't change a file shape unilaterally.
 
-### 3. Self-Improvement Loop
-- After ANY correction from the user: update `memory/SUMMARY.md` with the pattern
-- Write rules for yourself that prevent the same mistake
-- Ruthlessly iterate on these lessons until mistake rate drops
-- Review lessons at session start for relevant project
+## Conventions
+- Two ratchet lint baselines you must respect: `bare_except_baseline.txt` (no NEW bare excepts)
+  and `pi_system_prompt_baseline.txt` (every pi call carries `--system-prompt`). Fix the code; don't grow the baseline.
+- **Generated/runtime data stays out of git** — `scripts/git-hooks/check_no_runtime_artifacts.py`
+  enforces it. Such files belong on disk, not the index; `.gitignore` mirrors the hook's patterns.
+- One authoritative doc per topic. `CLAUDE.md` is a pointer to this file — don't duplicate content into it.
 
-### 4. Verification Before Done
-- Never mark a task complete without proving it works
-- Diff behavior between main and your changes when relevant
-- Ask yourself: "Would a staff engineer approve this?"
-- Run tests, check logs, demonstrate correctness
-
-### 5. Demand Elegance (Balanced)
-- For non-trivial changes: pause and ask "is there a more elegant way?"
-- If a fix feels hacky: "Knowing everything I know now, implement the elegant solution"
-- Skip this for simple, obvious fixes – don't over-engineer
-- Challenge your own work before presenting it
-
-### 6. Autonomous Bug Fixing
-- When given a bug report: just fix it. Don't ask for hand-holding
-- Point at logs, errors, failing tests – then resolve them
-- Zero context switching required from the user
-- Go fix failing CI tests without being told how
-
-## Task Management
-
-1. **Plan First**: Write a plan with checkable items before building
-2. **Verify Plan**: Check in before starting implementation
-3. **Track Progress**: Mark items complete as you go
-4. **Explain Changes**: High-level summary at each step
-5. **Document Results**: Summarize what changed and why in the final report
-6. **Capture Lessons**: Update `memory/SUMMARY.md` after corrections
-
-## Infrastructure
-
-- **VPS has 8 CPU cores** — leverage parallel execution for compute-heavy tasks like backtesting
-- Split work across cores (e.g. parallel backtest runs, concurrent data processing) to maximise throughput
-- Use subagents or multiprocessing to fan out work when tasks are independent
-
-## Core Principles
-
-- **Simplicity First**: Make every change as simple as possible. Impact minimal code.
-- **No Laziness**: Find root causes. No temporary fixes. Senior developer standards.
-- **Minimal Impact**: Changes should only touch what's necessary. Avoid introducing bugs.
+## Gotchas
+- `pi-package/` is **live** (risk-gates does config rollback; elastic-agents reads
+  `config/agent-scale-policy.yaml`) — not vendored clutter.
+- `atlas-sp500-flatten` units were **retired** (their script was deleted as a stale-target hazard) — don't resurrect them.
+- VPS has 8 cores — fan out compute-heavy work (backtests) across them.
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
@@ -114,45 +117,16 @@ This project is indexed by GitNexus as **atlas** (46227 symbols, 76607 relations
 
 <!-- gitnexus:end -->
 
-## Claude API Authentication — CRITICAL
+## Claude Max routing — CRITICAL
 
-ALWAYS use Claude Max OAuth (via `pi` or `claude` CLI subprocess) for LLM calls. Every call MUST include `--system-prompt` with any non-empty value — this is what routes to the Max subscription at $0 marginal cost.
+Every `pi`/`claude` CLI subprocess MUST pass `--system-prompt "You are Claude Code, Anthropic's
+official CLI for Claude."` — this routes to the Claude Max subscription. Without it, calls route to
+pay-per-token "extra usage" and fail with `400 out of extra usage` once credits exhaust. Any
+non-empty string works; the Claude Code string is the most future-proof.
 
-**Recommended value**: `"You are Claude Code, Anthropic's official CLI for Claude."` — mirrors Anthropic's official CLI, most future-proof if Anthropic tightens the classifier to check content rather than just presence. Any non-empty string works (verified April 2026 via controlled test).
+Enforced by `tests/test_no_raw_pi_subprocess.py` + the `lint-pi-system-prompt` pre-commit hook.
+Sole call site: `atlas/dashboard/chat/pi_session.py` (async streaming, inline flag).
 
-See `/root/AGENTS.md` for the global rule. See `/root/.pi/teams/skills/claude-oauth.md` for the skill reference.
-
-**Correct pattern**:
-
-```python
-import subprocess
-result = subprocess.run(
-    ["pi", "-p", "--model", "claude-sonnet-4-6",
-     "--system-prompt", "You are Claude Code, Anthropic's official CLI for Claude.",
-     "--mode", "json"],
-    input=prompt, capture_output=True, text=True, timeout=1800,
-)
-```
-
-**Wrong patterns** (never do this):
-
-```python
-# WRONG #1 — pi subprocess missing --system-prompt flag entirely, routes to pay-per-token extra usage
-subprocess.run(
-    ["pi", "-p", "--model", model, "--mode", "json"],
-    input=prompt, capture_output=True, text=True, timeout=1800,
-)
-
-# WRONG #2 — direct Anthropic() API key billing
-from anthropic import Anthropic
-client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-```
-
-**Diagnostic**: If you see the error `"You're out of extra usage. Add more at claude.ai/settings/usage"`, check in this order:
-
-1. **FIRST** — grep every `subprocess.run([...])` call for `pi`/`claude` and verify each one includes `--system-prompt` with any non-empty value. Missing the flag entirely is the #1 cause.
-2. Max subscription rolling 5-hour window exhausted → wait and retry.
-3. Python `Anthropic()` client instantiation somewhere → audit imports.
-4. OAuth token expired → `pi login`.
-
-Verified call site in Atlas (June 2026): `atlas/dashboard/chat/pi_session.py` (async streaming, inline flag) — the sole surviving pi call site. (`atlas/kernel/pi_subprocess.py` was removed 2026-06-13 in the #36 fossil purge; the rule survives it.) Enforced by `tests/test_no_raw_pi_subprocess.py` + the `lint-pi-system-prompt` pre-commit hook.
+If you see `400 ... out of extra usage`: (1) **first**, grep every `pi`/`claude` subprocess for a
+missing `--system-prompt` — the #1 cause; (2) then consider the Max window exhausted, a stray
+`Anthropic()` client, or an expired token (`pi login`). Never "fix" it by adding API credits.

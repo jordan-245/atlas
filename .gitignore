@@ -52,9 +52,9 @@ dashboard/data/finance-data.json
 dashboard-ui/test-results/
 tests/screenshots/
 
-# ── Pi local state ───────────────────────────────────────────────
-.pi/
-.pi/**
+# ── Pi local state (ignore everything EXCEPT the shared system-prompt) ─
+.pi/*
+!.pi/APPEND_SYSTEM.md
 .pi-swarm/
 pi-package/atlas-ops/package-lock.json
 
