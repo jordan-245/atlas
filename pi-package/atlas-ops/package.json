@@ -27,7 +27,6 @@
       "./extensions/atlas-safety-gates/src",
       "./extensions/atlas-state/src",
       "./extensions/atlas-status-dashboard/src",
-      "./extensions/atlas-tui-widget/src",
       "./extensions/atlas-elastic-agents/src"
     ],
     "skills": ["./skills"]
